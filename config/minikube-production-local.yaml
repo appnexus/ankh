@@ -1,0 +1,3 @@
+kube_context: minikube
+environment: production
+profile: minikube
