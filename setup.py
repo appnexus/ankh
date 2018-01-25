@@ -3,6 +3,7 @@
 from setuptools import setup, find_packages
 
 install_requires = [
+    'colorlog==2.7.0',
     'requests==2.18.4',
     'pyyaml==3.12',
 ]

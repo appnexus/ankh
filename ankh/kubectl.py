@@ -19,7 +19,6 @@ import sys
 import logging
 import subprocess
 
-from ankh.utils import stage_print
 from ankh.helm import fetch_chart
 from ankh.helm import inspect_chart
 from ankh.helm import helm_template_command
@@ -75,6 +74,11 @@ def kubectl_action(action, config, args, extra_args, global_config):
         inspect_chart(chart, args)
         return kubectl_action_targets(action, config, [ chart ], args, extra_args, global_config)
 
+    if 'charts' not in config or len(config['charts']) == 0:
+        logger.warning("No charts defined under `deploy` section. Nothing to do.")
+        return 0
+
+    logger.info("Fetching charts...")
     for chart in config['charts']:
         name = chart.get('name', None)
         if name is None:
@@ -107,11 +111,13 @@ def kubectl_action(action, config, args, extra_args, global_config):
 # args = cli args
 # Here we assume that targets is a list of charts, each with a chartref propery.
 def kubectl_action_targets(action, config, targets, args, extra_args, global_config):
-    if not args.yes:
-        print "# Executing action '%s' on targets: %s" % (action, " ".join(map(lambda x: x['name'], targets)))
+    logger.info("Executing action '%s' on targets: %s" % (action, " ".join(map(lambda x: x['name'], targets))))
+
+    # no need to prompt y/n for the template command
+    if not args.yes and action != 'template':
         ok = raw_input("okay? y/N > ")
         if ok != 'y' and ok != 'Y':
-            print "# aborting"
+            logger.critical("aborting")
             sys.exit(1)
 
     procs = []
@@ -128,10 +134,10 @@ def kubectl_action_targets(action, config, targets, args, extra_args, global_con
             kproc = subprocess.Popen(kubectl, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=hproc.stdout)
             procs.append((name, hproc, kproc))
 
-    stage_print("Waiting for processes...")
+    logger.info("Waiting for processes...")
 
     for path, hproc, kproc in procs:
-        # wait for kubectl, if any, and print the result
+        # wait for kubectl, print the result
         kout = kproc.stdout.read()
         kerr = kproc.stderr.read()
         kproc.wait()
@@ -140,17 +146,15 @@ def kubectl_action_targets(action, config, targets, args, extra_args, global_con
                 print kout
             else:
                 if args.verbose:
-                    logger.info("** %s: kubectl OK\n%s" % (path, kout))
+                    logger.info("- OK: %s:\n%s" % (path, kout))
                 else:
-                    logger.info("** %s: kubectl OK" % path)
+                    logger.info("- OK: %s" % path)
         else:
-            logger.error("** %s: kubectl FAILED: %s" % (path, kerr))
+            logger.error("- FAILED (kubectl) %s: %s" % (path, kerr))
             sys.exit(1)
-        # wait for helm, print the result, and possibly stdout too.
+        # wait for helm, print the result on failure
         herr = hproc.stderr.read()
         hproc.wait()
-        if hproc.returncode == 0:
-            logger.info("** %s: helm OK" % path)
-        else:
-            logger.error("** %s: helm FAILED: %s" % (path, herr))
+        if hproc.returncode != 0:
+            logger.error("- FAILED (helm) %s: %s" % (path, herr))
             sys.exit(1)

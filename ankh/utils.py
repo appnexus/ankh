@@ -14,36 +14,22 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import logging
+
+logger = logging.getLogger('ankh')
+
 def command_header(action, global_config):
     namespace_context = ""
     if 'namespace' in global_config:
         namespace_context = " and namespace \"" + global_config['namespace'] + "\""
     full_context = "context \"" + global_config['kube_context'] + "\" using environment \"" + global_config['environment'] + "\"" + namespace_context
-    print "#"
-    print "# %s %s" % (action, full_context)
-    print "#"
-    print ""
+    logger.info("%s %s" % (action, full_context))
     return
-
-
-def command_footer(text):
-    print ""
-    print "#"
-    print "# done. %s" % text
-    print "#"
-    print ""
-    return
-
-
-def stage_print(text):
-    print "#"
-    print "# %s" % text
-    print "#"
 
 
 def explain_something(args, text):
     if args.explain:
-        print "# %s" % text
+        logger.info("%s" % text)
 
 
 def flatten(l):
