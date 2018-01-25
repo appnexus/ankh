@@ -29,33 +29,9 @@ from ankh.kubectl import kubectl_action
 
 logger = logging.getLogger('ankh')
 
-def bootstrap_command(global_config, args):
-    command_header("bootstrapping", global_config)
-
-    if 'bootstrap' in global_config:
-        bootstrap(global_config['bootstrap'], global_config, args)
-    else:
-        logger.info("bootstrap: not configured, doing nothing")
-
-    return 0
-
-def teardown_command(global_config, args):
-    command_header("tearing down", global_config)
-
-    stage_print("running teardown scripts...")
-
-    if 'teardown' in global_config:
-        config = global_config['teardown']
-        scripts = config.get('scripts')
-        run_scripts("teardown", scripts, global_config, dry_run=args.dry_run, verbose=args.verbose)
-    else:
-        logger.info("no scripts to run")
-
-    return 0
-
-# Bootstrap and deploy
-def spinup_command(global_config, args):
-    command_header("spinning up", global_config)
+# bootstrap and apply
+def apply_command(global_config, args):
+    command_header("applying", global_config)
 
     logger.info("Starting bootstrap stage")
     if 'bootstrap' in global_config:
@@ -70,26 +46,7 @@ def spinup_command(global_config, args):
     else:
         logger.info("Deploy stage not configured, doing nothing")
     logger.info("Deploy stage finished")
-
     return 0
-
-
-def delete_command(global_config, args):
-    command_header("deleting", global_config)
-    if 'deploy' in global_config:
-        kubectl_action('delete', global_config['deploy'], args, ['--ignore-not-found'], global_config)
-    else:
-        logger.info("deploy: not configured, doing nothing")
-
-    return
-
-def deploy_command(global_config, args):
-    command_header("deploying", global_config)
-    if 'deploy' in global_config:
-        kubectl_action('apply', global_config['deploy'], args, None, global_config)
-    else:
-        logger.info("deploy: not configured, doing nothing")
-    return
 
 def template_command(global_config, args):
     command_header("templating", global_config)
@@ -97,8 +54,7 @@ def template_command(global_config, args):
         kubectl_action('template', global_config['deploy'], args, None, global_config)
     else:
         logger.info("deploy: not configured, doing nothing")
-
-    return
+    return 0
 
 def bootstrap(config, global_config, args):
     scripts = config.get('scripts', [])
@@ -172,8 +128,7 @@ def main():
     logger.setLevel(logging.INFO)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument(dest='command', default='spinup',
-            choices=['bootstrap', 'delete', 'deploy', 'spinup', 'teardown', 'template'])
+    parser.add_argument(dest='command', default='spinup', choices=['apply', 'deploy', 'template'])
     parser.add_argument('--yes', '-y', action='store_true', default=False)
     parser.add_argument('--verbose', '-v', action='store_true', default=False)
     parser.add_argument('--dry-run', dest='dry_run', action='store_true', default=False)
@@ -237,7 +192,7 @@ def main():
     # Possibly run some hacky substitutions on each ingress host
     template_ingress_hosts(global_config)
 
-    # Chart can be a singleton  on the command line
+    # Chart can be a singleton on the command line
     if args.chart and 'deploy' not in global_config:
         global_config['deploy'] = { 'charts': [ { 'chartref': args.chart } ] }
 
@@ -246,27 +201,8 @@ def main():
         logger.info('Using configuration ' + str(global_config))
 
     try:
-        # Only run the bootstrap config section
-        if args.command == 'bootstrap':
-            return bootstrap_command(global_config, args)
-
-        # Only run the deploy config section. Uses kubectl delete. Possibly contrained to a single chart by args.chart
-        if args.command == 'delete':
-            return delete_command(global_config, args)
-
-        # Only run the deploy config section. Uses kubectl apply. Possibly contrained to a single chart by args.chart
-        if args.command == 'deploy':
-            return deploy_command(global_config, args)
-
-        # Run the bootstrap and deploy config sections. Possibly contrained to a single chart by args.chart
-        if args.command == 'spinup':
-            return spinup_command(global_config, args)
-
-        # Only run the teardown config section. Possibly constrained to a single chart by args.chart
-        if args.command == 'teardown':
-            return teardown_command(global_config, args)
-
-        # Only print the templated helm charts. Possibly constrainted to a single chart by args.chart
+        if args.command == 'apply' or args.command == 'deploy':
+            return apply_command(global_config, args)
         if args.command == 'template':
             return template_command(global_config, args)
     except KeyboardInterrupt:
