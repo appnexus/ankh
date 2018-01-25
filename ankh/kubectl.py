@@ -145,6 +145,7 @@ def kubectl_action_targets(action, config, targets, args, extra_args, global_con
                     logger.info("** %s: kubectl OK" % path)
         else:
             logger.error("** %s: kubectl FAILED: %s" % (path, kerr))
+            sys.exit(1)
         # wait for helm, print the result, and possibly stdout too.
         herr = hproc.stderr.read()
         hproc.wait()
@@ -152,3 +153,4 @@ def kubectl_action_targets(action, config, targets, args, extra_args, global_con
             logger.info("** %s: helm OK" % path)
         else:
             logger.error("** %s: helm FAILED: %s" % (path, herr))
+            sys.exit(1)
