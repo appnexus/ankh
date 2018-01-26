@@ -43,20 +43,22 @@ def fetch_chart(global_config, name, version, args):
     path = '%s-%s.tgz' % (name, version)
     fullpath = 'charts/%s' % path
 
-    if args.dry_run:
-        return fullpath
-
     if not os.path.exists('charts/'):
         os.mkdir('charts', 0755)
 
     # Eventually, 'helm fetch' instead of curling the registry.
     cmd = 'curl --max-time 1 --retry 5 --retry-delay 1 -s -k https://%s/helm-repo/charts/%s > %s' % (global_config['helm_registry'], path, fullpath)
-    logger.info("Fetching chart: %s" % cmd)
     proc = subprocess.Popen([cmd], shell=True)
 
     proc.wait()
     if proc.returncode != 0:
+        logger.error("- FAIL: %s" % cmd)
         return None
+
+    if args.verbose:
+        logger.info("- OK: %s" % cmd)
+    else:
+        logger.info("- OK: %s" % fullpath)
 
     return fullpath
 
@@ -74,7 +76,7 @@ def inspect_chart(chart, args):
     if proc.returncode != 0:
         return None
 
-    result = yaml.load(proc.stdout.read())
+    result = yaml.safe_load(proc.stdout.read())
     logger.debug("* chartref %s == %s" % (chart['chartref'], result))
     chart['name'] = result['name']
     chart['version'] = result['version']

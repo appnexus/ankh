@@ -16,6 +16,8 @@ limitations under the License.
 
 import argparse
 import collections
+import colorlog
+import difflib
 import os.path
 import subprocess
 import socket
@@ -24,36 +26,93 @@ import yaml
 import logging
 
 from ankh.utils import command_header
-from ankh.utils import stage_print
 from ankh.kubectl import kubectl_action
 
 logger = logging.getLogger('ankh')
+valid_commands = [ 'apply', 'template', 'config', 'current-context', 'set-context' ]
+default_config_files = [ 'ankh.yaml', 'deploy.yaml' ]
+
+def ankh_config_read(args, log=False):
+    # Kube context may be present in this user's ankh config. Check for it.
+    if os.path.exists(args.ankhconfig):
+        with open(args.ankhconfig, 'r') as f:
+            config = yaml.safe_load(f)
+            if 'current-context' in config:
+                current_context = config['current-context']
+                if 'contexts' not in config or current_context not in config['contexts']:
+                    if log:
+                        logger.warning("Current context %s not found under `contexts`. Ignoring." % current_context)
+                else:
+                    contexts = config['contexts']
+                    subconfig = contexts[current_context]
+                    return current_context, subconfig
+            elif log:
+                logger.warning("No current-context key found in ANKHCONFIG. Ignoring.")
+    elif log:
+        logger.warning("No ANKHCONFIG found at %s. Skipping." % args.ankhconfig)
+    return "", None
+
+def current_context_command(args):
+    current_context, _ = ankh_config_read(args)
+    print current_context
+    return 0
+
+def get_contexts(args):
+    # Kube context may be present in this user's ankh config. Check for it.
+    if os.path.exists(args.ankhconfig):
+        with open(args.ankhconfig, 'r') as f:
+            config = yaml.safe_load(f)
+            if 'contexts' in config:
+                return config['contexts']
+    return []
+
+def get_contexts_command(args):
+    contexts = get_contexts(args)
+    for ctx in contexts:
+        print ctx
+
+def set_context_command(args, new_context):
+    # Kube context may be present in this user's ankh config. Check for it.
+    if os.path.exists(args.ankhconfig):
+        with open(args.ankhconfig, 'r') as f:
+            config = yaml.safe_load(f)
+        if 'contexts' not in config or new_context not in config['contexts']:
+            logger.error("Context \"%s\" not found under `contexts`." % new_context)
+            logger.info("The following contexts are available:")
+            contexts = get_contexts(args)
+            for ctx in contexts:
+                logger.info("- %s" % ctx)
+            return 1
+        config['current-context'] = new_context
+        with open(args.ankhconfig, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False)
+    elif log:
+        logger.warning("No ANKHCONFIG found at %s. Skipping." % args.ankhconfig)
+
+    print "Switched to context \"%s\"." % new_context
+    return 0
 
 # bootstrap and apply
 def apply_command(global_config, args):
-    command_header("applying", global_config)
-
-    logger.info("Starting bootstrap stage")
     if 'bootstrap' in global_config:
+        command_header("Bootstrapping", global_config)
         bootstrap(global_config['bootstrap'], global_config, args)
     else:
-        logger.info("Bootstrap stage not configured, skipping")
-    logger.info("Bootstrap stage finished")
+        logger.debug("`bootstrap` section not found in config. Skipping.")
 
-    logger.info("Starting deploy stage")
     if 'deploy' in global_config:
+        command_header("Deploying", global_config)
         kubectl_action('apply', global_config['deploy'], args, None, global_config)
     else:
-        logger.info("Deploy stage not configured, doing nothing")
-    logger.info("Deploy stage finished")
+        logger.warning("`deploy` section not found in config. Nothing to do. Run `ankh config` to see the config that will be used.")
     return 0
 
 def template_command(global_config, args):
-    command_header("templating", global_config)
     if 'deploy' in global_config:
+        command_header("Templating", global_config)
         kubectl_action('template', global_config['deploy'], args, None, global_config)
     else:
-        logger.info("deploy: not configured, doing nothing")
+        logger.warning("`deploy` section not found in config. Nothing to do. Run `ankh config` to see the config that will be used.")
     return 0
 
 def bootstrap(config, global_config, args):
@@ -80,21 +139,23 @@ def run_scripts(log_prefix, scripts, global_config, dry_run=False, verbose=False
         logger.info("Running script: %s" % " ".join(script_command))
 
         if dry_run:
-            logger.info("** OK (DRY) %s:" % path)
+            logger.info("- OK (dry)%s" % path)
             continue
 
         proc = subprocess.Popen(script_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         proc.wait()
         if proc.returncode == 0:
             if verbose:
-                logger.debug("** %s: OK\n%s" % (path, proc.stdout.read()))
+                logger.debug("- OK %s:\n%s" % (path, proc.stdout.read()))
             else:
-                logger.info("** %s: OK" % path)
+                logger.info("- OK %s" % path)
         else:
-            logger.info("** FAILED %s: stdout: %s, stderr: %s" % (path, proc.stdout.read(), proc.stderr.read()))
+            logger.info("- FAILED %s:\nstdout: %s\nstderr: %s" % (path, proc.stdout.read(), proc.stderr.read()))
     return
 
 def merge_config(target, source):
+    if not source:
+        return target
     for key, val in source.iteritems():
         if isinstance(val, collections.Mapping):
             merged = merge_config(target.get(key, { }), val)
@@ -117,18 +178,60 @@ def template_ingress_hosts(global_config):
             global_config['context']['ingress'][app] = host.replace(macro, hostname)
     return
 
+def gather_config(args, log=False):
+    global_config = {}
+    # Kube context may be present in this user's ankh config. Check for it.
+    current_context, subconfig = ankh_config_read(args, log=True)
+    if subconfig is not None:
+        logger.debug("current-context is %s" % current_context)
+        merge_config(global_config, subconfig)
+    for config_file in args.config_files:
+        if os.path.exists(config_file):
+            if log:
+                logger.info("- OK: %s" % config_file)
+            with open(config_file, 'r') as f:
+                config = yaml.safe_load(f)
+                merge_config(global_config, config)
+        elif config_file in default_config_files:
+            if args.verbose:
+                logger.debug("Ignoring missing default config file " + config_file)
+        else:
+            logger.error("Cannot find config file " + config_file)
+            sys.exit(1)
+    return global_config
+
 def main():
     # We prepend a hash to each log line so that the output of this utility
     # can be more easily composed with other scripts, since our logging will
     # look like comments.
-    formatter = logging.Formatter('# ankh: %(levelname)s - %(message)s')
-    handler = logging.StreamHandler(sys.stdout)
+    if sys.stdout.isatty():
+        log_format = "# %(log_color)s%(levelname)-8s%(reset)s %(message)s"
+        formatter = colorlog.ColoredFormatter(
+            log_format,
+            datefmt=None,
+            reset=True,
+            log_colors={
+                'DEBUG':    'cyan',
+                'INFO':     'green',
+                'WARNING':  'yellow',
+                'ERROR':    'red',
+                'CRITICAL': 'red,bg_white',
+            },
+            secondary_log_colors={},
+            style='%'
+        )
+        handler = colorlog.StreamHandler(sys.stdout)
+    else:
+        log_format = "# %(levelname)-8s %(message)s"
+        formatter = logging.Formatter(log_format, datefmt=None)
+        handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument(dest='command', default='spinup', choices=['apply', 'deploy', 'template'])
+    parser.add_argument(dest='command', default=['template'], nargs='*',
+            help='the command to run. Valid commands are %s ]' % str(valid_commands))
     parser.add_argument('--yes', '-y', action='store_true', default=False)
     parser.add_argument('--verbose', '-v', action='store_true', default=False)
     parser.add_argument('--dry-run', dest='dry_run', action='store_true', default=False)
@@ -136,27 +239,77 @@ def main():
     parser.add_argument('--chart', dest='chart',
             help='apply the action to only this chart. may be a directory, tgz, or a name from the config file')
     parser.add_argument('--helm-registry', dest='helm_registry', help='the helm registry to use for charts')
-    parser.add_argument('--config-file', '-f', action='append', dest='config_files', help='the config file.', default=["deploy.yaml"])
+    parser.add_argument('--config-file', '-f', action='append', dest='config_files', help='the config files.', default=default_config_files)
     parser.add_argument('--kube-context', dest='kube_context', help='the kube context to use.')
     parser.add_argument('--kubeconfig', dest='kubeconfig', help='the kube config to use.')
+    parser.add_argument('--ankhconfig', dest='ankhconfig', help='the ankh config to use.',
+            default=os.environ.get("ANKHCONFIG", os.environ.get("HOME", "") + "/.ankh/config"))
     parser.add_argument('--environment', dest='environment', choices=['autoenv', 'production'], help='the environment to use. files from values/{env} and secrets/{env} will be used.')
     parser.add_argument('--profile', dest='profile', choices=['production', 'minikube'], help='the profile to use. files from profiles/{profile} will be used. takes precedence over files used by "environment"')
     args = parser.parse_args()
 
-    global_config = {}
+    # context commands require no global_config nor any of the optional command-line args.
+    try:
+        command = args.command[0]
+        if command == 'current-context':
+            return current_context_command(args)
+        if command == 'get-contexts':
+            return get_contexts_command(args)
+        if command == 'set-context':
+            if len(args.command) != 2:
+                logger.error("Set context command requires exactly 1 postional arguments after 'set-context'")
+                sys.exit(1)
+            return set_context_command(args, args.command[1])
+        if command == 'help':
+            parser.print_help()
+            return 0
+    except KeyboardInterrupt:
+        logger.info("Interrupted")
+        sys.exit(1)
 
-    logger.info("Running from directory %s" % os.getcwd())
-    for config_file in args.config_files:
-        if os.path.exists(config_file):
-            logger.info("Using config file " + config_file)
-            with open(config_file, 'r') as f:
-                config = yaml.load(f)
-                merge_config(global_config, config)
-        elif config_file == 'deploy.yaml':
-            logger.info("Ignoring missing default config file " + config_file)
+    # We need the first pass of config to determine dependencies.
+    logger.info("Gathering global configuration...")
+    global_config = gather_config(args, log=True)
+
+    if command == 'config':
+        yaml.dump(global_config, sys.stdout, default_flow_style=False)
+        return 0
+
+    dependencies = []
+    if 'admin_dependencies' in global_config:
+        if global_config.get('cluster_admin', False):
+            logger.debug("Current context has cluster_admin: adding admin_dependencies")
+            dependencies.extend(global_config['admin_dependencies'])
         else:
-            logger.error("Cannot find config file " + config_file)
-            sys.exit(1)
+            logger.debug("Current context does not have cluster_admin: skipping admin_dependencies")
+    if 'dependencies' in global_config:
+        dependencies.extend(global_config['dependencies'])
+
+    if len(dependencies) == 0:
+        # common-case: only run in this directory
+        return run('.', args)
+
+    # Satisfy each dependency by changing into that directory and running.
+    # Recursive dependencies are prevented in run().
+    logger.debug("Found dependencies: %s" % str(dependencies))
+    for dep in dependencies:
+        logger.info("Satisfying dependency: %s" % dep)
+        old_dir = os.getcwd()
+        os.chdir(dep)
+        r = run(dep, args)
+        os.chdir(old_dir)
+        if r != 0:
+            return r
+    return 0
+
+def run(base_dir, args):
+    logger.info("Running from directory %s" % os.getcwd())
+
+    logger.info("Gathering local configuration...")
+    global_config = gather_config(args, log=True)
+    if 'dependencies' in global_config:
+        logger.error("Base directory %s contains dependencies in its config, but we're processing dependencies found in the global config right now. Recursive dependencies aren't supported, so eliminate them before proceeding." % os.getcwd())
+        return 1
 
     # Kube context is optional on the command line. If present, overrides config. Required overall.
     if args.kube_context:
@@ -201,14 +354,18 @@ def main():
         logger.info('Using configuration ' + str(global_config))
 
     try:
-        if args.command == 'apply' or args.command == 'deploy':
+        command = args.command[0]
+        if command == 'apply' or command == 'deploy':
             return apply_command(global_config, args)
-        if args.command == 'template':
+        if command == 'template':
             return template_command(global_config, args)
     except KeyboardInterrupt:
         logger.info("Interrupted")
         sys.exit(1)
 
-    logger.error("Unknown command %s" % args.command)
+    logger.error("Unknown command: '%s'" % command)
+    suggestion = difflib.get_close_matches(command, valid_commands, n=1)
+    if suggestion and suggestion[0]:
+        logger.info("Did you mean '%s'?" % suggestion[0])
     return 1
 
