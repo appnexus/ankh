@@ -29,7 +29,7 @@ from ankh.utils import command_header
 from ankh.kubectl import kubectl_action
 
 logger = logging.getLogger('ankh')
-valid_commands = [ 'apply', 'template', 'config', 'current-context', 'set-context' ]
+valid_commands = [ 'apply', 'template', 'config', 'get-contexts', 'current-context', 'use-context' ]
 default_config_files = [ 'ankh.yaml', 'deploy.yaml' ]
 
 def ankh_config_read(args, log=False):
@@ -71,7 +71,7 @@ def get_contexts_command(args):
     for ctx in contexts:
         print ctx
 
-def set_context_command(args, new_context):
+def use_context_command(args, new_context):
     # Kube context may be present in this user's ankh config. Check for it.
     if os.path.exists(args.ankhconfig):
         with open(args.ankhconfig, 'r') as f:
@@ -255,11 +255,11 @@ def main():
             return current_context_command(args)
         if command == 'get-contexts':
             return get_contexts_command(args)
-        if command == 'set-context':
+        if command == 'use-context':
             if len(args.command) != 2:
-                logger.error("Set context command requires exactly 1 postional arguments after 'set-context'")
+                logger.error("use-context command requires exactly argument")
                 sys.exit(1)
-            return set_context_command(args, args.command[1])
+            return use_context_command(args, args.command[1])
         if command == 'help':
             parser.print_help()
             return 0
