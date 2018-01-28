@@ -246,6 +246,7 @@ def main():
             default=os.environ.get("ANKHCONFIG", os.environ.get("HOME", "") + "/.ankh/config"))
     parser.add_argument('--environment', dest='environment', choices=['autoenv', 'production'], help='the environment to use. files from values/{env} and secrets/{env} will be used.')
     parser.add_argument('--profile', dest='profile', choices=['production', 'minikube'], help='the profile to use. files from profiles/{profile} will be used. takes precedence over files used by "environment"')
+    parser.add_argument('--release', dest='release', help='the release name to pass to Helm')
     args = parser.parse_args()
 
     # context commands require no global_config nor any of the optional command-line args.
@@ -331,6 +332,10 @@ def run(base_dir, args):
     if 'profile' not in global_config or not global_config['profile']:
         logger.error("Must provide profile in the config file or on the command line via --profile")
         sys.exit(1)
+
+    # Release is optional on the command line. If present, overrides config. Optional.
+    if args.release:
+        global_config['release'] = args.release
 
     # Helm registry is optional on the command line. If present, overrides config. Required overall.
     if args.helm_registry:
