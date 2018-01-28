@@ -19,11 +19,14 @@ import logging
 logger = logging.getLogger('ankh')
 
 def command_header(action, global_config):
-    namespace_context = ""
+    namespace_str = ""
     if 'namespace' in global_config:
-        namespace_context = " and namespace \"" + global_config['namespace'] + "\""
-    full_context = "context \"" + global_config['kube_context'] + "\" using environment \"" + global_config['environment'] + "\"" + namespace_context
-    logger.info("%s %s" % (action, full_context))
+        namespace_str = " to namespace \"" + global_config['namespace'] + "\""
+    release_str = ""
+    if 'release' in global_config:
+        release_str = "release \"" + global_config['release'] + "\" with "
+    full_str = release_str + "context \"" + global_config['kube_context'] + "\" using environment \"" + global_config['environment'] + "\"" + namespace_str
+    logger.info("%s %s" % (action, full_str))
     return
 
 

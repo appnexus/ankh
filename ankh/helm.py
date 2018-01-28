@@ -18,6 +18,7 @@ import os
 import logging
 import subprocess
 import sys
+import yaml
 
 from ankh.utils import explain_something, collapse
 
@@ -207,6 +208,12 @@ def helm_append_chartref(helm, chart):
     helm += [ chartref ]
     return
 
+def helm_append_release(helm, chart, global_config):
+    if 'release' in global_config and global_config['release']:
+        release = global_config['release']
+        helm += [ '--name', release ]
+    return
+
 def helm_template_command(chart, global_config, args):
     helm = [ 'helm', 'template' ]
     helm_append_base(helm, global_config)
@@ -215,5 +222,6 @@ def helm_template_command(chart, global_config, args):
     helm_append_secrets(helm, chart, global_config, args)
     helm_append_values(helm, chart, global_config, args)
     helm_append_profile(helm, chart, global_config, args)
+    helm_append_release(helm, chart, global_config)
     helm_append_chartref(helm, chart)
     return helm
