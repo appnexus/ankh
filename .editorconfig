@@ -2,10 +2,18 @@
 
 root = true
 
+[*]
+end_of_line = lf
+insert_final_newline = true
+
 [*.py]
 indent_style = space
 indent_size = 4
 
 [*.yaml]
 indent_style = space
+indent_size = 2
+
+[*.{go,md}]
+indent_style = tab
 indent_size = 2

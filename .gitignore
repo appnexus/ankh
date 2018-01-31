@@ -1,7 +1,13 @@
-.cscope.files
+# python
 venv
 build
 dist
 ankh.egg-info/
 *.tgz
 *.pyc
+
+# golang
+bin/
+build/
+dist/
+pkg/
