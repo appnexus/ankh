@@ -29,8 +29,7 @@ from ankh.utils import command_header
 from ankh.kubectl import kubectl_action
 
 logger = logging.getLogger('ankh')
-valid_commands = [ 'apply', 'template', 'config', 'get-contexts', 'current-context', 'use-context' ]
-default_config_files = [ 'ankh.yaml', 'deploy.yaml' ]
+valid_commands = [ 'apply', 'template', 'config view', 'config get-contexts', 'config current-context', 'config use-context' ]
 
 def ankh_config_read(args, log=False):
     # Kube context may be present in this user's ankh config. Check for it.
@@ -100,19 +99,19 @@ def apply_command(global_config, args):
     else:
         logger.debug("`bootstrap` section not found in config. Skipping.")
 
-    if 'deploy' in global_config:
+    if 'charts' in global_config:
         command_header("Deploying", global_config)
-        kubectl_action('apply', global_config['deploy'], args, None, global_config)
+        kubectl_action('apply', global_config['charts'], args, None, global_config)
     else:
-        logger.warning("`deploy` section not found in config. Nothing to do. Run `ankh config` to see the config that will be used.")
+        logger.warning("`charts` section not found in config. Nothing to do. Run `ankh config` to see the config that will be used.")
     return 0
 
 def template_command(global_config, args):
-    if 'deploy' in global_config:
+    if 'charts' in global_config:
         command_header("Templating", global_config)
-        kubectl_action('template', global_config['deploy'], args, None, global_config)
+        kubectl_action('template', global_config['charts'], args, None, global_config)
     else:
-        logger.warning("`deploy` section not found in config. Nothing to do. Run `ankh config` to see the config that will be used.")
+        logger.warning("`charts` section not found in config. Nothing to do. Run `ankh config view` to see the config that will be used.")
     return 0
 
 def bootstrap(config, global_config, args):
@@ -192,7 +191,7 @@ def gather_config(args, log=False):
             with open(config_file, 'r') as f:
                 config = yaml.safe_load(f)
                 merge_config(global_config, config)
-        elif config_file in default_config_files:
+        elif config_file != 'ankh.yaml':
             if args.verbose:
                 logger.debug("Ignoring missing default config file " + config_file)
         else:
@@ -238,32 +237,37 @@ def main():
     parser.add_argument('--explain', dest='explain', action='store_true', default=False)
     parser.add_argument('--chart', dest='chart',
             help='apply the action to only this chart. may be a directory, tgz, or a name from the config file')
-    parser.add_argument('--helm-registry', dest='helm_registry', help='the helm registry to use for charts')
-    parser.add_argument('--config-file', '-f', action='append', dest='config_files', help='the config files.', default=default_config_files)
+    parser.add_argument('--helm-registry-url', dest='helm_registry_url', help='the full helm registry URL to use for charts')
+    parser.add_argument('--config-file', '-f', action='append', dest='config_files', help='the config files.', default=['ankh.yaml'])
     parser.add_argument('--kube-context', dest='kube_context', help='the kube context to use.')
+    parser.add_argument('--release', dest='release', help='the release to target.')
     parser.add_argument('--kubeconfig', dest='kubeconfig', help='the kube config to use.')
     parser.add_argument('--ankhconfig', dest='ankhconfig', help='the ankh config to use.',
             default=os.environ.get("ANKHCONFIG", os.environ.get("HOME", "") + "/.ankh/config"))
-    parser.add_argument('--environment', dest='environment', choices=['autoenv', 'production'], help='the environment to use. files from values/{env} and secrets/{env} will be used.')
-    parser.add_argument('--profile', dest='profile', choices=['production', 'minikube'], help='the profile to use. files from profiles/{profile} will be used. takes precedence over files used by "environment"')
-    parser.add_argument('--release', dest='release', help='the release name to pass to Helm')
     args = parser.parse_args()
 
     # context commands require no global_config nor any of the optional command-line args.
     try:
         command = args.command[0]
-        if command == 'current-context':
-            return current_context_command(args)
-        if command == 'get-contexts':
-            return get_contexts_command(args)
-        if command == 'use-context':
-            if len(args.command) != 2:
-                logger.error("use-context command requires exactly argument")
+        if command == 'config':
+            if len(args.command) < 2:
+                logger.error("need at least 2 arguments for the `config` subcommand")
                 sys.exit(1)
-            return use_context_command(args, args.command[1])
-        if command == 'help':
-            parser.print_help()
-            return 0
+            subcommand = args.command[1]
+            if subcommand == 'view':
+                global_config = gather_config(args, log=True)
+                yaml.dump(global_config, sys.stdout, default_flow_style=False)
+                return 0
+            if subcommand == 'current-context':
+                return current_context_command(args)
+            if subcommand == 'get-contexts':
+                return get_contexts_command(args)
+            if subcommand == 'use-context':
+                if len(args.command) != 3:
+                    logger.error("use-context subcommand requires an argument")
+                    sys.exit(1)
+                ctx_arg = args.command[2]
+                return use_context_command(args, ctx_arg)
     except KeyboardInterrupt:
         logger.info("Interrupted")
         sys.exit(1)
@@ -271,10 +275,6 @@ def main():
     # We need the first pass of config to determine dependencies.
     logger.info("Gathering global configuration...")
     global_config = gather_config(args, log=True)
-
-    if command == 'config':
-        yaml.dump(global_config, sys.stdout, default_flow_style=False)
-        return 0
 
     dependencies = []
     if 'admin_dependencies' in global_config:
@@ -312,23 +312,14 @@ def run(base_dir, args):
         logger.error("Base directory %s contains dependencies in its config, but we're processing dependencies found in the global config right now. Recursive dependencies aren't supported, so eliminate them before proceeding." % os.getcwd())
         return 1
 
-    # Kube context is optional on the command line. If present, overrides config. Required overall.
-    if args.kube_context:
-        global_config['kube_context'] = args.kube_context
     if 'kube_context' not in global_config or not global_config['kube_context']:
         logger.error("Must provide kube_context in the config file or on the command line via --kube-context")
         sys.exit(1)
 
-    # Environment is optional on the command line. If present, overrides config. Required overall.
-    if args.environment:
-        global_config['environment'] = args.environment
     if 'environment' not in global_config or not global_config['environment']:
         logger.error("Must provide environment in the config file or on the command line via --environment")
         sys.exit(1)
 
-    # Profile is optional on the command line. If present, overrides config. Required overall.
-    if args.profile:
-        global_config['profile'] = args.profile
     if 'profile' not in global_config or not global_config['profile']:
         logger.error("Must provide profile in the config file or on the command line via --profile")
         sys.exit(1)
@@ -338,10 +329,10 @@ def run(base_dir, args):
         global_config['release'] = args.release
 
     # Helm registry is optional on the command line. If present, overrides config. Required overall.
-    if args.helm_registry:
-        global_config['helm_registry'] = args.helm_registry
-    if 'helm_registry' not in global_config or not global_config['helm_registry']:
-        logger.error("Must provide helm_registry in the config file or on the command line via --helm-registry")
+    if args.helm_registry_url:
+        global_config['helm_registry_url'] = args.helm_registry_url
+    if 'helm_registry_url' not in global_config or not global_config['helm_registry_url']:
+        logger.error("Must provide helm_registry_url in the config file or on the command line via --helm-registry")
         sys.exit(1)
 
     if args.kubeconfig:
@@ -350,17 +341,13 @@ def run(base_dir, args):
     # Possibly run some hacky substitutions on each ingress host
     template_ingress_hosts(global_config)
 
-    # Chart can be a singleton on the command line
-    if args.chart and 'deploy' not in global_config:
-        global_config['deploy'] = { 'charts': [ { 'chartref': args.chart } ] }
-
     if args.verbose:
         logger.setLevel(logging.DEBUG)
         logger.info('Using configuration ' + str(global_config))
 
     try:
         command = args.command[0]
-        if command == 'apply' or command == 'deploy':
+        if command == 'apply':
             return apply_command(global_config, args)
         if command == 'template':
             return template_command(global_config, args)

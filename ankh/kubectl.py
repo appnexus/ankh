@@ -65,21 +65,17 @@ def kubectl_chart_action_commands(action, chart, args, extra_args, global_config
     return chart['chartref'], helm, kubectl
 
 # args = cli args
-def kubectl_action(action, config, args, extra_args, global_config):
+def kubectl_action(action, charts, args, extra_args, global_config):
     targets = []
     if args.chart and ((args.chart.endswith('.tgz') and os.path.isfile(args.chart)) or os.path.isdir(args.chart)):
         # args.chart, if provided, is the chartref
         chart = { 'chartref': args.chart }
         # we need to inspect the chartref to get name and version. this is a haphazard design.
         inspect_chart(chart, args)
-        return kubectl_action_targets(action, config, [ chart ], args, extra_args, global_config)
-
-    if 'charts' not in config or len(config['charts']) == 0:
-        logger.warning("No charts defined under `deploy` section. Nothing to do.")
-        return 0
+        return kubectl_action_targets(action, [ chart ], args, extra_args, global_config)
 
     logger.info("Fetching charts...")
-    for chart in config['charts']:
+    for chart in charts:
         name = chart.get('name', None)
         if name is None:
             logger.error("Invalid chart: missing name")
@@ -105,12 +101,12 @@ def kubectl_action(action, config, args, extra_args, global_config):
         logger.error("could not find any target for chart arg " + args.chart)
         return -1
 
-    return kubectl_action_targets(action, config, targets, args, extra_args, global_config)
+    return kubectl_action_targets(action, targets, args, extra_args, global_config)
 
 
 # args = cli args
 # Here we assume that targets is a list of charts, each with a chartref propery.
-def kubectl_action_targets(action, config, targets, args, extra_args, global_config):
+def kubectl_action_targets(action, targets, args, extra_args, global_config):
     logger.info("Executing action '%s' on targets: %s" % (action, " ".join(map(lambda x: x['name'], targets))))
 
     # no need to prompt y/n for the template command

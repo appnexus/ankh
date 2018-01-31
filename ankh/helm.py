@@ -48,7 +48,7 @@ def fetch_chart(global_config, name, version, args):
         os.mkdir('charts', 0755)
 
     # Eventually, 'helm fetch' instead of curling the registry.
-    cmd = 'curl --max-time 1 --retry 5 --retry-delay 1 -s -k https://%s/helm-repo/charts/%s > %s' % (global_config['helm_registry'], path, fullpath)
+    cmd = 'curl --max-time 1 --retry 5 --retry-delay 1 -s -k %s/%s > %s' % (global_config['helm_registry_url'], path, fullpath)
     proc = subprocess.Popen([cmd], shell=True)
 
     proc.wait()
