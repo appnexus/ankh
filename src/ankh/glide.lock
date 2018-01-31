@@ -1,8 +1,10 @@
-hash: 3b2f8b75216d262bec1ef5d2b24312c7a046cce0e76f412ae66f814d52f96e8e
-updated: 2018-01-30T20:34:04.515234197Z
+hash: f095a52dc9e133047683fc6ad6521c3dca74d6ef31c18fe99304567cf471baa6
+updated: 2018-01-31T21:04:18.491878565Z
 imports:
 - name: github.com/jawher/mow.cli
   version: 0e80ee9f63156ea1954dc2375c33a1c7e752c25c
+- name: github.com/mattn/go-isatty
+  version: 6ca4dbf54d38eea1a992b3c722a76a5d1c4cb25c
 - name: github.com/sirupsen/logrus
   version: d682213848ed68c0a260ca37d6dd5ace8423f5ba
 - name: golang.org/x/crypto

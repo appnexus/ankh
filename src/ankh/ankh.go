@@ -13,6 +13,11 @@ import (
 
 // Captures all of the context required to execute a single iteration of Ankh
 type ExecutionContext struct {
+	AnkhConfig   AnkhConfig
+	AnkhFilePath string
+
+	Verbose, DryRun, Apply bool
+
 	ConfigPath string
 	DataDir    string
 	KubeConfig string
@@ -97,12 +102,12 @@ type AnkhFile struct {
 
 func ParseAnkhFile(filename string) (AnkhFile, error) {
 	config := AnkhFile{}
-	deployFile, err := ioutil.ReadFile(fmt.Sprintf("%s", filename))
+	ankhYaml, err := ioutil.ReadFile(fmt.Sprintf("%s", filename))
 	if err != nil {
 		return config, err
 	}
 
-	err = yaml.Unmarshal(deployFile, &config)
+	err = yaml.Unmarshal(ankhYaml, &config)
 	if err != nil {
 		return config, fmt.Errorf("unable to process %s file: %v", filename, err)
 	}

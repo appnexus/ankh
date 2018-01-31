@@ -15,10 +15,10 @@ const (
 	Delete action = "delete"
 )
 
-func Execute(ctx *ankh.ExecutionContext, act action, dryRun bool, input string, ankhFile ankh.AnkhFile, ankhConfig ankh.AnkhConfig) (string, error) {
+func Execute(ctx *ankh.ExecutionContext, act action, input string, ankhFile ankh.AnkhFile) (string, error) {
 	kubectlArgs := []string{
 		"kubectl", string(act),
-		"--context", ankhConfig.CurrentContext.KubeContext,
+		"--context", ctx.AnkhConfig.CurrentContext.KubeContext,
 		"--namespace", ankhFile.Namespace,
 	}
 
@@ -26,7 +26,7 @@ func Execute(ctx *ankh.ExecutionContext, act action, dryRun bool, input string, 
 		kubectlArgs = append(kubectlArgs, []string{"--kubeconfig", ctx.KubeConfig}...)
 	}
 
-	if dryRun {
+	if ctx.DryRun {
 		kubectlArgs = append(kubectlArgs, "--dry-run")
 	}
 
