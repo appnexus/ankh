@@ -149,9 +149,12 @@ def helm_append_secrets(helm, chart, global_config, args):
     if len(secrets.items()) > 0:
         if global_config['environment'] in secrets:
             explain_something(args, "Appending secrets found in top-level chart config for env %s under 'secrets:'" % global_config['environment'])
-            helm_append_kv(helm, secrets[global_config['environment']], "")
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                yaml.dump(secrets[global_config['environment']], tmp, default_flow_style=False)
+                explain_something(args, "Appending temp secrets file %s for env %s" % (tmp.name, global_config['environment']))
+                helm += [ '-f', tmp.name ]
     else:
-        explain_something(args, "No secrets found in top-level chart config")
+        explain_something(args, "No secrets for chart %s found in top-level chart config" % chart['name'])
     return
 
 def helm_append_profile(helm, chart, global_config, args):
