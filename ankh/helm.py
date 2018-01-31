@@ -18,6 +18,8 @@ import os
 import logging
 import subprocess
 import sys
+import tarfile
+import tempfile
 import yaml
 
 from ankh.utils import explain_something, collapse
@@ -25,14 +27,14 @@ from ankh.utils import explain_something, collapse
 logger = logging.getLogger('ankh')
 
 def get_ingress_host_from_config(global_config, name):
-    o = global_config['context']['ingress'].get(name, None)
+    o = global_config['global']['ingress'].get(name, None)
     if o is not None:
         return o['host']
     return None
 
 def get_ingress_host_by_chart_name(global_config, name):
-    if 'context' in global_config and 'ingress' in global_config['context']:
-        ingresses = global_config['context']['ingress']
+    if 'global' in global_config and 'ingress' in global_config['global']:
+        ingresses = global_config['global']['ingress']
         if name in ingresses:
             o = ingresses[name]
             if type(o) is str:
@@ -84,12 +86,8 @@ def inspect_chart(chart, args):
     return
 
 def helm_append_kv(helm, kv, prefix):
-    for key, value in kv.items():
-        fullkey = prefix + key
-        if type(value) is not dict:
-            helm += [ '--set', str(fullkey) + '=' + str(value) ]
-        else:
-            helm_append_kv(helm, value, fullkey + ".")
+    for item in collapse(kv):
+        helm += ['--set', item]
     return
 
 def helm_append_ingress(helm, chart, global_config, args):
@@ -100,34 +98,6 @@ def helm_append_ingress(helm, chart, global_config, args):
         helm += [ '--set', '{}={}'.format(ingress_variable, ingress_host) ]
     return
 
-def get_ref_path(args, directory, sub_directory, chart, ref_var):
-    # ref override
-    ref = chart.get(ref_var)
-    if ref is not None:
-        explain_something(args, "Searching for file using override ref in %s/%s for chart %s with ref_var %s" % (directory, sub_directory, chart['name'], ref_var))
-        return '{}/{}/{}'.format(directory, sub_directory, ref)
-
-    # sub_directory/chart-name
-    ref = '{}/{}/{}.yaml'.format(directory, sub_directory, chart['name'])
-    if os.path.exists(ref):
-        explain_something(args, "Searching for file under %s/%s for chart %s" % (directory, sub_directory, chart['name']))
-        return ref
-    else:
-        explain_something(args, "No file under %s/%s for chart %s, defaulting to base case" % (directory, sub_directory, chart['name']))
-
-    # chart-name base case
-    explain_something(args, "Searching for file using base case path %s/%s.yaml" % (directory, chart['name']))
-    return '{}/{}.yaml'.format(directory, chart['name'])
-
-def get_config_file_path(args, env, chart):
-    return get_ref_path(args, 'values', env, chart, 'config_ref')
-
-def get_secret_file_path(args, env, chart):
-    return get_ref_path(args, 'secrets', env, chart, 'secret_ref')
-
-def get_profile_file_path(args, profile, chart):
-    return get_ref_path(args, 'profiles', profile, chart, 'profile_ref')
-
 def helm_append_base(helm, global_config):
     helm += [ '--kube-context', global_config['kube_context'] ]
     if 'namespace' in global_config:
@@ -135,60 +105,89 @@ def helm_append_base(helm, global_config):
     return
 
 def helm_append_values(helm, chart, global_config, args):
-    # Inject chart default values file
-    path = 'values.yaml'
-    if os.path.exists(path):
-        helm += [ '-f', path ]
-        explain_something(args, "Selected top-level values file %s" % path)
-
-    # Inject chart-specific values file
-    config_file_path = get_config_file_path(args, global_config["environment"], chart)
-    if os.path.exists(config_file_path):
-        helm += [ '-f', config_file_path ]
-        explain_something(args, "Selected values for chart %s from path %s" % (chart['name'], config_file_path))
+    default_values = chart.get('default_values', {})
+    if len(default_values.items()) > 0:
+        helm_append_kv(helm, default_values, "")
+        explain_something(args, "Appending default_values for chart %s found in top-level chart config under 'values:'" % chart['name'])
     else:
-        explain_something(args, "No values file for chart %s at path %s" % (chart['name'], config_file_path))
+        explain_something(args, "No default_values for chart %s found in top-level chart config" % chart['name'])
 
     values = chart.get('values', {})
     if len(values.items()) > 0:
-        helm_append_kv(helm, values, "")
-        explain_something(args, "Appending values for chart %s found in top-level chart config under 'values:'" % chart['name'])
+        if global_config['environment'] in values:
+            explain_something(args, "Appending values found in top-level chart config for env %s under 'values:'" % global_config['environment'])
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                yaml.dump(values[global_config['environment']], tmp, default_flow_style=False)
+                explain_something(args, "Appending temp values file %s for env %s" % (tmp.name, global_config['environment']))
+                helm += [ '-f', tmp.name ]
     else:
         explain_something(args, "No values for chart %s found in top-level chart config" % chart['name'])
+
+    chartref = chart['chartref']
+    if not chartref.endswith('.tgz'):
+        return
+    with tarfile.open(chartref) as tar:
+        tmp_dir = tempfile.mkdtemp()
+        tar.extractall(tmp_dir)
+        path = '%s/%s/ankh-values.yaml' % (tmp_dir, chart['name'])
+        print "checking for path ", path
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                values = yaml.safe_load(f.read())
+            if global_config['environment'] in values:
+                with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                    yaml.dump(values[global_config['environment']], tmp, default_flow_style=False)
+                helm += [ '-f', tmp.name ]
+                explain_something(args, "Appending values file %s from extracted chartref %s for env %s" % (tmp.name, chartref, global_config['environment']))
+            else:
+                logger.warning("environment %s not found in ankh-values.yaml for chartref %s" % (global_config['environment'], chartref))
+        else:
+            explain_something(args, "No ankh-values.yaml present in chartref %s" % chartref)
     return
 
 def helm_append_secrets(helm, chart, global_config, args):
-    # Inject chart default values file
-    path = 'secrets.yaml'
-    if os.path.exists(path):
-        helm += [ '-f', path ]
-        explain_something(args, "Selected top-level secrets file %" % path)
-
-    # Inject chart-specific secrets file
-    secret_file_path = get_secret_file_path(args, global_config["environment"], chart)
-    if os.path.exists(secret_file_path):
-        helm += [ '-f', secret_file_path ]
-        explain_something(args, "Selected secrets for chart %s from path %s" % (chart['name'], secret_file_path))
-    else:
-        explain_something(args, "No secrets file for chart %s at path %s" % (chart['name'], secret_file_path))
-
     secrets = chart.get('secrets', {})
     if len(secrets.items()) > 0:
-        helm_append_kv(helm, secrets, "")
-        explain_something(args, "Appending secrets found in top-level chart config under 'secrets:'")
+        if global_config['environment'] in secrets:
+            explain_something(args, "Appending secrets found in top-level chart config for env %s under 'secrets:'" % global_config['environment'])
+            helm_append_kv(helm, secrets[global_config['environment']], "")
     else:
         explain_something(args, "No secrets found in top-level chart config")
     return
 
 def helm_append_profile(helm, chart, global_config, args):
-    profile_file_path = get_profile_file_path(args, global_config['profile'], chart)
-    if os.path.exists(profile_file_path):
-        helm += [ '-f', profile_file_path ]
-        explain_something(args, "Selected profile for chart %s from path %s" % (chart['name'], profile_file_path))
+    resource_profiles = chart.get('resource_profiles', {})
+    if len(resource_profiles.items()) > 0:
+        if global_config['profile'] in resource_profiles:
+            explain_something(args, "Appending resource_profiles found in top-level chart config for env %s under 'resource_profiles:'" % global_config['profile'])
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                yaml.dump(resource_profiles[global_config['profile']], tmp, default_flow_style=False)
+                explain_something(args, "Appending temp resource_profiles file %s for env %s" % (tmp.name, global_config['profile']))
+                helm += [ '-f', tmp.name ]
     else:
-        explain_something(args, "No profile file for chart %s at path %s" % (chart['name'], profile_file_path))
-    return
+        explain_something(args, "No resource_profiles for chart %s found in top-level chart config" % chart['name'])
 
+    chartref = chart['chartref']
+    if not chartref.endswith('.tgz'):
+        return
+    with tarfile.open(chartref) as tar:
+        tmp_dir = tempfile.mkdtemp()
+        tar.extractall(tmp_dir)
+        path = '%s/%s/ankh-resource-profiles.yaml' % (tmp_dir, chart['name'])
+        print "checking for path ", path
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                resource_profiles = yaml.safe_load(f.read())
+            if global_config['profile'] in resource_profiles:
+                with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                    yaml.dump(resource_profiles[global_config['profile']], tmp, default_flow_style=False)
+                helm += [ '-f', tmp.name ]
+                explain_something(args, "Appending resource_profiles file %s from extracted chartref %s for env %s" % (tmp.name, chartref, global_config['profile']))
+            else:
+                logger.warning("environment %s not found in ankh-resource-profiles.yaml for chartref %s" % (global_config['profile'], chartref))
+        else:
+            explain_something(args, "No ankh-resource-profiles.yaml present in chartref %s" % chartref)
+    return
 
 # Append certain keys that may be used by charts globally. This pattern should
 # be avoided unless necessary for many apps globally
@@ -196,8 +195,8 @@ def helm_append_profile(helm, chart, global_config, args):
 # The magic `context` top level property that is made available to all charts
 # here.
 def helm_append_context(helm, chart, global_config, args):
-    if 'context' in global_config:
-        for item in collapse({'context': global_config['context']}):
+    if 'global' in global_config:
+        for item in collapse({'global': global_config['global']}):
             helm += ['--set', item]
             explain_something(args, "Appending %s since it is specified on the global config context property" % item)
 

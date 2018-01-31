@@ -127,8 +127,8 @@ def run_scripts(log_prefix, scripts, global_config, dry_run=False, verbose=False
         # Pass two things to each script: the kube context (so they may run kubectl) and
         # the "context" subsection of the global config, which has shared configuration.
         os.environ['ANKH_KUBE_CONTEXT'] = global_config['kube_context']
-        if 'context' in global_config:
-            os.environ['ANKH_CONFIG_CONTEXT'] = yaml.dump(global_config['context'])
+        if 'global' in global_config:
+            os.environ['ANKH_CONFIG_CONTEXT'] = yaml.dump(global_config['global'])
 
         path = script['path']
         script_command = [
@@ -170,11 +170,11 @@ def template_ingress_hosts(global_config):
     macro = '${HOSTNAME}'
     hostname = socket.gethostname()
 
-    for app, host in global_config['context']['ingress'].items():
+    for app, host in global_config['global']['ingress'].items():
         if type(host) is not str:
             continue
         if host.find(macro) != -1:
-            global_config['context']['ingress'][app] = host.replace(macro, hostname)
+            global_config['global']['ingress'][app] = host.replace(macro, hostname)
     return
 
 def gather_config(args, log=False):
