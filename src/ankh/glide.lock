@@ -1,0 +1,19 @@
+hash: 3b2f8b75216d262bec1ef5d2b24312c7a046cce0e76f412ae66f814d52f96e8e
+updated: 2018-01-30T20:34:04.515234197Z
+imports:
+- name: github.com/jawher/mow.cli
+  version: 0e80ee9f63156ea1954dc2375c33a1c7e752c25c
+- name: github.com/sirupsen/logrus
+  version: d682213848ed68c0a260ca37d6dd5ace8423f5ba
+- name: golang.org/x/crypto
+  version: 1875d0a70c90e57f11972aefd42276df65e895b9
+  subpackages:
+  - ssh/terminal
+- name: golang.org/x/sys
+  version: 3dbebcf8efb6a5011a60c2b4591c1022a759af8a
+  subpackages:
+  - unix
+  - windows
+- name: gopkg.in/yaml.v2
+  version: eb3733d160e74a9c7e442f435eb3bea458e1d19f
+testImports: []
