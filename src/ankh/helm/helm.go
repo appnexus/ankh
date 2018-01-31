@@ -16,8 +16,8 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.AnkhFile, ankhConfig ankh.AnkhConfig) (string, error) {
-	currentContext := ankhConfig.CurrentContext
+func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.AnkhFile) (string, error) {
+	currentContext := ctx.AnkhConfig.CurrentContext
 	helmArgs := []string{"helm", "template", "--kube-context", currentContext.KubeContext, "--namespace", ankhFile.Namespace}
 
 	if currentContext.Release != "" {
@@ -229,17 +229,15 @@ func createReducedYAMLFile(filename, key string) error {
 	return nil
 }
 
-func Template(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, ankhConfig ankh.AnkhConfig) (string, error) {
+func Template(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) (string, error) {
 	finalOutput := ""
-
-	ctx.Logger.Infof("beginning templating of %s", ankhFile.Path)
 
 	if len(ankhFile.Charts) > 0 {
 		ctx.Logger.Debugf("templating charts")
 		for _, chart := range ankhFile.Charts {
 			ctx.Logger.Debugf("templating chart '%s'", chart.Name)
 
-			chartOutput, err := templateChart(ctx, chart, ankhFile, ankhConfig)
+			chartOutput, err := templateChart(ctx, chart, ankhFile)
 			if err != nil {
 				return finalOutput, err
 			}
