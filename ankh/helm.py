@@ -130,7 +130,6 @@ def helm_append_values(helm, chart, global_config, args):
         tmp_dir = tempfile.mkdtemp()
         tar.extractall(tmp_dir)
         path = '%s/%s/ankh-values.yaml' % (tmp_dir, chart['name'])
-        print "checking for path ", path
         if os.path.exists(path):
             with open(path, 'r') as f:
                 values = yaml.safe_load(f.read())
@@ -174,7 +173,6 @@ def helm_append_profile(helm, chart, global_config, args):
         tmp_dir = tempfile.mkdtemp()
         tar.extractall(tmp_dir)
         path = '%s/%s/ankh-resource-profiles.yaml' % (tmp_dir, chart['name'])
-        print "checking for path ", path
         if os.path.exists(path):
             with open(path, 'r') as f:
                 resource_profiles = yaml.safe_load(f.read())
