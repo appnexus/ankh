@@ -20,7 +20,7 @@ type ExecutionContext struct {
 
 	AnkhConfigPath string
 	KubeConfigPath string
-	DataDir    string
+	DataDir        string
 
 	Logger *logrus.Logger
 }
