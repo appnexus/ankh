@@ -1,0 +1,9 @@
+current-context: minikube
+contexts:
+  minikube-local:
+    kube_context: minikube
+    environment: dev
+    profile: natural
+    release: beta
+    helm_registry_url: https://kubernetes-charts.storage.googleapis.com/
+    cluster_admin: true
