@@ -30,7 +30,7 @@ func execute(ctx *ankh.ExecutionContext) {
 	check(err)
 
 	dependencies := rootAnkhFile.Dependencies
-	if len(rootAnkhFile.AdminDependencies) > 0 {
+	if ctx.AnkhConfig.CurrentContext.ClusterAdmin && len(rootAnkhFile.AdminDependencies) > 0 {
 		log.Infof("Found admin dependencies, processing those first...")
 		dependencies = append(rootAnkhFile.AdminDependencies, dependencies...)
 	}
