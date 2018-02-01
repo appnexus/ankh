@@ -18,9 +18,9 @@ type ExecutionContext struct {
 
 	Verbose, DryRun, Apply bool
 
-	ConfigPath string
+	AnkhConfigPath string
+	KubeConfigPath string
 	DataDir    string
-	KubeConfig string
 
 	Logger *logrus.Logger
 }
@@ -124,9 +124,9 @@ func ParseAnkhFile(filename string) (AnkhFile, error) {
 func GetAnkhConfig(ctx *ExecutionContext) (AnkhConfig, error) {
 	ankhConfig := AnkhConfig{}
 
-	ankhRcFile, err := ioutil.ReadFile(ctx.ConfigPath)
+	ankhRcFile, err := ioutil.ReadFile(ctx.AnkhConfigPath)
 	if err != nil {
-		return ankhConfig, fmt.Errorf("unable to read ankh config '%s': %v", ctx.ConfigPath, err)
+		return ankhConfig, fmt.Errorf("unable to read ankh config '%s': %v", ctx.AnkhConfigPath, err)
 	}
 
 	if err := os.MkdirAll(ctx.DataDir, 0755); err != nil {
@@ -135,7 +135,7 @@ func GetAnkhConfig(ctx *ExecutionContext) (AnkhConfig, error) {
 
 	err = yaml.Unmarshal(ankhRcFile, &ankhConfig)
 	if err != nil {
-		return ankhConfig, fmt.Errorf("unable to process ankh config '%s': %v", ctx.ConfigPath, err)
+		return ankhConfig, fmt.Errorf("unable to process ankh config '%s': %v", ctx.AnkhConfigPath, err)
 	}
 
 	errs := ankhConfig.ValidateAndInit()

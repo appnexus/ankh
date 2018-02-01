@@ -17,4 +17,4 @@ ankh:
 
 .PHONY: install
 install: ankh
-	sudo cp -f $(REPOROOT)/bin/ankh /usr/local/bin/ankh-go
+	sudo cp -f $(REPOROOT)/bin/ankh /usr/local/bin/ankh
