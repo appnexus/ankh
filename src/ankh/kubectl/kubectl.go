@@ -22,8 +22,8 @@ func Execute(ctx *ankh.ExecutionContext, act action, input string, ankhFile ankh
 		"--namespace", ankhFile.Namespace,
 	}
 
-	if ctx.KubeConfig != "" {
-		kubectlArgs = append(kubectlArgs, []string{"--kubeconfig", ctx.KubeConfig}...)
+	if ctx.KubeConfigPath != "" {
+		kubectlArgs = append(kubectlArgs, []string{"--kubeconfig", ctx.KubeConfigPath}...)
 	}
 
 	if ctx.DryRun {

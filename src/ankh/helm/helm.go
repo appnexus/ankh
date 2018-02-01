@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"ankh"
 	"ankh/util"
@@ -70,23 +71,36 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		defer f.Close()
 
 		// TODO: this code should be modified to properly fetch charts
-		ctx.Logger.Debugf("downloading chart from %s", tarballURL)
-		tr := &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-		client := &http.Client{Transport: tr}
-		resp, err := client.Get(tarballURL)
-		if err != nil {
-			return "", err
-		}
-		if resp.StatusCode != 200 {
-			return "", fmt.Errorf("got a status code %v when trying to call %s", resp.StatusCode, tarballURL)
-		}
-		// defer resp.Body.Close()
+		ok := false
+		for attempt := 1; attempt <= 5; attempt++ {
+			ctx.Logger.Debugf("downloading chart from %s (attempt %v)", tarballURL, attempt)
+			tr := &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			}
+			client := &http.Client{
+				Transport: tr,
+				Timeout:   time.Duration(5 * time.Second),
+			}
+			resp, err := client.Get(tarballURL)
+			if err != nil {
+				return "", err
+			}
+			defer resp.Body.Close()
 
-		ctx.Logger.Debugf("untarring chart to %s", tmpDir)
-		if err = util.Untar(tmpDir, resp.Body); err != nil {
-			return "", err
+			if resp.StatusCode == 200 {
+				ctx.Logger.Debugf("untarring chart to %s", tmpDir)
+				if err = util.Untar(tmpDir, resp.Body); err != nil {
+					return "", err
+				}
+
+				ok = true
+				break
+			} else {
+				ctx.Logger.Warningf("got a status code %v when trying to call %s (attempt %v)", resp.StatusCode, tarballURL, attempt)
+			}
+		}
+		if !ok {
+			return "", fmt.Errorf("failed to fetch helm chart from URL: %v", tarballURL)
 		}
 	}
 

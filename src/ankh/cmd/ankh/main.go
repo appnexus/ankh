@@ -7,8 +7,8 @@ import (
 	"path"
 
 	"github.com/jawher/mow.cli"
-	"github.com/sirupsen/logrus"
 	"github.com/mattn/go-isatty"
+	"github.com/sirupsen/logrus"
 
 	"gopkg.in/yaml.v2"
 
@@ -101,9 +101,24 @@ func main() {
 
 	var (
 		verbose    = app.BoolOpt("v verbose", false, "Verbose debug mode")
-		ankhconfig = app.StringOpt("ankhconfig", path.Join(os.Getenv("HOME"), ".ankh/config"), "The ankhconfig to use.")
-		kubeconfig = app.StringOpt("kubeconfig", "", "The kubeconfig to use when invoking kubectl.")
-		datadir    = app.StringOpt("datadir", path.Join(os.Getenv("HOME"), ".ankh"), "The data directory for ankh template history.")
+		ankhconfig = app.String(cli.StringOpt{
+			Name:   "ankhconfig",
+			Value:  path.Join(os.Getenv("HOME"), ".ankh/config"),
+			Desc:   "The ankh config to use",
+			EnvVar: "ANKHCONFIG",
+		})
+		kubeconfig = app.String(cli.StringOpt{
+			Name:   "kubeconfig",
+			Value:  path.Join(os.Getenv("HOME"), ".kube/config"),
+			Desc:   "The kube config to use when invoking kubectl",
+			EnvVar: "KUBECONFIG",
+		})
+		datadir = app.String(cli.StringOpt{
+			Name:   "datadir",
+			Value:  path.Join(os.Getenv("HOME"), ".ankh"),
+			Desc:   "The data directory for ankh template history",
+			EnvVar: "ANKHDATADIR",
+		})
 	)
 
 	log.Out = os.Stdout
@@ -121,11 +136,11 @@ func main() {
 		}
 
 		ctx = &ankh.ExecutionContext{
-			Verbose:    *verbose,
-			ConfigPath: *ankhconfig,
-			DataDir:    *datadir,
-			KubeConfig: *kubeconfig,
-			Logger:     log,
+			Verbose:        *verbose,
+			AnkhConfigPath: *ankhconfig,
+			KubeConfigPath: *kubeconfig,
+			DataDir:        *datadir,
+			Logger:         log,
 		}
 
 		ankhConfig, err := ankh.GetAnkhConfig(ctx)
@@ -133,6 +148,8 @@ func main() {
 
 		ctx.AnkhConfig = ankhConfig
 
+		log.Debugf("Using KubeConfigPath %v (KUBECONFIG = '%v')", ctx.KubeConfigPath, os.Getenv("KUBECONFIG"))
+		log.Debugf("Using AnkhConfigPath %v (ANKHCONFIG = '%v')", ctx.AnkhConfigPath, os.Getenv("ANKHCONFIG"))
 	}
 
 	app.Command("apply", "Deploy an ankh file to a kubernetes cluster", func(cmd *cli.Cmd) {
@@ -210,7 +227,7 @@ func main() {
 				out, err := yaml.Marshal(ctx.AnkhConfig)
 				check(err)
 
-				err = ioutil.WriteFile(ctx.ConfigPath, out, 0644)
+				err = ioutil.WriteFile(ctx.AnkhConfigPath, out, 0644)
 				check(err)
 
 				fmt.Printf("Switched to context \"%v\".\n", context)
