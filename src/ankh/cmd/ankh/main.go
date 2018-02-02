@@ -280,6 +280,17 @@ func runScripts(ctx *ankh.ExecutionContext, scripts []struct { Path string }) {
 			log.Warnf("Missing path in script %s", script)
 			break
 		}
+		info, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			log.Fatalf("Script not found: %s", path)
+			os.Exit(1)
+		}
+		// get the mode bits and check that the script is executable by someone
+		mode := info.Mode()
+		if mode & 0111 == 0 {
+			log.Fatalf("Script not executable: %s", path)
+			os.Exit(1)
+		}
 		log.Infof("Running script: %s", path)
 		if ctx.DryRun == true {
 			log.Infof("- OK (dry) %s", path)
@@ -299,7 +310,7 @@ func runScripts(ctx *ankh.ExecutionContext, scripts []struct { Path string }) {
 		var stdOut, stdErr bytes.Buffer
 		cmd.Stdout = &stdOut
 		cmd.Stderr = &stdErr
-		err := cmd.Run()
+		err = cmd.Run()
 		if err != nil {
 			log.Fatalf("- FAILED %s:\nstdout: %s\nstderr: %s", path, stdOut.String(), stdErr.String())
 			os.Exit(1)
