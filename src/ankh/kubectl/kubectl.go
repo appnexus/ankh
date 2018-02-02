@@ -19,7 +19,10 @@ func Execute(ctx *ankh.ExecutionContext, act action, input string, ankhFile ankh
 	kubectlArgs := []string{
 		"kubectl", string(act),
 		"--context", ctx.AnkhConfig.CurrentContext.KubeContext,
-		"--namespace", ankhFile.Namespace,
+	}
+
+	if ankhFile.Namespace != "" {
+		kubectlArgs = append(kubectlArgs, []string{"--namespace", ankhFile.Namespace}...)
 	}
 
 	if ctx.KubeConfigPath != "" {
@@ -32,6 +35,10 @@ func Execute(ctx *ankh.ExecutionContext, act action, input string, ankhFile ankh
 
 	kubectlArgs = append(kubectlArgs, "-f", "-")
 	kubectlCmd := exec.Command(kubectlArgs[0], kubectlArgs[1:]...)
+
+	if ctx.Verbose {
+		ctx.Logger.Infof("running kubectl command: %v", kubectlArgs)
+	}
 
 	kubectlStdoutPipe, _ := kubectlCmd.StdoutPipe()
 	kubectlStderrPipe, _ := kubectlCmd.StderrPipe()

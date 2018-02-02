@@ -222,8 +222,7 @@ func main() {
 					os.Exit(1)
 				}
 
-				config := ctx.AnkhConfig
-				config.CurrentContextName = context
+				ctx.AnkhConfig.CurrentContextName = context
 
 				out, err := yaml.Marshal(ctx.AnkhConfig)
 				check(err)
