@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"time"
 
 	"github.com/jawher/mow.cli"
 	"github.com/mattn/go-isatty"
@@ -114,7 +115,7 @@ func main() {
 		verbose    = app.BoolOpt("v verbose", false, "Verbose debug mode")
 		ankhconfig = app.String(cli.StringOpt{
 			Name:   "ankhconfig",
-			Value:  path.Join(os.Getenv("HOME"), ".ankh/config"),
+			Value:  path.Join(os.Getenv("HOME"), ".ankh", "config"),
 			Desc:   "The ankh config to use",
 			EnvVar: "ANKHCONFIG",
 		})
@@ -126,7 +127,7 @@ func main() {
 		})
 		datadir = app.String(cli.StringOpt{
 			Name:   "datadir",
-			Value:  path.Join(os.Getenv("HOME"), ".ankh"),
+			Value:  path.Join(os.Getenv("HOME"), ".ankh", "data"),
 			Desc:   "The data directory for ankh template history",
 			EnvVar: "ANKHDATADIR",
 		})
@@ -150,7 +151,7 @@ func main() {
 			Verbose:        *verbose,
 			AnkhConfigPath: *ankhconfig,
 			KubeConfigPath: *kubeconfig,
-			DataDir:        *datadir,
+			DataDir:        path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
 			Logger:         log,
 		}
 
