@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path"
 
 	"github.com/jawher/mow.cli"
@@ -28,6 +30,51 @@ func execute(ctx *ankh.ExecutionContext) {
 		log.Infof("- OK: %v", ctx.AnkhFilePath)
 	}
 	check(err)
+
+	// run the bootstrap scripts, if they exist
+	bootstrapScripts := rootAnkhFile.Bootstrap.Scripts
+	if len(bootstrapScripts) > 0 {
+		log.Infof("Found bootstrap scripts, executing those now...")
+		for _, script := range bootstrapScripts {
+			path := script.Path
+			if path == "" {
+				log.Infof("Bootstrap: missing path in script %s", script)
+				break
+			}
+			log.Infof("Running script: %s", path)
+			if ctx.DryRun == true {
+				log.Infof("- OK (dry) %s", path)
+				break
+			}
+			// pass kube context and the "global" config as a yaml environment variable
+			// also send the kube context as the first argument to the script
+			cmd := exec.Command(path, ctx.AnkhConfig.CurrentContext.KubeContext)
+			if ctx.AnkhConfig.CurrentContext.Global != nil {
+				global, err := yaml.Marshal(ctx.AnkhConfig.CurrentContext.Global)
+				check(err)
+				cmd.Env = append(
+					os.Environ(),
+					"ANKH_CONFIG_CONTEXT=" + string(global),
+					"ANKH_KUBE_CONTEXT=" + string(ctx.AnkhConfig.CurrentContext.KubeContext))
+			}
+			var stdOut, stdErr bytes.Buffer
+			cmd.Stdout = &stdOut
+			cmd.Stderr = &stdErr
+			err := cmd.Run()
+			if err != nil {
+				log.Fatalf("- FAILED %s:\nstdout: %s\nstderr: %s", path, stdOut.String(), stdErr.String())
+				log.Fatalf("Cannot proceed: %v\n", err)
+				os.Exit(1)
+			}
+			if ctx.Verbose == true {
+				log.Infof("- OK %s:\n%s", path, stdOut.String())
+			} else {
+				log.Infof("- OK %s", path)
+			}
+		}
+	} else {
+		log.Infof("`bootstrap` section not found in config. Skipping.");
+	}
 
 	dependencies := rootAnkhFile.Dependencies
 	if len(rootAnkhFile.AdminDependencies) > 0 {

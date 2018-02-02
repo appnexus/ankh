@@ -5,7 +5,7 @@ Another Kubernetes Helper
 ## Installation
 
 ```sh
-pip install virtualenv
+pip install virtualenv pyyaml
 virtualenv venv
 ./setup.py install
 ```
