@@ -309,7 +309,7 @@ func runScripts(ctx *ankh.ExecutionContext, scripts []struct { Path string }) {
 		cmd.Stderr = &stdErr
 		err = cmd.Run()
 		if err != nil {
-			log.Fatalf("- FAILED %s:\nstdout: %s\nstderr: %s", path, stdOut.String(), stdErr.String())
+			log.Fatalf("- FAILED %s:\n%s\nstdout: %s\nstderr: %s", path, err, stdOut.String(), stdErr.String())
 		}
 		log.Infof("- OK %s", path)
 		log.Debugf("%s Stdout:\n%s", path, stdOut.String())
