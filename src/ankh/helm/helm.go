@@ -47,7 +47,6 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 	}
 
 	tarballFileName := fmt.Sprintf("%s-%s.tgz", chart.Name, chart.Version)
-	tarballPath := filepath.Join(filepath.Dir(ankhFile.Path), "charts", tarballFileName)
 	tarballURL := fmt.Sprintf("%s/%s", strings.TrimRight(currentContext.HelmRegistryURL, "/"), tarballFileName)
 
 	// If we already have a dir, let's just copy it to a temp directory so we can
@@ -58,17 +57,6 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 			return "", err
 		}
 	} else {
-		ctx.Logger.Debugf("ensuring chart directory is made at %s", filepath.Dir(tarballPath))
-		if err := os.MkdirAll(filepath.Dir(tarballPath), 0755); err != nil {
-			return "", err
-		}
-
-		ctx.Logger.Debugf("opening system file at %s", tarballPath)
-		f, err := os.Create(tarballPath)
-		if err != nil {
-			return "", err
-		}
-		defer f.Close()
 
 		// TODO: this code should be modified to properly fetch charts
 		ok := false
