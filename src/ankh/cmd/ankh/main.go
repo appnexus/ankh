@@ -297,7 +297,6 @@ func runScripts(ctx *ankh.ExecutionContext, scripts []struct { Path string }) {
 			break
 		}
 		// pass kube context and the "global" config as a yaml environment variable
-		// also send the kube context as the first argument to the script
 		cmd := exec.Command(path)
 		if ctx.AnkhConfig.CurrentContext.Global != nil {
 			global, err := yaml.Marshal(ctx.AnkhConfig.CurrentContext.Global)
