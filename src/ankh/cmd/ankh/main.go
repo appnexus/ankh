@@ -7,12 +7,14 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"syscall"
 	"time"
 
 	"github.com/jawher/mow.cli"
 	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
 
+	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v2"
 
 	"ankh"
@@ -281,14 +283,14 @@ func runScripts(ctx *ankh.ExecutionContext, scripts []struct { Path string }) {
 			log.Warnf("Missing path in script %s", script)
 			break
 		}
-		info, err := os.Stat(path)
+		_, err := os.Stat(path)
 		if os.IsNotExist(err) {
 			log.Fatalf("Script not found: %s", path)
 		}
-		// get the mode bits and check that the script is executable by someone
-		mode := info.Mode()
-		if mode & 0111 == 0 {
-			log.Fatalf("Script not executable: %s", path)
+		// check that the script is executable
+		err = syscall.Access(path, unix.X_OK)
+		if err != nil {
+			log.Fatalf("Permission denied: %s", path)
 		}
 		log.Infof("Running script: %s", path)
 		if ctx.DryRun {
