@@ -2,24 +2,24 @@
 
 Another Kubernetes Helper
 
+## Dependencies
+Some of the bootstrap scripts depend on Python 2 and pyyaml being installed
+```sh
+pip install pyyaml
+```
+
 ## Installation
 
 ```sh
-pip install virtualenv pyyaml
-virtualenv venv
-./setup.py install
-```
-
-## Setup
-
-```sh
-source activate # this will activate `venv` and also add $PWD/scripts to your PATH
+make # build to bin/
+make install # install to /usr/local/bin/
+mkdir -p ~/.ankh/config && cp config/ankhconfig.yaml ~/.ankh/config # to get a default config
 ```
 
 ## Usage
 
 ```sh
-ankh deploy -f $CONFIG
-
-config/minikube-production-local.yaml serves as a simple example config for deploying to "minikube"
+ankh -h
+ankh apply
+ankh template
 ```
