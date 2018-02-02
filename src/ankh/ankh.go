@@ -16,7 +16,7 @@ type ExecutionContext struct {
 	AnkhConfig   AnkhConfig
 	AnkhFilePath string
 
-	Verbose, DryRun, Apply bool
+	Verbose, DryRun, Apply, UseContext bool
 
 	AnkhConfigPath string
 	KubeConfigPath string

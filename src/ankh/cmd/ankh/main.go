@@ -182,6 +182,50 @@ func main() {
 		}
 	})
 
+	app.Command("inspect", "Inspect charts in ankh.yaml and display information.", func(cmd *cli.Cmd) {
+
+		cmd.Command("values", "For each chart, display contexts of values.yaml, "+
+			"ankh-values.yaml, and ankh-resource-profiles.yaml", func(cmd *cli.Cmd) {
+
+			cmd.Spec = "[-f] [--use-context]"
+			ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+			useContext := cmd.BoolOpt("use-context", false, "Filter values by current context")
+
+			cmd.Action = func() {
+				ctx.AnkhFilePath = *ankhFilePath
+				ctx.UseContext = *useContext
+				inspect(ctx, helm.InspectValues)
+				os.Exit(0)
+			}
+		})
+
+		cmd.Command("chart", "For each chart, display contents of the Charts.yaml file",
+			func(cmd *cli.Cmd) {
+
+				cmd.Spec = "[-f]"
+				ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+
+				cmd.Action = func() {
+					ctx.AnkhFilePath = *ankhFilePath
+					inspect(ctx, helm.InspectChart)
+					os.Exit(0)
+				}
+			})
+
+		cmd.Command("templates", "For each chart, display contents of each raw template file",
+			func(cmd *cli.Cmd) {
+
+				cmd.Spec = "[-f]"
+				ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+
+				cmd.Action = func() {
+					ctx.AnkhFilePath = *ankhFilePath
+					inspect(ctx, helm.InspectTemplates)
+					os.Exit(0)
+				}
+			})
+	})
+
 	app.Command("config", "Manage ankh configuration", func(cmd *cli.Cmd) {
 		cmd.Command("view", "Merge all available configs and show the result", func(cmd *cli.Cmd) {
 			cmd.Action = func() {
@@ -256,9 +300,30 @@ func main() {
 	app.Run(os.Args)
 }
 
+func inspect(ctx *ankh.ExecutionContext,
+	cb func(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.AnkhFile) (string, error)) {
+	var result string
+
+	ankhFile, err := ankh.ParseAnkhFile(ctx.AnkhFilePath)
+	if err == nil {
+		log.Infof("- OK: %v", ctx.AnkhFilePath)
+	}
+	check(err)
+
+	if len(ankhFile.Charts) > 0 {
+		ctx.Logger.Debug("Inspecting charts")
+		for _, chart := range ankhFile.Charts {
+			output, err := cb(ctx, chart, ankhFile)
+			check(err)
+			result += output
+		}
+	}
+
+	fmt.Println(result)
+}
+
 func check(err error) {
 	if err != nil {
 		log.Fatalf("Cannot proceed: %v\n", err)
-		os.Exit(1)
 	}
 }
