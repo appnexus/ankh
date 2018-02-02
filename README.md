@@ -2,12 +2,6 @@
 
 Another Kubernetes Helper
 
-## Dependencies
-Some of the bootstrap scripts depend on Python 2 and pyyaml being installed
-```sh
-pip install pyyaml
-```
-
 ## Installation
 
 ```sh
