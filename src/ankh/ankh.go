@@ -14,7 +14,7 @@ import (
 // Captures all of the context required to execute a single iteration of Ankh
 type ExecutionContext struct {
 	AnkhConfig   AnkhConfig
-	AnkhFilePath string
+	AnkhFilePath, Chart string
 
 	Verbose, DryRun, Apply bool
 

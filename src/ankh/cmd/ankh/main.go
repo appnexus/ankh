@@ -106,6 +106,8 @@ func execute(ctx *ankh.ExecutionContext) {
 
 	if len(rootAnkhFile.Charts) > 0 {
 		executeAnkhFile(rootAnkhFile)
+	} else {
+		ctx.Logger.Warningf("No charts specified inside %s, nothing to do", ctx.AnkhFilePath)
 	}
 }
 
@@ -167,14 +169,16 @@ func main() {
 	}
 
 	app.Command("apply", "Deploy an ankh file to a kubernetes cluster", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--dry-run]"
+		cmd.Spec = "[-f] [--dry-run] [--chart]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually apply anything to a cluster")
+		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
 
 		cmd.Action = func() {
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.DryRun = *dryRun
+			ctx.Chart = *chart
 			ctx.Apply = true
 
 			execute(ctx)
@@ -183,12 +187,14 @@ func main() {
 	})
 
 	app.Command("template", "Output the results of templating an ankh file", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f]"
+		cmd.Spec = "[-f] [--chart]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+		chart := cmd.StringOpt("chart", "", "Limits the template command to only the specified chart")
 
 		cmd.Action = func() {
 			ctx.AnkhFilePath = *ankhFilePath
+			ctx.Chart = *chart
 
 			execute(ctx)
 			os.Exit(0)

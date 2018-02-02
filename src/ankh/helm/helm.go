@@ -232,20 +232,39 @@ func createReducedYAMLFile(filename, key string) error {
 }
 
 func Template(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) (string, error) {
+	var err error
 	finalOutput := ""
+	isChartFlagged := ctx.Chart != ""
+
+	doTemplate := func(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.AnkhFile, output string) (string, error) {
+		ctx.Logger.Debugf("templating chart '%s'", chart.Name)
+		chartOutput, err := templateChart(ctx, chart, ankhFile)
+		if err != nil {
+			return output, err
+		}
+		output += chartOutput
+		return output, nil
+	}
 
 	if len(ankhFile.Charts) > 0 {
 		ctx.Logger.Debugf("templating charts")
+		m := make(map[string]ankh.Chart, len(ankhFile.Charts))
 		for _, chart := range ankhFile.Charts {
-			ctx.Logger.Debugf("templating chart '%s'", chart.Name)
-
-			chartOutput, err := templateChart(ctx, chart, ankhFile)
-			if err != nil {
-				return finalOutput, err
+			m[chart.Name] = chart
+		}
+		if _, exists := m[ctx.Chart]; isChartFlagged && !exists {
+			ctx.Logger.Fatalf("Chart %s was specified with `--chart` but does not exist in the charts array", ctx.Chart)
+		}
+		// if --chart is specified, just template that chart from the map
+		if isChartFlagged {
+			return doTemplate(ctx, m[ctx.Chart], ankhFile, finalOutput)
+		} else {
+			// otherwise template all the charts in the map
+			for _, chart := range m {
+				finalOutput, err = doTemplate(ctx, chart, ankhFile, finalOutput)
 			}
-			finalOutput += chartOutput
 		}
 	}
 
-	return finalOutput, nil
+	return finalOutput, err
 }
