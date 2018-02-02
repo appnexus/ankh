@@ -290,7 +290,7 @@ func runScripts(ctx *ankh.ExecutionContext, scripts []struct { Path string }) {
 		// check that the script is executable
 		err = syscall.Access(path, unix.X_OK)
 		if err != nil {
-			log.Fatalf("Permission denied: %s", path)
+			log.Fatalf("Permission denied, script is not executable: %s", path)
 		}
 		log.Infof("Running script: %s", path)
 		if ctx.DryRun {
