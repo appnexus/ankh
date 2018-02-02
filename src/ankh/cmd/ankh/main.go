@@ -287,13 +287,13 @@ func runScripts(ctx *ankh.ExecutionContext, scripts []struct { Path string }) {
 		}
 		// pass kube context and the "global" config as a yaml environment variable
 		// also send the kube context as the first argument to the script
-		cmd := exec.Command(path, ctx.AnkhConfig.CurrentContext.KubeContext)
+		cmd := exec.Command(path)
 		if ctx.AnkhConfig.CurrentContext.Global != nil {
 			global, err := yaml.Marshal(ctx.AnkhConfig.CurrentContext.Global)
 			check(err)
 			cmd.Env = append(
 				os.Environ(),
-				"ANKH_CONFIG_CONTEXT=" + string(global),
+				"ANKH_CONFIG_GLOBAL=" + string(global),
 				"ANKH_KUBE_CONTEXT=" + string(ctx.AnkhConfig.CurrentContext.KubeContext))
 		}
 		var stdOut, stdErr bytes.Buffer
@@ -302,7 +302,6 @@ func runScripts(ctx *ankh.ExecutionContext, scripts []struct { Path string }) {
 		err := cmd.Run()
 		if err != nil {
 			log.Fatalf("- FAILED %s:\nstdout: %s\nstderr: %s", path, stdOut.String(), stdErr.String())
-			log.Fatalf("Cannot proceed: %v\n", err)
 			os.Exit(1)
 		}
 		if ctx.Verbose == true {
