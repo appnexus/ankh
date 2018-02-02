@@ -1,9 +1,51 @@
-current-context: minikube
+# current_context defines which context you currently have "selected". It's
+# common for this value to change frequently as you move around to different
+# clusters.
+current_context: minikube_local
+
+# supported_environments define a list of your supported environments. Used for
+# validation of ankh files. It's best practice to keep this value in sync with
+# the rest of your teams so there isn't drift.
+supported_environments:
+  - dev
+  - production
+
+# supported_profiles define a list of your supported profiles. Used for
+# validation of ankh files. Profiles are typically used for values that relate
+# to how beefy your app needs to be. If you're running a production cluster that
+# customers can hit, you'll probably want to support a value like "natural".
+# Alternatively if you want your app to run on a resource strapped local
+# cluster, you might consider also supporting something like "constrained". It's
+# best practice to keep this value in sync with the rest of your teams so there
+# isn't drift.
+supported_profiles:
+  - natural
+  - constrained
+
+# contexts are the different ways in which your ankh files can be deployed to
+# kubernetes clusters. Each key in this object is a context and the names can be
+# whatever you like.
 contexts:
-  minikube-local:
+  minikube_local:
+    # kube_context ties this context to a `kubectl` context
     kube_context: minikube
+
+    # environment should be one of your `supported_environments` defined above
     environment: dev
+
+    # profile should be one of your `supported_profiles` defined above
     profile: natural
+
     release: beta
+
+    # helm_registry_url instructs ankh where to pull charts from
     helm_registry_url: https://kubernetes-charts.storage.googleapis.com/
+
+    # cluster_admin controls if the `admin_dependencies` in an ankh file are
+    # executed before the rest of the `dependencies`
     cluster_admin: true
+
+    # global can be any nested objects with values that need to be passed to
+    # every chart. Arrays are not supported within `global`.
+    global:
+      foo: bar

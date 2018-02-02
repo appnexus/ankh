@@ -20,7 +20,7 @@ type ExecutionContext struct {
 
 	AnkhConfigPath string
 	KubeConfigPath string
-	DataDir    string
+	DataDir        string
 
 	Logger *logrus.Logger
 }
@@ -40,19 +40,57 @@ type Context struct {
 // AnkhConfig defines the shape of the ~/.ankh/config file used for global
 // configuration options
 type AnkhConfig struct {
-	CurrentContextName string             `yaml:"current-context"` // note the intentionally offset names here
-	CurrentContext     Context            `yaml:"-"`               // (private) filled in by code
-	Contexts           map[string]Context `yaml:"contexts"`
+	SupportedEnvironments []string           `yaml:"supported_environments"`
+	SupportedProfiles     []string           `yaml:"supported_profiles"`
+	CurrentContextName    string             `yaml:"current_context"`
+	CurrentContext        Context            `yaml:"-"` // private, filled in by init code. The `-` instructs the yaml lib to not look for this field
+	Contexts              map[string]Context `yaml:"contexts"`
 }
 
 // ValidateAndInit ensures the AnkhConfig is internally sane and populates
 // special fields if necessary.
 func (ankhConfig *AnkhConfig) ValidateAndInit() []error {
 	errors := []error{}
+
+	if ankhConfig.CurrentContextName == "" {
+		errors = append(errors, fmt.Errorf("missing or empty `current_context`"))
+	}
+
+	if ankhConfig.SupportedEnvironments == nil {
+		errors = append(errors, fmt.Errorf("missing or empty `supported_environments`"))
+	}
+
+	if ankhConfig.SupportedProfiles == nil {
+		errors = append(errors, fmt.Errorf("missing or empty `supported_profiles`"))
+	}
+
 	selectedContext, contextExists := ankhConfig.Contexts[ankhConfig.CurrentContextName]
 	if contextExists == false {
 		errors = append(errors, fmt.Errorf("context '%s' not found in `contexts`", ankhConfig.CurrentContextName))
 	} else {
+		if util.Contains(ankhConfig.SupportedEnvironments, selectedContext.Environment) == false {
+			errors = append(errors, fmt.Errorf("environment '%s' not found in `supported_environments`", selectedContext.Environment))
+		}
+
+		if util.Contains(ankhConfig.SupportedProfiles, selectedContext.Profile) == false {
+			errors = append(errors, fmt.Errorf("profile '%s' not found in `supported_profiles`", selectedContext.Profile))
+		}
+
+		if selectedContext.HelmRegistryURL == "" {
+			errors = append(errors, fmt.Errorf("missing or empty `helm_registry_url`"))
+		}
+
+		if selectedContext.KubeContext == "" {
+			errors = append(errors, fmt.Errorf("missing or empty `kube_context`"))
+		}
+
+		if selectedContext.Environment == "" {
+			errors = append(errors, fmt.Errorf("missing or empty `environment`"))
+		}
+
+		if selectedContext.Profile == "" {
+			errors = append(errors, fmt.Errorf("missing or empty `profile`"))
+		}
 		ankhConfig.CurrentContext = selectedContext
 	}
 	return errors
@@ -107,7 +145,7 @@ func ParseAnkhFile(filename string) (AnkhFile, error) {
 		return config, err
 	}
 
-	err = yaml.Unmarshal(ankhYaml, &config)
+	err = yaml.UnmarshalStrict(ankhYaml, &config)
 	if err != nil {
 		return config, fmt.Errorf("unable to process %s file: %v", filename, err)
 	}
@@ -133,7 +171,7 @@ func GetAnkhConfig(ctx *ExecutionContext) (AnkhConfig, error) {
 		return ankhConfig, fmt.Errorf("unable to make data dir '%s': %v", ctx.DataDir, err)
 	}
 
-	err = yaml.Unmarshal(ankhRcFile, &ankhConfig)
+	err = yaml.UnmarshalStrict(ankhRcFile, &ankhConfig)
 	if err != nil {
 		return ankhConfig, fmt.Errorf("unable to process ankh config '%s': %v", ctx.AnkhConfigPath, err)
 	}
