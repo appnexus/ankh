@@ -1,15 +1,20 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path"
+	"syscall"
+	"time"
 
 	"github.com/jawher/mow.cli"
 	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
 
+	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v2"
 
 	"ankh"
@@ -28,6 +33,15 @@ func execute(ctx *ankh.ExecutionContext) {
 		log.Infof("- OK: %v", ctx.AnkhFilePath)
 	}
 	check(err)
+
+	// run the bootstrap scripts, if they exist
+	bootstrapScripts := rootAnkhFile.Bootstrap.Scripts
+	if len(bootstrapScripts) > 0 {
+		log.Infof("Found bootstrap scripts, executing those now...")
+		runScripts(ctx, bootstrapScripts)
+	} else {
+		log.Infof("`bootstrap` section not found in config. Skipping.");
+	}
 
 	dependencies := rootAnkhFile.Dependencies
 	if ctx.AnkhConfig.CurrentContext.ClusterAdmin && len(rootAnkhFile.AdminDependencies) > 0 {
@@ -103,7 +117,7 @@ func main() {
 		verbose    = app.BoolOpt("v verbose", false, "Verbose debug mode")
 		ankhconfig = app.String(cli.StringOpt{
 			Name:   "ankhconfig",
-			Value:  path.Join(os.Getenv("HOME"), ".ankh/config"),
+			Value:  path.Join(os.Getenv("HOME"), ".ankh", "config"),
 			Desc:   "The ankh config to use",
 			EnvVar: "ANKHCONFIG",
 		})
@@ -115,7 +129,7 @@ func main() {
 		})
 		datadir = app.String(cli.StringOpt{
 			Name:   "datadir",
-			Value:  path.Join(os.Getenv("HOME"), ".ankh"),
+			Value:  path.Join(os.Getenv("HOME"), ".ankh", "data"),
 			Desc:   "The data directory for ankh template history",
 			EnvVar: "ANKHDATADIR",
 		})
@@ -139,7 +153,7 @@ func main() {
 			Verbose:        *verbose,
 			AnkhConfigPath: *ankhconfig,
 			KubeConfigPath: *kubeconfig,
-			DataDir:        *datadir,
+			DataDir:        path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
 			Logger:         log,
 		}
 
@@ -221,8 +235,7 @@ func main() {
 					os.Exit(1)
 				}
 
-				config := ctx.AnkhConfig
-				config.CurrentContextName = context
+				ctx.AnkhConfig.CurrentContextName = context
 
 				out, err := yaml.Marshal(ctx.AnkhConfig)
 				check(err)
@@ -259,5 +272,48 @@ func check(err error) {
 	if err != nil {
 		log.Fatalf("Cannot proceed: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+func runScripts(ctx *ankh.ExecutionContext, scripts []struct { Path string }) {
+	for _, script := range scripts {
+		path := script.Path
+		if path == "" {
+			log.Warnf("Missing path in script %s", script)
+			break
+		}
+		_, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			log.Fatalf("Script not found: %s", path)
+		}
+		// check that the script is executable
+		err = syscall.Access(path, unix.X_OK)
+		if err != nil {
+			log.Fatalf("Permission denied, script is not executable: %s", path)
+		}
+		log.Infof("Running script: %s", path)
+		if ctx.DryRun {
+			log.Infof("- OK (dry) %s", path)
+			break
+		}
+		// pass kube context and the "global" config as a yaml environment variable
+		cmd := exec.Command(path)
+		if ctx.AnkhConfig.CurrentContext.Global != nil {
+			global, err := yaml.Marshal(ctx.AnkhConfig.CurrentContext.Global)
+			check(err)
+			cmd.Env = append(
+				os.Environ(),
+				"ANKH_CONFIG_GLOBAL=" + string(global),
+				"ANKH_KUBE_CONTEXT=" + string(ctx.AnkhConfig.CurrentContext.KubeContext))
+		}
+		var stdOut, stdErr bytes.Buffer
+		cmd.Stdout = &stdOut
+		cmd.Stderr = &stdErr
+		err = cmd.Run()
+		if err != nil {
+			log.Fatalf("- FAILED %s:\n%s\nstdout: %s\nstderr: %s", path, err, stdOut.String(), stdErr.String())
+		}
+		log.Infof("- OK %s", path)
+		log.Debugf("%s Stdout:\n%s", path, stdOut.String())
 	}
 }
