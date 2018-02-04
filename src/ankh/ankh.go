@@ -28,23 +28,23 @@ type ExecutionContext struct {
 // Context is a struct that represents a context for applying files to a
 // Kubernetes cluster
 type Context struct {
-	KubeContext     string `yaml:"kube_context"`
+	KubeContext     string `yaml:"kube-context"`
 	Environment     string `yaml:"environment"`
-	Profile         string `yaml:"profile"`
+	ResourceProfile string `yaml:"resource-profile"`
 	Release         string `yaml:"release"`
-	HelmRegistryURL string `yaml:"helm_registry_url"`
-	ClusterAdmin    bool   `yaml:"cluster_admin"`
+	HelmRegistryURL string `yaml:"helm-registry-url"`
+	ClusterAdmin    bool   `yaml:"cluster-admin"`
 	Global          map[string]interface{}
 }
 
 // AnkhConfig defines the shape of the ~/.ankh/config file used for global
 // configuration options
 type AnkhConfig struct {
-	SupportedEnvironments []string           `yaml:"supported_environments"`
-	SupportedProfiles     []string           `yaml:"supported_profiles"`
-	CurrentContextName    string             `yaml:"current_context"`
-	CurrentContext        Context            `yaml:"-"` // private, filled in by init code. The `-` instructs the yaml lib to not look for this field
-	Contexts              map[string]Context `yaml:"contexts"`
+	SupportedEnvironments     []string           `yaml:"supported-environments"`
+	SupportedResourceProfiles []string           `yaml:"supported-resource-profiles"`
+	CurrentContextName        string             `yaml:"current-context"`
+	CurrentContext            Context            `yaml:"-"` // private, filled in by init code. The `-` instructs the yaml lib to not look for this field
+	Contexts                  map[string]Context `yaml:"contexts"`
 }
 
 // ValidateAndInit ensures the AnkhConfig is internally sane and populates
@@ -53,15 +53,15 @@ func (ankhConfig *AnkhConfig) ValidateAndInit() []error {
 	errors := []error{}
 
 	if ankhConfig.CurrentContextName == "" {
-		errors = append(errors, fmt.Errorf("missing or empty `current_context`"))
+		errors = append(errors, fmt.Errorf("missing or empty `current-context`"))
 	}
 
-	if ankhConfig.SupportedEnvironments == nil {
-		errors = append(errors, fmt.Errorf("missing or empty `supported_environments`"))
+	if ankhConfig.SupportedEnvironments == nil || len(ankhConfig.SupportedEnvironments) == 0 {
+		errors = append(errors, fmt.Errorf("missing or empty `supported-environments`"))
 	}
 
-	if ankhConfig.SupportedProfiles == nil {
-		errors = append(errors, fmt.Errorf("missing or empty `supported_profiles`"))
+	if ankhConfig.SupportedResourceProfiles == nil || len(ankhConfig.SupportedResourceProfiles) == 0 {
+		errors = append(errors, fmt.Errorf("missing or empty `supported-resource-profiles`"))
 	}
 
 	selectedContext, contextExists := ankhConfig.Contexts[ankhConfig.CurrentContextName]
@@ -69,27 +69,27 @@ func (ankhConfig *AnkhConfig) ValidateAndInit() []error {
 		errors = append(errors, fmt.Errorf("context '%s' not found in `contexts`", ankhConfig.CurrentContextName))
 	} else {
 		if util.Contains(ankhConfig.SupportedEnvironments, selectedContext.Environment) == false {
-			errors = append(errors, fmt.Errorf("environment '%s' not found in `supported_environments`", selectedContext.Environment))
+			errors = append(errors, fmt.Errorf("environment '%s' not found in `supported-environments`", selectedContext.Environment))
 		}
 
-		if util.Contains(ankhConfig.SupportedProfiles, selectedContext.Profile) == false {
-			errors = append(errors, fmt.Errorf("profile '%s' not found in `supported_profiles`", selectedContext.Profile))
+		if util.Contains(ankhConfig.SupportedResourceProfiles, selectedContext.ResourceProfile) == false {
+			errors = append(errors, fmt.Errorf("resource profile '%s' not found in `supported-resource-profiles`", selectedContext.ResourceProfile))
 		}
 
 		if selectedContext.HelmRegistryURL == "" {
-			errors = append(errors, fmt.Errorf("missing or empty `helm_registry_url`"))
+			errors = append(errors, fmt.Errorf("missing or empty `helm-registry-url`"))
 		}
 
 		if selectedContext.KubeContext == "" {
-			errors = append(errors, fmt.Errorf("missing or empty `kube_context`"))
+			errors = append(errors, fmt.Errorf("missing or empty `kube-context`"))
 		}
 
 		if selectedContext.Environment == "" {
 			errors = append(errors, fmt.Errorf("missing or empty `environment`"))
 		}
 
-		if selectedContext.Profile == "" {
-			errors = append(errors, fmt.Errorf("missing or empty `profile`"))
+		if selectedContext.ResourceProfile == "" {
+			errors = append(errors, fmt.Errorf("missing or empty `resource-profile`"))
 		}
 		ankhConfig.CurrentContext = selectedContext
 	}
@@ -100,9 +100,9 @@ type Chart struct {
 	Name    string
 	Version string
 	// DefaultValues are values that apply regardless of environment
-	DefaultValues    map[string]interface{} `yaml:"default_values"`
+	DefaultValues    map[string]interface{} `yaml:"default-values"`
 	Values           map[string]interface{}
-	ResourceProfiles map[string]interface{} `yaml:"resource_profiles"`
+	ResourceProfiles map[string]interface{} `yaml:"resource-profiles"`
 	// Secrets is a temporary resting place for secrets, eventually we want to
 	// load this from another secure source
 	Secrets map[string]interface{}
@@ -134,7 +134,7 @@ type AnkhFile struct {
 
 	Charts []Chart
 
-	AdminDependencies []string `yaml:"admin_dependencies"`
+	AdminDependencies []string `yaml:"admin-dependencies"`
 	Dependencies      []string `yaml:"dependencies"`
 }
 
