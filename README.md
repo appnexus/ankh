@@ -48,7 +48,7 @@ There are two operations you can perform: *template* and *apply*.
 $ cat ~/.ankh/config
 current-context: minikube-local
 
-supported-profiles:
+supported-environments:
   - dev
   - production
 
