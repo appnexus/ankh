@@ -184,7 +184,7 @@ func main() {
 
 	app.Command("inspect", "Inspect charts in ankh.yaml and display information.", func(cmd *cli.Cmd) {
 
-		cmd.Command("values", "For each chart, display contexts of values.yaml, "+
+		cmd.Command("values", "For each chart, display contents of values.yaml, "+
 			"ankh-values.yaml, and ankh-resource-profiles.yaml", func(cmd *cli.Cmd) {
 
 			cmd.Spec = "[-f] [--use-context]"
@@ -317,6 +317,10 @@ func inspect(ctx *ankh.ExecutionContext,
 			check(err)
 			result += output
 		}
+	} else {
+		log.Infof(
+			"%s does not contain any charts. Inspect commands only operate on ankh.yaml files containing charts",
+			ctx.AnkhFilePath)
 	}
 
 	fmt.Println(result)
