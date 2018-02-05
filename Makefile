@@ -18,3 +18,7 @@ ankh:
 .PHONY: install
 install: ankh
 	sudo cp -f $(REPOROOT)/bin/ankh /usr/local/bin/ankh
+
+.PHONY: test
+test:
+	cd $(REPOROOT)/src/ankh; go test -cover
