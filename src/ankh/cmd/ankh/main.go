@@ -106,8 +106,8 @@ func execute(ctx *ankh.ExecutionContext) {
 
 	if len(rootAnkhFile.Charts) > 0 {
 		executeAnkhFile(rootAnkhFile)
-	} else {
-		ctx.Logger.Warningf("No charts specified inside %s, nothing to do", ctx.AnkhFilePath)
+	} else if len(dependencies) == 0 {
+		ctx.Logger.Warningf("No charts nor dependencies specified in ankh file %s, nothing to do", ctx.AnkhFilePath)
 	}
 }
 
