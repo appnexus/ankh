@@ -2,7 +2,6 @@
 
 Another Kubernetes Helper for shipping code.
 
-
 ## Introduction
 
 **Ankh** is a command line tool that wraps **helm template** and **kubectl apply**.
@@ -16,13 +15,13 @@ namespace: mynamespace
 charts:
   - name: haste-server
     version: 0.0.1
-    default_values:
+    default-values:
       tag: latest
       ingress:
         host: haste.myorgization.net
   - name: zoonavigator
     version: 0.0.1
-    default_values:
+    default-values:
       tag: latest
       ingress:
         host: zoonavigator.dev.myorganization.net
@@ -47,16 +46,24 @@ There are two operations you can perform: *template* and *apply*.
 
 ```
 $ cat ~/.ankh/config
-current-context: kfc0-production
+current-context: minikube-local
+
+supported-profiles:
+  - dev
+  - production
+
+supported-resource-profiles:
+  - natural
+  - constrained
+
 contexts:
   minikube-local:
-    kube_context: minikube
-    environment: production
-    profile: constrained
-    helm_registry_url: https://helm-registry.myorganization.net/helm-repo/charts
+    kube-context: minikube
+    environment: dev
+    resource-profile: constrained
+    helm-registry-url: https://helm-registry.myorganization.net/helm-repo/charts
     global:
-      some_value: needed_by_all_charts
->>>>>>> 65974d0... Better documentation
+      some-value: "needed by all charts"
 ```
 
 You can view available contexts from your ankh config using:
@@ -86,11 +93,11 @@ namespace: utils
 charts:
   - name: haste-server
     version: 0.0.1
-    default_values:
+    default-values:
       tag: latest
       ingress:
         host: haste.myorgization.net
-    resource_profiles:
+    resource-profiles:
       constrained:
         haste-server:
           cpu: 0.1

@@ -94,7 +94,7 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 
 	chartPath := filepath.Join(tmpDir, chart.Name)
 	valuesPath := filepath.Join(chartPath, "ankh-values.yaml")
-	profilesPath := filepath.Join(chartPath, "ankh-resource-profiles.yaml")
+	resourceProfilesPath := filepath.Join(chartPath, "ankh-resource-profiles.yaml")
 
 	// Load `values` from chart
 	_, valuesErr := os.Stat(valuesPath)
@@ -106,12 +106,12 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 	}
 
 	// Load `profiles` from chart
-	_, profilesError := os.Stat(profilesPath)
-	if profilesError == nil {
-		if err := createReducedYAMLFile(profilesPath, currentContext.Profile); err != nil {
+	_, resourceProfilesError := os.Stat(resourceProfilesPath)
+	if resourceProfilesError == nil {
+		if err := createReducedYAMLFile(resourceProfilesPath, currentContext.ResourceProfile); err != nil {
 			return "", fmt.Errorf("unable to process ankh-resource-profiles.yaml file for chart '%s': %v", chart.Name, err)
 		}
-		helmArgs = append(helmArgs, "-f", profilesPath)
+		helmArgs = append(helmArgs, "-f", resourceProfilesPath)
 	}
 
 	// TODO: add validation for secrets
@@ -129,7 +129,7 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		helmArgs = append(helmArgs, "-f", secretsPath)
 	}
 
-	// Load `default_values` from ankhFile
+	// Load `default-values` from ankhFile
 	if chart.DefaultValues != nil {
 		defaultValuesPath := filepath.Join(tmpDir, "default-values.yaml")
 		defaultValuesBytes, err := yaml.Marshal(chart.DefaultValues)
@@ -159,19 +159,19 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		helmArgs = append(helmArgs, "-f", valuesPath)
 	}
 
-	// Load `resource_profiles` from ankhFile
-	if chart.ResourceProfiles != nil && chart.ResourceProfiles[currentContext.Profile] != nil {
-		profilesPath := filepath.Join(tmpDir, "resource-profiles.yaml")
-		profilesBytes, err := yaml.Marshal(chart.ResourceProfiles[currentContext.Profile])
+	// Load `resource-profiles` from ankhFile
+	if chart.ResourceProfiles != nil && chart.ResourceProfiles[currentContext.ResourceProfile] != nil {
+		resourceProfilesPath := filepath.Join(tmpDir, "resource-profiles.yaml")
+		resourceProfilesBytes, err := yaml.Marshal(chart.ResourceProfiles[currentContext.ResourceProfile])
 		if err != nil {
 			return "", err
 		}
 
-		if err := ioutil.WriteFile(profilesPath, profilesBytes, 0644); err != nil {
+		if err := ioutil.WriteFile(resourceProfilesPath, resourceProfilesBytes, 0644); err != nil {
 			return "", err
 		}
 
-		helmArgs = append(helmArgs, "-f", profilesPath)
+		helmArgs = append(helmArgs, "-f", resourceProfilesPath)
 	}
 
 	helmArgs = append(helmArgs, chartPath)
@@ -196,7 +196,7 @@ func createReducedYAMLFile(filename, key string) error {
 		return err
 	}
 
-	if err = yaml.Unmarshal(inBytes, &in); err != nil {
+	if err = yaml.UnmarshalStrict(inBytes, &in); err != nil {
 		return err
 	}
 
