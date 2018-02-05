@@ -147,9 +147,9 @@ func InspectTemplates(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ank
 		return "", err
 	}
 
-	result += "---\n# Chart: " + chart.Name
+	result += "# Chart: " + chart.Name
 	for _, template := range templates {
-		result += fmt.Sprintf("\n# Source: %s/templates/%s\n", chart.Name, template.Name())
+		result += fmt.Sprintf("---\n# Source: %s/templates/%s\n", chart.Name, template.Name())
 		path := dir + template.Name()
 		bytes, err := ioutil.ReadFile(path)
 		if err != nil {

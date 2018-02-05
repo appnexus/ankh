@@ -40,7 +40,7 @@ func execute(ctx *ankh.ExecutionContext) {
 		log.Infof("Found bootstrap scripts, executing those now...")
 		runScripts(ctx, bootstrapScripts)
 	} else {
-		log.Infof("`bootstrap` section not found in config. Skipping.");
+		log.Infof("`bootstrap` section not found in config. Skipping.")
 	}
 
 	dependencies := rootAnkhFile.Dependencies
@@ -202,13 +202,14 @@ func main() {
 	})
 
 	app.Command("inspect", "Inspect charts in ankh.yaml and display information.", func(cmd *cli.Cmd) {
+		cmd.Spec = "[-f] [--chart]"
+		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+		chart := cmd.StringOpt("chart", "", "Limits the inspect command to only the specified chart")
 
 		cmd.Command("values", "For each chart, display contents of values.yaml, "+
 			"ankh-values.yaml, and ankh-resource-profiles.yaml", func(cmd *cli.Cmd) {
 
-			cmd.Spec = "[-f] [--chart] [--use-context]"
-			ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
-			chart := cmd.StringOpt("chart", "", "Limits the template command to only the specified chart")
+			cmd.Spec += " [--use-context]"
 			useContext := cmd.BoolOpt("use-context", false, "Filter values by current context")
 
 			cmd.Action = func() {
@@ -222,11 +223,6 @@ func main() {
 
 		cmd.Command("chart", "For each chart, display contents of the Charts.yaml file",
 			func(cmd *cli.Cmd) {
-
-				cmd.Spec = "[-f] [--chart]"
-				ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
-				chart := cmd.StringOpt("chart", "", "Limits the template command to only the specified chart")
-
 				cmd.Action = func() {
 					ctx.AnkhFilePath = *ankhFilePath
 					ctx.Chart = *chart
@@ -237,11 +233,6 @@ func main() {
 
 		cmd.Command("templates", "For each chart, display contents of each raw template file",
 			func(cmd *cli.Cmd) {
-
-				cmd.Spec = "[-f] [--chart]"
-				ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
-				chart := cmd.StringOpt("chart", "", "Limits the template command to only the specified chart")
-
 				cmd.Action = func() {
 					ctx.AnkhFilePath = *ankhFilePath
 					ctx.Chart = *chart
@@ -340,7 +331,7 @@ func inspect(ctx *ankh.ExecutionContext,
 
 	ctx.Logger.Debug("Inspecting charts")
 	for _, chart := range ankhFile.Charts {
-		if ctx.Chart != "" && chart.Name != ctx.Chart{
+		if ctx.Chart != "" && chart.Name != ctx.Chart {
 			continue
 		}
 
@@ -363,7 +354,7 @@ func check(err error) {
 	}
 }
 
-func runScripts(ctx *ankh.ExecutionContext, scripts []struct { Path string }) {
+func runScripts(ctx *ankh.ExecutionContext, scripts []struct{ Path string }) {
 	for _, script := range scripts {
 		path := script.Path
 		if path == "" {
@@ -391,8 +382,8 @@ func runScripts(ctx *ankh.ExecutionContext, scripts []struct { Path string }) {
 			check(err)
 			cmd.Env = append(
 				os.Environ(),
-				"ANKH_CONFIG_GLOBAL=" + string(global),
-				"ANKH_KUBE_CONTEXT=" + string(ctx.AnkhConfig.CurrentContext.KubeContext))
+				"ANKH_CONFIG_GLOBAL="+string(global),
+				"ANKH_KUBE_CONTEXT="+string(ctx.AnkhConfig.CurrentContext.KubeContext))
 		}
 		var stdOut, stdErr bytes.Buffer
 		cmd.Stdout = &stdOut
