@@ -236,16 +236,30 @@ func Template(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) (string, error
 
 	if len(ankhFile.Charts) > 0 {
 		ctx.Logger.Debugf("templating charts")
-		for _, chart := range ankhFile.Charts {
-			ctx.Logger.Debugf("templating chart '%s'", chart.Name)
 
-			chartOutput, err := templateChart(ctx, chart, ankhFile)
-			if err != nil {
-				return finalOutput, err
+		if ctx.Chart == "" {
+			for _, chart := range ankhFile.Charts {
+				ctx.Logger.Debugf("templating chart '%s'", chart.Name)
+				chartOutput, err := templateChart(ctx, chart, ankhFile)
+				if err != nil {
+					return finalOutput, err
+				}
+				finalOutput += chartOutput
 			}
-			finalOutput += chartOutput
+		} else {
+			for _, chart := range ankhFile.Charts {
+				if chart.Name == ctx.Chart {
+					ctx.Logger.Debugf("templating chart '%s'", chart.Name)
+
+					chartOutput, err := templateChart(ctx, chart, ankhFile)
+					if err != nil {
+						return finalOutput, err
+					}
+					return chartOutput, nil
+				}
+			}
+			ctx.Logger.Fatalf("Chart %s was specified with `--chart` but does not exist in the charts array", ctx.Chart)
 		}
 	}
-
 	return finalOutput, nil
 }
