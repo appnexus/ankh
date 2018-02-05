@@ -1,16 +1,20 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path"
+	"syscall"
 	"time"
 
 	"github.com/jawher/mow.cli"
 	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
 
+	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v2"
 
 	"ankh"
@@ -29,6 +33,15 @@ func execute(ctx *ankh.ExecutionContext) {
 		log.Infof("- OK: %v", ctx.AnkhFilePath)
 	}
 	check(err)
+
+	// run the bootstrap scripts, if they exist
+	bootstrapScripts := rootAnkhFile.Bootstrap.Scripts
+	if len(bootstrapScripts) > 0 {
+		log.Infof("Found bootstrap scripts, executing those now...")
+		runScripts(ctx, bootstrapScripts)
+	} else {
+		log.Infof("`bootstrap` section not found in config. Skipping.");
+	}
 
 	dependencies := rootAnkhFile.Dependencies
 	if ctx.AnkhConfig.CurrentContext.ClusterAdmin && len(rootAnkhFile.AdminDependencies) > 0 {
@@ -93,6 +106,8 @@ func execute(ctx *ankh.ExecutionContext) {
 
 	if len(rootAnkhFile.Charts) > 0 {
 		executeAnkhFile(rootAnkhFile)
+	} else if len(dependencies) == 0 {
+		ctx.Logger.Warningf("No charts nor dependencies specified in ankh file %s, nothing to do", ctx.AnkhFilePath)
 	}
 }
 
@@ -154,14 +169,16 @@ func main() {
 	}
 
 	app.Command("apply", "Deploy an ankh file to a kubernetes cluster", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--dry-run]"
+		cmd.Spec = "[-f] [--dry-run] [--chart]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually apply anything to a cluster")
+		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
 
 		cmd.Action = func() {
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.DryRun = *dryRun
+			ctx.Chart = *chart
 			ctx.Apply = true
 
 			execute(ctx)
@@ -170,12 +187,14 @@ func main() {
 	})
 
 	app.Command("template", "Output the results of templating an ankh file", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f]"
+		cmd.Spec = "[-f] [--chart]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+		chart := cmd.StringOpt("chart", "", "Limits the template command to only the specified chart")
 
 		cmd.Action = func() {
 			ctx.AnkhFilePath = *ankhFilePath
+			ctx.Chart = *chart
 
 			execute(ctx)
 			os.Exit(0)
@@ -266,8 +285,7 @@ func main() {
 					os.Exit(1)
 				}
 
-				config := ctx.AnkhConfig
-				config.CurrentContextName = context
+				ctx.AnkhConfig.CurrentContextName = context
 
 				out, err := yaml.Marshal(ctx.AnkhConfig)
 				check(err)
@@ -329,5 +347,48 @@ func inspect(ctx *ankh.ExecutionContext,
 func check(err error) {
 	if err != nil {
 		log.Fatalf("Cannot proceed: %v\n", err)
+	}
+}
+
+func runScripts(ctx *ankh.ExecutionContext, scripts []struct { Path string }) {
+	for _, script := range scripts {
+		path := script.Path
+		if path == "" {
+			log.Warnf("Missing path in script %s", script)
+			break
+		}
+		_, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			log.Fatalf("Script not found: %s", path)
+		}
+		// check that the script is executable
+		err = syscall.Access(path, unix.X_OK)
+		if err != nil {
+			log.Fatalf("Permission denied, script is not executable: %s", path)
+		}
+		log.Infof("Running script: %s", path)
+		if ctx.DryRun {
+			log.Infof("- OK (dry) %s", path)
+			break
+		}
+		// pass kube context and the "global" config as a yaml environment variable
+		cmd := exec.Command(path)
+		if ctx.AnkhConfig.CurrentContext.Global != nil {
+			global, err := yaml.Marshal(ctx.AnkhConfig.CurrentContext.Global)
+			check(err)
+			cmd.Env = append(
+				os.Environ(),
+				"ANKH_CONFIG_GLOBAL=" + string(global),
+				"ANKH_KUBE_CONTEXT=" + string(ctx.AnkhConfig.CurrentContext.KubeContext))
+		}
+		var stdOut, stdErr bytes.Buffer
+		cmd.Stdout = &stdOut
+		cmd.Stderr = &stdErr
+		err = cmd.Run()
+		if err != nil {
+			log.Fatalf("- FAILED %s:\n%s\nstdout: %s\nstderr: %s", path, err, stdOut.String(), stdErr.String())
+		}
+		log.Infof("- OK %s", path)
+		log.Debugf("%s Stdout:\n%s", path, stdOut.String())
 	}
 }

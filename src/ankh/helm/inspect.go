@@ -53,7 +53,7 @@ func InspectValues(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		values = Values{
 			DefaultValues:    chart.DefaultValues,
 			Values:           chart.Values[ctx.AnkhConfig.CurrentContext.Environment],
-			ResourceProfiles: chart.ResourceProfiles[ctx.AnkhConfig.CurrentContext.Profile],
+			ResourceProfiles: chart.ResourceProfiles[ctx.AnkhConfig.CurrentContext.ResourceProfile],
 		}
 	} else {
 		values = Values{
@@ -74,7 +74,7 @@ func InspectValues(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		return "", nil
 	}
 
-	bytes, err := getChartFileContent(ctx, files.AnkhResourceProfilesPath, ctx.UseContext, ctx.AnkhConfig.CurrentContext.Profile)
+	bytes, err := getChartFileContent(ctx, files.AnkhResourceProfilesPath, ctx.UseContext, ctx.AnkhConfig.CurrentContext.ResourceProfile)
 	if err != nil {
 		return "", nil
 	}

@@ -130,9 +130,9 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 	}
 
 	// Load `profiles` from chart
-	_, profilesError := os.Stat(files.AnkhResourceProfilesPath)
-	if profilesError == nil {
-		if _, err := CreateReducedYAMLFile(files.AnkhResourceProfilesPath, currentContext.Profile); err != nil {
+	_, resourceProfilesError := os.Stat(files.AnkhResourceProfilesPath)
+	if resourceProfilesError == nil {
+		if _, err := CreateReducedYAMLFile(files.AnkhResourceProfilesPath, currentContext.ResourceProfile); err != nil {
 			return "", fmt.Errorf("unable to process ankh-resource-profiles.yaml file for chart '%s': %v", chart.Name, err)
 		}
 		helmArgs = append(helmArgs, "-f", files.AnkhResourceProfilesPath)
@@ -153,7 +153,7 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		helmArgs = append(helmArgs, "-f", secretsPath)
 	}
 
-	// Load `default_values` from ankhFile
+	// Load `default-values` from ankhFile
 	if chart.DefaultValues != nil {
 		defaultValuesPath := filepath.Join(files.Dir, "default-values.yaml")
 		defaultValuesBytes, err := yaml.Marshal(chart.DefaultValues)
@@ -183,19 +183,20 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		helmArgs = append(helmArgs, "-f", valuesPath)
 	}
 
-	// Load `resource_profiles` from ankhFile
-	if chart.ResourceProfiles != nil && chart.ResourceProfiles[currentContext.Profile] != nil {
-		profilesPath := filepath.Join(files.Dir, "resource-profiles.yaml")
-		profilesBytes, err := yaml.Marshal(chart.ResourceProfiles[currentContext.Profile])
+	// Load `resource-profiles` from ankhFile
+	if chart.ResourceProfiles != nil && chart.ResourceProfiles[currentContext.ResourceProfile] != nil {
+		resourceProfilesPath := filepath.Join(files.Dir, "resource-profiles.yaml")
+		resourceProfilesBytes, err := yaml.Marshal(chart.ResourceProfiles[currentContext.ResourceProfile])
+
 		if err != nil {
 			return "", err
 		}
 
-		if err := ioutil.WriteFile(profilesPath, profilesBytes, 0644); err != nil {
+		if err := ioutil.WriteFile(resourceProfilesPath, resourceProfilesBytes, 0644); err != nil {
 			return "", err
 		}
 
-		helmArgs = append(helmArgs, "-f", profilesPath)
+		helmArgs = append(helmArgs, "-f", resourceProfilesPath)
 	}
 
 	helmArgs = append(helmArgs, files.ChartDir)
@@ -220,7 +221,7 @@ func CreateReducedYAMLFile(filename, key string) ([]byte, error) {
 		return result, err
 	}
 
-	if err = yaml.Unmarshal(inBytes, &in); err != nil {
+	if err = yaml.UnmarshalStrict(inBytes, &in); err != nil {
 		return result, err
 	}
 
@@ -260,20 +261,34 @@ func Template(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) (string, error
 
 	if len(ankhFile.Charts) > 0 {
 		ctx.Logger.Debugf("templating charts")
-		for _, chart := range ankhFile.Charts {
-			ctx.Logger.Debugf("templating chart '%s'", chart.Name)
 
-			chartOutput, err := templateChart(ctx, chart, ankhFile)
-			if err != nil {
-				return finalOutput, err
+		if ctx.Chart == "" {
+			for _, chart := range ankhFile.Charts {
+				ctx.Logger.Debugf("templating chart '%s'", chart.Name)
+				chartOutput, err := templateChart(ctx, chart, ankhFile)
+				if err != nil {
+					return finalOutput, err
+				}
+				finalOutput += chartOutput
 			}
-			finalOutput += chartOutput
+		} else {
+			for _, chart := range ankhFile.Charts {
+				if chart.Name == ctx.Chart {
+					ctx.Logger.Debugf("templating chart '%s'", chart.Name)
+
+					chartOutput, err := templateChart(ctx, chart, ankhFile)
+					if err != nil {
+						return finalOutput, err
+					}
+					return chartOutput, nil
+				}
+			}
+			ctx.Logger.Fatalf("Chart %s was specified with `--chart` but does not exist in the charts array", ctx.Chart)
 		}
 	} else {
 		ctx.Logger.Infof(
 			"%s does not contain any charts. Template commands only operate on ankh.yaml files containing charts",
 			ctx.AnkhFilePath)
 	}
-
 	return finalOutput, nil
 }
