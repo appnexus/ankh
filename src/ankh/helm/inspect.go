@@ -107,7 +107,7 @@ func InspectChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.An
 	ctx.Logger.Debugf("Inspecting chart.yaml for chart %s", chart.Name)
 
 	currentContext := ctx.AnkhConfig.CurrentContext
-	result += fmt.Sprintf("# Chart: %s\n", chart.Name)
+	result += fmt.Sprintf("---\n# Chart: %s\n", chart.Name)
 	files, err := FindChartFiles(ctx, chart.Name, chart.Version, ankhFile)
 	if err != nil {
 		return "", err

@@ -206,13 +206,15 @@ func main() {
 		cmd.Command("values", "For each chart, display contents of values.yaml, "+
 			"ankh-values.yaml, and ankh-resource-profiles.yaml", func(cmd *cli.Cmd) {
 
-			cmd.Spec = "[-f] [--use-context]"
+			cmd.Spec = "[-f] [--chart] [--use-context]"
 			ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+			chart := cmd.StringOpt("chart", "", "Limits the template command to only the specified chart")
 			useContext := cmd.BoolOpt("use-context", false, "Filter values by current context")
 
 			cmd.Action = func() {
 				ctx.AnkhFilePath = *ankhFilePath
 				ctx.UseContext = *useContext
+				ctx.Chart = *chart
 				inspect(ctx, helm.InspectValues)
 				os.Exit(0)
 			}
@@ -221,11 +223,13 @@ func main() {
 		cmd.Command("chart", "For each chart, display contents of the Charts.yaml file",
 			func(cmd *cli.Cmd) {
 
-				cmd.Spec = "[-f]"
+				cmd.Spec = "[-f] [--chart]"
 				ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+				chart := cmd.StringOpt("chart", "", "Limits the template command to only the specified chart")
 
 				cmd.Action = func() {
 					ctx.AnkhFilePath = *ankhFilePath
+					ctx.Chart = *chart
 					inspect(ctx, helm.InspectChart)
 					os.Exit(0)
 				}
@@ -234,11 +238,13 @@ func main() {
 		cmd.Command("templates", "For each chart, display contents of each raw template file",
 			func(cmd *cli.Cmd) {
 
-				cmd.Spec = "[-f]"
+				cmd.Spec = "[-f] [--chart]"
 				ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+				chart := cmd.StringOpt("chart", "", "Limits the template command to only the specified chart")
 
 				cmd.Action = func() {
 					ctx.AnkhFilePath = *ankhFilePath
+					ctx.Chart = *chart
 					inspect(ctx, helm.InspectTemplates)
 					os.Exit(0)
 				}
@@ -323,22 +329,29 @@ func inspect(ctx *ankh.ExecutionContext,
 	var result string
 
 	ankhFile, err := ankh.ParseAnkhFile(ctx.AnkhFilePath)
-	if err == nil {
-		log.Infof("- OK: %v", ctx.AnkhFilePath)
-	}
 	check(err)
 
-	if len(ankhFile.Charts) > 0 {
-		ctx.Logger.Debug("Inspecting charts")
-		for _, chart := range ankhFile.Charts {
-			output, err := cb(ctx, chart, ankhFile)
-			check(err)
-			result += output
-		}
-	} else {
+	if len(ankhFile.Charts) < 1 {
 		log.Infof(
 			"%s does not contain any charts. Inspect commands only operate on ankh.yaml files containing charts",
 			ctx.AnkhFilePath)
+		return
+	}
+
+	ctx.Logger.Debug("Inspecting charts")
+	for _, chart := range ankhFile.Charts {
+		if ctx.Chart != "" && chart.Name != ctx.Chart{
+			continue
+		}
+
+		output, err := cb(ctx, chart, ankhFile)
+		check(err)
+		result += output
+	}
+
+	if result == "" {
+		ctx.Logger.Fatalf("Chart %s was specified with `--chart` but does not exist in the charts array", ctx.Chart)
+		return
 	}
 
 	fmt.Println(result)
