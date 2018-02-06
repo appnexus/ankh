@@ -19,6 +19,8 @@ ankh:
 install: ankh
 	sudo cp -f $(REPOROOT)/bin/ankh /usr/local/bin/ankh
 
-.PHONY: test
-test:
-	cd $(REPOROOT)/src/ankh; go test -cover
+.PHONY: cover
+cover:
+	cd $(REPOROOT)/src/ankh &&\
+		go test -coverprofile=coverage/coverage.out &&\
+		go tool cover -html=coverage/coverage.out
