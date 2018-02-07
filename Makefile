@@ -1,7 +1,12 @@
+PACKAGE = ankh
 THIS_MAKEFILE = $(lastword $(MAKEFILE_LIST))
 REPOROOT = $(abspath $(dir $(THIS_MAKEFILE)))
+BASE = "$(REPOROOT)/src/ankh"
 
 export GOPATH := $(REPOROOT)/
+
+PKGS = $(shell cd $(BASE) && \
+       go list ./... | grep -v /vendor/)
 
 .PHONY: all
 all: ankh
@@ -13,14 +18,19 @@ clean:
 
 .PHONY: ankh
 ankh:
-	cd $(REPOROOT)/src/ankh/cmd/ankh; go install
+	cd $(BASE)/cmd/ankh; go install
 
 .PHONY: install
 install: ankh
 	sudo cp -f $(REPOROOT)/bin/ankh /usr/local/bin/ankh
 
+.PHONY: test
+test: 
+	cd $(BASE) &&\
+		go test $(PKGS)
+
 .PHONY: cover
 cover:
-	cd $(REPOROOT)/src/ankh &&\
+	cd $(BASE) &&\
 		go test -coverprofile=coverage/coverage.out &&\
 		go tool cover -html=coverage/coverage.out

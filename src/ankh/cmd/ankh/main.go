@@ -65,7 +65,7 @@ func execute(ctx *ankh.ExecutionContext) {
 		check(err)
 
 		if ctx.Apply {
-			kubectlOutput, err := kubectl.Execute(ctx, kubectl.Apply, helmOutput, ankhFile)
+			kubectlOutput, err := kubectl.Execute(ctx, kubectl.Apply, helmOutput, ankhFile, nil)
 			check(err)
 
 			if ctx.Verbose {
