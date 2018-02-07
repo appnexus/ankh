@@ -8,9 +8,9 @@ Kubectl: https://kubernetes.io/docs/tasks/tools/install-kubectl/
 Helm: https://github.com/kubernetes/helm
 
 ## Build and Installation
-To build `ankh`, just run `make`
+To build Ankh, just run `make`
 
-To install `ankh` simply run `make install`.
+To install Ankh simply run `make install`.
 
 ## Introduction
 
