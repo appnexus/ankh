@@ -11,7 +11,8 @@ bin/
 build/
 dist/
 pkg/
-coverage/*
+src/ankh/coverage/*
+!src/ankh/coverage/.gitkeep
 
 # IDE
 .idea/
