@@ -22,7 +22,7 @@ install: ankh
 
 .PHONY: cover-clean
 cover-clean:
-	@rm -f $(REPOROOT)/src/ankh/coverage/*.out
+	@rm -f $(REPOROOT)/src/ankh/coverage/*
 
 .PHONY: cover-process
 cover-process: cover-clean
@@ -30,5 +30,5 @@ cover-process: cover-clean
 
 .PHONY: cover
 cover: cover-process
-	@cat $(REPOROOT)/src/ankh/coverage/*.out | awk 'NR==1 || !/^mode/' > $(REPOROOT)/src/ankh/coverage/coverage.all
-	@go tool cover -html=$(REPOROOT)/src/ankh/coverage/coverage.all
+	@cat $(REPOROOT)/src/ankh/coverage/*.out | awk 'NR==1 || !/^mode/' > $(REPOROOT)/src/ankh/coverage/all.cover
+	@go tool cover -html=$(REPOROOT)/src/ankh/coverage/all.cover
