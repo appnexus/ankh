@@ -1,5 +1,6 @@
 THIS_MAKEFILE = $(lastword $(MAKEFILE_LIST))
 REPOROOT = $(abspath $(dir $(THIS_MAKEFILE)))
+TEST_PACKAGES = $(subst $(REPOROOT)/src/,,$(shell go list -f '{{if gt (len .TestGoFiles) 0}}{{.Dir}}{{end}}' ./...))
 
 export GOPATH := $(REPOROOT)/
 
@@ -19,8 +20,15 @@ ankh:
 install: ankh
 	sudo cp -f $(REPOROOT)/bin/ankh /usr/local/bin/ankh
 
+.PHONY: cover-clean
+cover-clean:
+	@rm -f $(REPOROOT)/src/ankh/coverage/*.out
+
+.PHONY: cover-process
+cover-process: cover-clean
+	@cd $(REPOROOT)/src/ankh; $(foreach p,$(TEST_PACKAGES),go test $(p) -coverprofile=coverage/$(subst /,_,$(p)).out;)
+
 .PHONY: cover
-cover:
-	cd $(REPOROOT)/src/ankh &&\
-		go test -coverprofile=coverage/coverage.out &&\
-		go tool cover -html=coverage/coverage.out
+cover: cover-process
+	@cat $(REPOROOT)/src/ankh/coverage/*.out | awk 'NR==1 || !/^mode/' > $(REPOROOT)/src/ankh/coverage/coverage.all
+	@go tool cover -html=$(REPOROOT)/src/ankh/coverage/coverage.all
