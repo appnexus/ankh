@@ -33,24 +33,31 @@ func (f *CustomFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 		reset = ""
 	}
 
-	var level string
+	var prefix string
+	var color string
 
 	switch entry.Level {
 	case logrus.DebugLevel:
-		level = fmt.Sprintf("%sDEBUG%s", cyan, reset)
+		prefix = "DEBUG"
+		color = cyan
 	case logrus.InfoLevel:
-		level = fmt.Sprintf("%sINFO%s", green, reset)
+		prefix = "INFO"
+		color = green
 	case logrus.WarnLevel:
-		level = fmt.Sprintf("%sWARNING%s", yellow, reset)
+		prefix = "WARNING"
+		color = yellow
 	case logrus.ErrorLevel:
-		level = fmt.Sprintf("%sERROR%s", red, reset)
+		prefix = "ERROR"
+		color = red
 	case logrus.FatalLevel:
-		level = fmt.Sprintf("%sFATAL%s", red, reset)
+		prefix = "FATAL"
+		color = red
 	case logrus.PanicLevel:
-		level = fmt.Sprintf("%sPANIC%s", red, reset)
+		prefix = "PANIC"
+		color = red
 	}
 
-	return []byte(fmt.Sprintf("# %-8s %s\n", level, entry.Message)), nil
+	return []byte(fmt.Sprintf("# %s%-8s%s%s\n", color, prefix, reset, entry.Message)), nil
 }
 
 // Collapse recursively traverses a map and tries to collapse it to a flat
@@ -89,7 +96,7 @@ func Collapse(x interface{}, path []string, acc []string) []string {
 	case string:
 		return append(acc, strings.Join(path, ".")+"="+string(x))
 	case int:
-		return append(acc, strings.Join(path, ".")+"="+string(x))
+		return append(acc, strings.Join(path, ".")+"="+strconv.Itoa(x))
 	default:
 		// Just exclude datatypes we don't know about. It's possible this isn't
 		// handling all the cases that yaml parsing can provide
