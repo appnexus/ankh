@@ -25,23 +25,42 @@ import (
 
 var log = logrus.New()
 
+func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) {
+	verb := "Templating"
+	if ctx.Apply {
+		verb = "Applying"
+	}
+
+	releaseLog := ""
+	if ctx.AnkhConfig.CurrentContext.Release != "" {
+		releaseLog = fmt.Sprintf("release \"%v\" ", ctx.AnkhConfig.CurrentContext.Release)
+	}
+
+	dryLog := ""
+	if ctx.DryRun {
+		dryLog = "(dry run) "
+	}
+
+	namespaceLog := ""
+	if ankhFile.Namespace != "" {
+		namespaceLog = fmt.Sprintf(" to namespace \"%s\"", ankhFile.Namespace)
+	}
+
+	ctx.Logger.Infof("%v %v%vwith context \"%s\" using environment \"%s\"%v", verb,
+		releaseLog, dryLog,
+		ctx.AnkhConfig.CurrentContext.KubeContext,
+		ctx.AnkhConfig.CurrentContext.Environment,
+		namespaceLog)
+}
+
 func execute(ctx *ankh.ExecutionContext) {
-	log.Infof("Gathering global configuration...")
+	log.Infof("Reading Ankh file from: %v", ctx.AnkhFilePath)
 
 	rootAnkhFile, err := ankh.ParseAnkhFile(ctx.AnkhFilePath)
 	if err == nil {
-		log.Infof("- OK: %v", ctx.AnkhFilePath)
+		log.Debugf("- OK: %v", ctx.AnkhFilePath)
 	}
 	check(err)
-
-	// run the bootstrap scripts, if they exist
-	bootstrapScripts := rootAnkhFile.Bootstrap.Scripts
-	if len(bootstrapScripts) > 0 {
-		log.Infof("Found bootstrap scripts, executing those now...")
-		runScripts(ctx, bootstrapScripts)
-	} else {
-		log.Infof("`bootstrap` section not found in config. Skipping.")
-	}
 
 	dependencies := rootAnkhFile.Dependencies
 	if ctx.AnkhConfig.CurrentContext.ClusterAdmin && len(rootAnkhFile.AdminDependencies) > 0 {
@@ -50,16 +69,14 @@ func execute(ctx *ankh.ExecutionContext) {
 	}
 
 	executeAnkhFile := func(ankhFile ankh.AnkhFile) {
-		verb := "Templating"
-		if ctx.Apply {
-			verb = "Applying"
+		// run the bootstrap scripts, if they exist
+		bootstrapScripts := ankhFile.Bootstrap.Scripts
+		if len(bootstrapScripts) > 0 {
+			log.Info("Bootstrapping...")
+			runScripts(ctx, bootstrapScripts)
 		}
 
-		ctx.Logger.Infof("%v release \"%v\" with context \"%s\" using environment \"%s\" to namespace \"%s\"", verb,
-			ctx.AnkhConfig.CurrentContext.Release,
-			ctx.AnkhConfig.CurrentContext.KubeContext,
-			ctx.AnkhConfig.CurrentContext.Environment,
-			ankhFile.Namespace)
+		logExecuteAnkhFile(ctx, ankhFile)
 
 		helmOutput, err := helm.Template(ctx, ankhFile)
 		check(err)
@@ -86,15 +103,15 @@ func execute(ctx *ankh.ExecutionContext) {
 		check(err)
 
 		wd, _ := os.Getwd()
-		ctx.Logger.Infof("Running from directory %v", wd)
+		ctx.Logger.Debugf("Running from directory %v", wd)
 
 		// Should this be configurable?
 		path := "ankh.yaml"
 
-		ctx.Logger.Infof("Gathering local configuration...")
+		ctx.Logger.Debugf("Gathering local configuration...")
 		ankhFile, err := ankh.ParseAnkhFile(path)
 		if err == nil {
-			ctx.Logger.Infof("- OK: %v", path)
+			ctx.Logger.Debugf("- OK: %v", path)
 		}
 		check(err)
 
@@ -372,7 +389,7 @@ func runScripts(ctx *ankh.ExecutionContext, scripts []struct{ Path string }) {
 		}
 		log.Infof("Running script: %s", path)
 		if ctx.DryRun {
-			log.Infof("- OK (dry) %s", path)
+			log.Infof("- OK (dry run) %s", path)
 			break
 		}
 		// pass kube context and the "global" config as a yaml environment variable
