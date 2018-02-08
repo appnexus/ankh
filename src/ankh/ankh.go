@@ -13,7 +13,7 @@ import (
 
 // Captures all of the context required to execute a single iteration of Ankh
 type ExecutionContext struct {
-	AnkhConfig   AnkhConfig
+	AnkhConfig          AnkhConfig
 	AnkhFilePath, Chart string
 
 	Verbose, DryRun, Apply, UseContext bool
@@ -112,7 +112,7 @@ type Chart struct {
 // clusters and their contents
 type AnkhFile struct {
 	// (private) an absolute path to the ankh.yaml file
-	Path string
+	Path string `yaml:"-"`
 
 	Bootstrap struct {
 		Scripts []struct {
