@@ -1,4 +1,4 @@
-# Ankh
+# Ankh [![Build Status](https://travis-ci.org/appnexus/ankh.svg?branch=master)](https://travis-ci.org/appnexus/ankh)
 
 Another Kubernetes Helper for shipping code.
 
