@@ -9,6 +9,10 @@ import (
 	"ankh/util"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
+	"strings"
+	"net/http"
+	"crypto/tls"
+	"time"
 )
 
 // Captures all of the context required to execute a single iteration of Ankh
@@ -106,6 +110,160 @@ type Chart struct {
 	// Secrets is a temporary resting place for secrets, eventually we want to
 	// load this from another secure source
 	Secrets map[string]interface{}
+
+}
+
+type ChartFiles struct {
+	Dir                      string
+	ChartDir                 string
+	ValuesPath               string
+	AnkhValuesPath           string
+	AnkhResourceProfilesPath string
+}
+
+
+func CreateReducedYAMLFile(filename, key string) ([]byte, error) {
+	in := make(map[string]interface{})
+	var result []byte
+	inBytes, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return result, err
+	}
+
+	if err = yaml.UnmarshalStrict(inBytes, &in); err != nil {
+		return result, err
+	}
+
+	out := make(map[interface{}]interface{})
+
+	if in[key] == nil {
+		return result, fmt.Errorf("missing `%s` key", key)
+	}
+
+	switch t := in[key].(type) {
+	case map[interface{}]interface{}:
+		for k, v := range t {
+			// TODO: using `.(string)` here could cause a panic in cases where the
+			// key isn't a string, which is pretty uncommon
+
+			// TODO: validate
+			out[k.(string)] = v
+		}
+	default:
+		out[key] = in[key]
+	}
+
+	outBytes, err := yaml.Marshal(&out)
+	if err != nil {
+		return result, err
+	}
+
+	if err := ioutil.WriteFile(filename, outBytes, 0644); err != nil {
+		return result, err
+	}
+
+	return outBytes, nil
+}
+
+func GetChartFileContent(ctx *ExecutionContext, path string, useContext bool, key string) ([]byte, error) {
+	var result []byte
+	bytes, err := ioutil.ReadFile(fmt.Sprintf("%s", path))
+	if err == nil {
+
+		if useContext {
+			bytes, err = CreateReducedYAMLFile(path, key)
+			if err != nil {
+				return result, err
+			}
+		}
+
+		result = bytes
+	} else {
+		ctx.Logger.Debugf("%s not found", path)
+	}
+
+	if len(bytes) > 0 {
+		result = append([]byte("---\n# Source: "+path+"\n"), bytes...)
+	}
+
+	return result, nil
+}
+
+func FindChartFiles(ctx *ExecutionContext, ankhFile AnkhFile, chart Chart) (ChartFiles, error) {
+	name := chart.Name
+	version := chart.Version
+
+	dirPath := filepath.Join(filepath.Dir(ankhFile.Path), "charts", name)
+	_, dirErr := os.Stat(dirPath)
+
+	files := ChartFiles{}
+	// Setup a directory where we'll either copy the chart files, if we've got a
+	// directory, or we'll download and extract a tarball to the temp dir. Then
+	// we'll mutate some of the ankh specific files based on the current
+	// environment and resource profile. Then we'll use those files as arguments
+	// to the helm command.
+	tmpDir, err := ioutil.TempDir(ctx.DataDir, name+"-")
+	if err != nil {
+		return files, err
+	}
+
+	tarballFileName := fmt.Sprintf("%s-%s.tgz", name, version)
+	tarballURL := fmt.Sprintf("%s/%s", strings.TrimRight(
+		ctx.AnkhConfig.CurrentContext.HelmRegistryURL, "/"), tarballFileName)
+
+	// If we already have a dir, let's just copy it to a temp directory so we can
+	// make changes to the ankh specific yaml files before passing them as `-f`
+	// args to `helm template`
+	if dirErr == nil {
+		if err := util.CopyDir(dirPath, filepath.Join(tmpDir, name)); err != nil {
+			return files, err
+		}
+	} else {
+
+		// TODO: this code should be modified to properly fetch charts
+		ok := false
+		for attempt := 1; attempt <= 5; attempt++ {
+			ctx.Logger.Debugf("downloading chart from %s (attempt %v)", tarballURL, attempt)
+			tr := &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			}
+			client := &http.Client{
+				Transport: tr,
+				Timeout:   time.Duration(5 * time.Second),
+			}
+			resp, err := client.Get(tarballURL)
+			if err != nil {
+				return files, err
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode == 200 {
+				ctx.Logger.Debugf("untarring chart to %s", tmpDir)
+				if err = util.Untar(tmpDir, resp.Body); err != nil {
+					return files, err
+				}
+
+				ok = true
+				break
+			} else {
+				ctx.Logger.Warningf("got a status code %v when trying to call %s (attempt %v)", resp.StatusCode, tarballURL, attempt)
+			}
+		}
+		if !ok {
+			return files, fmt.Errorf("failed to fetch helm chart from URL: %v", tarballURL)
+		}
+	}
+
+	chartDir := filepath.Join(tmpDir, name)
+	files = ChartFiles{
+		Dir:                      tmpDir,
+		ChartDir:                 chartDir,
+		ValuesPath:               filepath.Join(chartDir, "values.yaml"),
+		AnkhValuesPath:           filepath.Join(chartDir, "ankh-values.yaml"),
+		AnkhResourceProfilesPath: filepath.Join(chartDir, "ankh-resource-profiles.yaml"),
+	}
+
+	return files, nil
 }
 
 // AnkhFile defines the shape of the `ankh.yaml` file which is used to define
