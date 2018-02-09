@@ -1,10 +1,10 @@
 package kubectl
 
 import (
+	"ankh"
 	"fmt"
 	"io/ioutil"
 	"os/exec"
-	"ankh"
 )
 
 type action string

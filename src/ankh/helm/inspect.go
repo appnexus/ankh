@@ -3,11 +3,11 @@ package helm
 import (
 	"ankh"
 	"fmt"
-	"strings"
-	"os"
-	"io/ioutil"
 	"gopkg.in/yaml.v2"
+	"io/ioutil"
+	"os"
 	"os/exec"
+	"strings"
 )
 
 var findChartFiles = ankh.FindChartFiles

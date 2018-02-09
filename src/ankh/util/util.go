@@ -353,7 +353,7 @@ func LineDiff(expected, found string) string {
 		found = b[i]
 	}
 
-	out += fmt.Sprintf("Diff at line %d",i + 1)
+	out += fmt.Sprintf("Diff at line %d", i+1)
 	out += fmt.Sprintf("\nExpected: '%s'", strconv.Quote(expected))
 	out += fmt.Sprintf(", found: '%s'", strconv.Quote(found))
 	return out

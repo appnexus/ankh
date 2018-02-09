@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 
 	"ankh/util"
+	"crypto/tls"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
-	"strings"
 	"net/http"
-	"crypto/tls"
+	"strings"
 	"time"
 )
 
@@ -110,7 +110,6 @@ type Chart struct {
 	// Secrets is a temporary resting place for secrets, eventually we want to
 	// load this from another secure source
 	Secrets map[string]interface{}
-
 }
 
 type ChartFiles struct {
@@ -120,7 +119,6 @@ type ChartFiles struct {
 	AnkhValuesPath           string
 	AnkhResourceProfilesPath string
 }
-
 
 func CreateReducedYAMLFile(filename, key string) ([]byte, error) {
 	in := make(map[string]interface{})

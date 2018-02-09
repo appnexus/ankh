@@ -2,14 +2,14 @@ package helm
 
 import (
 	"ankh"
-	"github.com/sirupsen/logrus"
-	"testing"
 	"ankh/util"
+	"fmt"
+	"github.com/sirupsen/logrus"
+	"io/ioutil"
 	"os"
 	"os/exec"
-	"fmt"
 	"strings"
-	"io/ioutil"
+	"testing"
 )
 
 const CHART_NAME = "test_chart"
@@ -21,8 +21,8 @@ const VALUES = "values.yaml"
 
 func newCtx() *ankh.ExecutionContext {
 	return &ankh.ExecutionContext{
-		Logger: logrus.New(),
-		AnkhFilePath:ANKH_FILE_PATH,
+		Logger:       logrus.New(),
+		AnkhFilePath: ANKH_FILE_PATH,
 		AnkhConfig: ankh.AnkhConfig{
 			CurrentContext: ankh.Context{
 				Environment:     "dev",
@@ -64,10 +64,10 @@ func newAnkhFile() ankh.AnkhFile {
 
 func findFilesMock(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ankh.Chart) (ankh.ChartFiles, error) {
 	return ankh.ChartFiles{
-		AnkhValuesPath: TEST_DIR + "/" + ANKH_VALUES,
+		AnkhValuesPath:           TEST_DIR + "/" + ANKH_VALUES,
 		AnkhResourceProfilesPath: TEST_DIR + "/" + RESOURCE_PROFILES,
-		ValuesPath:TEST_DIR + "/" + VALUES,
-		ChartDir:TEST_DIR,
+		ValuesPath:               TEST_DIR + "/" + VALUES,
+		ChartDir:                 TEST_DIR,
 	}, nil
 }
 

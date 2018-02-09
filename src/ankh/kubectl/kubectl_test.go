@@ -2,12 +2,12 @@ package kubectl
 
 import (
 	"ankh"
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
-	"testing"
 	"strings"
-	"bufio"
+	"testing"
 )
 
 const KUBE_CONFIG_PATH = "/path/to/config"
@@ -15,7 +15,7 @@ const KUBE_CONTEXT = "test_context"
 const NAMESPACE = "test_namespace"
 const INPUT = "test yaml"
 
-func newCtx() *ankh.ExecutionContext{
+func newCtx() *ankh.ExecutionContext {
 	return &ankh.ExecutionContext{
 		KubeConfigPath: KUBE_CONFIG_PATH,
 		AnkhConfig: ankh.AnkhConfig{
