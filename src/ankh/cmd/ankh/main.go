@@ -84,7 +84,7 @@ func execute(ctx *ankh.ExecutionContext) {
 		check(err)
 
 		if ctx.Apply {
-			kubectlOutput, err := kubectl.Execute(ctx, kubectl.Apply, helmOutput, ankhFile)
+			kubectlOutput, err := kubectl.Execute(ctx, kubectl.Apply, helmOutput, ankhFile, nil)
 			check(err)
 
 			if ctx.Verbose {
@@ -335,7 +335,7 @@ func main() {
 }
 
 func inspect(ctx *ankh.ExecutionContext,
-	cb func(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.AnkhFile) (string, error)) {
+	cb func(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ankh.Chart) (string, error)) {
 	var result string
 
 	ankhFile, err := ankh.ParseAnkhFile(ctx.AnkhFilePath)
@@ -354,7 +354,7 @@ func inspect(ctx *ankh.ExecutionContext,
 			continue
 		}
 
-		output, err := cb(ctx, chart, ankhFile)
+		output, err := cb(ctx, ankhFile, chart)
 		check(err)
 		result += output
 	}

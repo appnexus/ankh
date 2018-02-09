@@ -1,0 +1,33 @@
+---
+# Chart: test_chart
+# Source: /path/to/ankh.yaml
+default_values:
+  default_key: default_value
+values:
+  dev:
+    host: test.devnxs.net
+  prod:
+    host: test.adnxs.net
+resource_profiles:
+  constrained:
+    cpu: 0.1
+  natural:
+    cpu: 0.3
+---
+# Source: /tmp/ankh/ankh-resource-profiles.yaml
+constrained:
+  replicas: 1
+natural:
+  replicas: 2
+---
+# Source: /tmp/ankh/ankh-values.yaml
+production:
+  port: 80
+dev:
+  port: 8080
+---
+# Source: /tmp/ankh/values.yaml
+host: localhost
+port: 8080
+name: test-app
+

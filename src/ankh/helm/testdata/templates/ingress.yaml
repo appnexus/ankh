@@ -1,0 +1,20 @@
+{{ if .Values.ingress }}
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: test-app{{ if ne .Release.Name "RELEASE-NAME" }}-{{ .Release.Name}}{{ end }}
+  labels:
+    app: test-app
+    {{- if ne .Release.Name "RELEASE-NAME" }}
+    release: {{ .Release.Name }}
+    {{- end }}
+spec:
+  rules:
+  - host: {{ required "this field is required" .Values.ingress.host }}
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: thorondor-ui{{ if ne .Release.Name "RELEASE-NAME" }}-{{ .Release.Name}}{{ end }}
+          servicePort: {{ .Values.service.externalPort }}
+{{ end }}

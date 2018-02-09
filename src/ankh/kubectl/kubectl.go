@@ -1,11 +1,10 @@
 package kubectl
 
 import (
+	"ankh"
 	"fmt"
 	"io/ioutil"
 	"os/exec"
-
-	"ankh"
 )
 
 type action string
@@ -15,7 +14,13 @@ const (
 	Delete action = "delete"
 )
 
-func Execute(ctx *ankh.ExecutionContext, act action, input string, ankhFile ankh.AnkhFile) (string, error) {
+func Execute(ctx *ankh.ExecutionContext, act action, input string, ankhFile ankh.AnkhFile,
+	cmd func(name string, arg ...string) *exec.Cmd) (string, error) {
+
+	if cmd == nil {
+		cmd = exec.Command
+	}
+
 	kubectlArgs := []string{
 		"kubectl", string(act),
 		"--context", ctx.AnkhConfig.CurrentContext.KubeContext,
@@ -34,7 +39,7 @@ func Execute(ctx *ankh.ExecutionContext, act action, input string, ankhFile ankh
 	}
 
 	kubectlArgs = append(kubectlArgs, "-f", "-")
-	kubectlCmd := exec.Command(kubectlArgs[0], kubectlArgs[1:]...)
+	kubectlCmd := cmd(kubectlArgs[0], kubectlArgs[1:]...)
 
 	if ctx.Verbose {
 		ctx.Logger.Infof("running kubectl command: %v", kubectlArgs)

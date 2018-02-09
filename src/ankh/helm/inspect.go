@@ -3,43 +3,23 @@ package helm
 import (
 	"ankh"
 	"fmt"
-	"strings"
-	"os/exec"
-	"os"
-	"io/ioutil"
 	"gopkg.in/yaml.v2"
+	"io/ioutil"
+	"os"
+	"os/exec"
+	"strings"
 )
 
-func getChartFileContent(ctx *ankh.ExecutionContext, path string, useContext bool, key string) ([]byte, error) {
-	var result []byte
-	bytes, err := ioutil.ReadFile(fmt.Sprintf("%s", path))
-	if err == nil {
+var findChartFiles = ankh.FindChartFiles
+var getChartFileContent = ankh.GetChartFileContent
+var execContext = exec.Command
 
-		if useContext {
-			bytes, err = CreateReducedYAMLFile(path, key)
-			if err != nil {
-				return result, err
-			}
-		}
-
-		result = bytes
-	} else {
-		ctx.Logger.Debugf("%s not found", path)
-	}
-
-	if len(bytes) > 0 {
-		result = append([]byte("\n---\n# Source: "+path+"\n"), bytes...)
-	}
-
-	return result, nil
-}
-
-func InspectValues(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.AnkhFile) (string, error) {
+func InspectValues(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ankh.Chart) (string, error) {
 	var result string
 
 	ctx.Logger.Debug("Inspecting values for chart %s", chart.Name)
 
-	result += "\n---\n# Chart: " + chart.Name
+	result += "---\n# Chart: " + chart.Name
 	result += fmt.Sprintf("\n# Source: %s\n", ctx.AnkhFilePath)
 
 	type Values struct {
@@ -65,18 +45,18 @@ func InspectValues(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 
 	out, err := yaml.Marshal(values)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	result += string(out)
 
-	files, err := FindChartFiles(ctx, chart.Name, chart.Version, ankhFile)
+	files, err := findChartFiles(ctx, ankhFile, chart)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 
 	bytes, err := getChartFileContent(ctx, files.AnkhResourceProfilesPath, ctx.UseContext, ctx.AnkhConfig.CurrentContext.ResourceProfile)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	if len(bytes) > 0 {
 		result += string(bytes)
@@ -84,7 +64,7 @@ func InspectValues(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 
 	bytes, err = getChartFileContent(ctx, files.AnkhValuesPath, ctx.UseContext, ctx.AnkhConfig.CurrentContext.Environment)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	if len(bytes) > 0 {
 		result += string(bytes)
@@ -92,7 +72,7 @@ func InspectValues(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 
 	bytes, err = getChartFileContent(ctx, files.ValuesPath, false, "")
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	if len(bytes) > 0 {
 		result += string(bytes)
@@ -101,14 +81,14 @@ func InspectValues(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 	return result, nil
 }
 
-func InspectChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.AnkhFile) (string, error) {
+func InspectChart(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ankh.Chart) (string, error) {
 	var result string
 
 	ctx.Logger.Debugf("Inspecting chart.yaml for chart %s", chart.Name)
 
 	currentContext := ctx.AnkhConfig.CurrentContext
 	result += fmt.Sprintf("\n---\n# Chart: %s\n", chart.Name)
-	files, err := FindChartFiles(ctx, chart.Name, chart.Version, ankhFile)
+	files, err := findChartFiles(ctx, ankhFile, chart)
 	if err != nil {
 		return "", err
 	}
@@ -118,7 +98,7 @@ func InspectChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.An
 
 	ctx.Logger.Debugf("running helm command %s", strings.Join(helmArgs, " "))
 
-	helmCmd := exec.Command(helmArgs[0], helmArgs[1:]...)
+	helmCmd := execContext(helmArgs[0], helmArgs[1:]...)
 	helmOutput, err := helmCmd.CombinedOutput()
 
 	if err != nil {
@@ -130,11 +110,11 @@ func InspectChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.An
 	return result, nil
 }
 
-func InspectTemplates(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.AnkhFile) (string, error) {
+func InspectTemplates(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ankh.Chart) (string, error) {
 	var result string
 
 	ctx.Logger.Debug("Inspecting templates for chart %s", chart.Name)
-	files, err := FindChartFiles(ctx, chart.Name, chart.Version, ankhFile)
+	files, err := findChartFiles(ctx, ankhFile, chart)
 	if err != nil {
 		return "", err
 	}

@@ -1,0 +1,4 @@
+constrained:
+  replicas: 1
+natural:
+  replicas: 2

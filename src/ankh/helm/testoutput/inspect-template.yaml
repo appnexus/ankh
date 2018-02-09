@@ -1,0 +1,43 @@
+# Chart: test_chart
+---
+# Source: test_chart/templates/ingress.yaml
+{{ if .Values.ingress }}
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: test-app{{ if ne .Release.Name "RELEASE-NAME" }}-{{ .Release.Name}}{{ end }}
+  labels:
+    app: test-app
+    {{- if ne .Release.Name "RELEASE-NAME" }}
+    release: {{ .Release.Name }}
+    {{- end }}
+spec:
+  rules:
+  - host: {{ required "this field is required" .Values.ingress.host }}
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: thorondor-ui{{ if ne .Release.Name "RELEASE-NAME" }}-{{ .Release.Name}}{{ end }}
+          servicePort: {{ .Values.service.externalPort }}
+{{ end }}
+
+---
+# Source: test_chart/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-app
+  labels:
+    app: test-app
+    {{- if ne .Release.Name "RELEASE-NAME" }}
+    release: {{ .Release.Name }}
+    {{- end }}
+spec:
+    type: NodePort
+    selector:
+      app: test-app
+    ports:
+      - protocol: TCP
+        port: {{ .Values.service.externalPort }}
+        targetPort: {{ .Values.service.internalPort }}
