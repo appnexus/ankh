@@ -69,11 +69,13 @@ func execute(ctx *ankh.ExecutionContext) {
 	}
 
 	executeAnkhFile := func(ankhFile ankh.AnkhFile) {
-		// run the bootstrap scripts, if they exist
-		bootstrapScripts := ankhFile.Bootstrap.Scripts
-		if len(bootstrapScripts) > 0 {
-			log.Info("Bootstrapping...")
-			runScripts(ctx, bootstrapScripts)
+		if ctx.Apply {
+			// run the bootstrap scripts, if they exist
+			bootstrapScripts := ankhFile.Bootstrap.Scripts
+			if len(bootstrapScripts) > 0 {
+				log.Info("Bootstrapping...")
+				runScripts(ctx, bootstrapScripts)
+			}
 		}
 
 		logExecuteAnkhFile(ctx, ankhFile)
