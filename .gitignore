@@ -1,6 +1,7 @@
 # golang
 bin/
 pkg/
+release/
 src/ankh/coverage/*
 !src/ankh/coverage/.gitkeep
 coverage.txt

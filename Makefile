@@ -3,6 +3,7 @@ REPOROOT = $(abspath $(dir $(THIS_MAKEFILE)))
 TEST_PACKAGES = $(subst $(REPOROOT)/src/,,$(shell go list -f '{{if gt (len .TestGoFiles) 0}}{{.Dir}}{{end}}' ./...))
 
 export GOPATH := $(REPOROOT)/
+export GOCMD ?= go
 
 .PHONY: all
 all: ankh
@@ -11,14 +12,19 @@ all: ankh
 clean:
 	@rm -rf $(REPOROOT)/bin
 	@rm -rf $(REPOROOT)/pkg
+	@rm -rf $(REPOROOT)/release
 
 .PHONY: ankh
 ankh:
-	cd $(REPOROOT)/src/ankh/cmd/ankh; go install
+	cd $(REPOROOT)/src/ankh/cmd/ankh; $(GOCMD) install
 
 .PHONY: install
 install: ankh
 	sudo cp -f $(REPOROOT)/bin/ankh /usr/local/bin/ankh
+
+.PHONY: release
+release:
+	@./release.bash
 
 .PHONY: cover-clean
 cover-clean:
@@ -26,7 +32,7 @@ cover-clean:
 
 .PHONY: cover-generate
 cover-generate: cover-clean
-	@cd $(REPOROOT)/src/ankh; $(foreach p,$(TEST_PACKAGES),go test $(p) -coverprofile=coverage/$(subst /,_,$(p)).out;)
+	@cd $(REPOROOT)/src/ankh; $(foreach p,$(TEST_PACKAGES),$(GOCMD) test $(p) -coverprofile=coverage/$(subst /,_,$(p)).out;)
 	@cat $(REPOROOT)/src/ankh/coverage/*.out | awk 'NR==1 || !/^mode/' > $(REPOROOT)/coverage.txt
 
 .PHONY: cover
@@ -34,4 +40,4 @@ cover: cover-generate
 
 .PHONY: cover-html
 cover-html: cover-generate
-	@go tool cover -html=$(REPOROOT)/coverage.txt
+	@$(GOCMD) tool cover -html=$(REPOROOT)/coverage.txt
