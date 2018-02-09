@@ -72,8 +72,11 @@ func TestExecute(t *testing.T) {
 			Namespace: NAMESPACE,
 		}
 
-		output, _ := Execute(ctx, Apply, INPUT, config, execCommandContext)
+		output, err := Execute(ctx, Apply, INPUT, config, execCommandContext)
 
+		if err != nil {
+			t.Error(err)
+		}
 		expected := fmt.Sprintf("kubectl apply --context %s --namespace %s --kubeconfig %s -f - %s",
 			KUBE_CONTEXT, NAMESPACE, KUBE_CONFIG_PATH, INPUT)
 
@@ -88,8 +91,11 @@ func TestExecute(t *testing.T) {
 			Namespace: NAMESPACE,
 		}
 
-		output, _ := Execute(ctx, Delete, INPUT, config, execCommandContext)
+		output, err := Execute(ctx, Delete, INPUT, config, execCommandContext)
 
+		if err != nil {
+			t.Error(err)
+		}
 		expected := fmt.Sprintf("kubectl delete --context %s --namespace %s --kubeconfig %s -f - %s",
 			KUBE_CONTEXT, NAMESPACE, KUBE_CONFIG_PATH, INPUT)
 
@@ -106,8 +112,10 @@ func TestExecute(t *testing.T) {
 		}
 
 		output, err := Execute(ctx, Apply, INPUT, config, execCommandContext)
-		fmt.Println(err)
 
+		if err != nil {
+			t.Error(err)
+		}
 		expected := fmt.Sprintf("kubectl apply --context %s --namespace %s --kubeconfig %s --dry-run -f - %s",
 			KUBE_CONTEXT, NAMESPACE, KUBE_CONFIG_PATH, INPUT)
 

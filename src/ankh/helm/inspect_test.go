@@ -71,6 +71,27 @@ func findFilesMock(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ank
 	}, nil
 }
 
+// Mocked exec.Command
+func execCommandContext(command string, args ...string) *exec.Cmd {
+	cs := []string{"-test.run=TestHelperProcess", "--", command}
+	cs = append(cs, args...)
+	cmd := exec.Command(os.Args[0], cs...)
+	cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
+	return cmd
+}
+
+func TestHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+
+	// Mocked exec.Command will return input command
+	output := strings.Join(os.Args[3:], " ")
+
+	fmt.Fprintf(os.Stdout, output)
+	os.Exit(0)
+}
+
 func TestInspectValues(t *testing.T) {
 	t.Run("using context", func(t *testing.T) {
 		// overriding functions
@@ -100,7 +121,7 @@ func TestInspectValues(t *testing.T) {
 
 		bytes, _ := ioutil.ReadFile("testoutput/inspect-values-context.yaml")
 		expected := strings.TrimSpace(string(bytes))
-		
+
 		if out != expected {
 			t.Errorf(util.LineDiff(expected, out))
 		}
@@ -139,33 +160,6 @@ func TestInspectValues(t *testing.T) {
 			t.Errorf(util.LineDiff(expected, out))
 		}
 	})
-}
-
-// Mocked exec.Command
-func execCommandContext(command string, args ...string) *exec.Cmd {
-	cs := []string{"-test.run=TestHelperProcess", "--", command}
-	cs = append(cs, args...)
-	cmd := exec.Command(os.Args[0], cs...)
-	cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
-	return cmd
-}
-
-func TestHelperProcess(t *testing.T) {
-	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
-		return
-	}
-
-	// Test exec.Command error
-	if os.Getenv("FAIL") == "1" {
-		fmt.Fprintf(os.Stderr, "Ooops!")
-		os.Exit(1)
-	}
-
-	// Mocked exec.Command will return input command
-	output := strings.Join(os.Args[3:], " ")
-
-	fmt.Fprintf(os.Stdout, output)
-	os.Exit(0)
 }
 
 func TestInspectChart(t *testing.T) {
