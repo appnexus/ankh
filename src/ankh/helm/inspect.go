@@ -19,7 +19,7 @@ func InspectValues(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ank
 
 	ctx.Logger.Debug("Inspecting values for chart %s", chart.Name)
 
-	result += "---\n# Chart: " + chart.Name
+	result += "\n---\n# Chart: " + chart.Name
 	result += fmt.Sprintf("\n# Source: %s\n", ctx.AnkhFilePath)
 
 	type Values struct {
@@ -87,7 +87,7 @@ func InspectChart(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ankh
 	ctx.Logger.Debugf("Inspecting chart.yaml for chart %s", chart.Name)
 
 	currentContext := ctx.AnkhConfig.CurrentContext
-	result += fmt.Sprintf("# Chart: %s\n", chart.Name)
+	result += fmt.Sprintf("\n---\n# Chart: %s\n", chart.Name)
 	files, err := findChartFiles(ctx, ankhFile, chart)
 	if err != nil {
 		return "", err
@@ -127,9 +127,9 @@ func InspectTemplates(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart 
 		return "", err
 	}
 
-	result += "---\n# Chart: " + chart.Name
+	result += "# Chart: " + chart.Name
 	for _, template := range templates {
-		result += fmt.Sprintf("\n# Source: %s/templates/%s\n", chart.Name, template.Name())
+		result += fmt.Sprintf("\n---\n# Source: %s/templates/%s\n", chart.Name, template.Name())
 		path := dir + template.Name()
 		bytes, err := ioutil.ReadFile(path)
 		if err != nil {

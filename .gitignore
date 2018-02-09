@@ -1,18 +1,9 @@
-# python
-venv
-build
-dist
-ankh.egg-info/
-*.tgz
-*.pyc
-
 # golang
 bin/
-build/
-dist/
 pkg/
 src/ankh/coverage/*
 !src/ankh/coverage/.gitkeep
+coverage.txt
 
 # IDE
 .idea/

@@ -25,23 +25,42 @@ import (
 
 var log = logrus.New()
 
+func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) {
+	verb := "Templating"
+	if ctx.Apply {
+		verb = "Applying"
+	}
+
+	releaseLog := ""
+	if ctx.AnkhConfig.CurrentContext.Release != "" {
+		releaseLog = fmt.Sprintf("release \"%v\" ", ctx.AnkhConfig.CurrentContext.Release)
+	}
+
+	dryLog := ""
+	if ctx.DryRun {
+		dryLog = "(dry run) "
+	}
+
+	namespaceLog := ""
+	if ankhFile.Namespace != "" {
+		namespaceLog = fmt.Sprintf(" to namespace \"%s\"", ankhFile.Namespace)
+	}
+
+	ctx.Logger.Infof("%v %v%vwith context \"%s\" using environment \"%s\"%v", verb,
+		releaseLog, dryLog,
+		ctx.AnkhConfig.CurrentContext.KubeContext,
+		ctx.AnkhConfig.CurrentContext.Environment,
+		namespaceLog)
+}
+
 func execute(ctx *ankh.ExecutionContext) {
-	log.Infof("Gathering global configuration...")
+	log.Infof("Reading Ankh file from: %v", ctx.AnkhFilePath)
 
 	rootAnkhFile, err := ankh.ParseAnkhFile(ctx.AnkhFilePath)
 	if err == nil {
-		log.Infof("- OK: %v", ctx.AnkhFilePath)
+		log.Debugf("- OK: %v", ctx.AnkhFilePath)
 	}
 	check(err)
-
-	// run the bootstrap scripts, if they exist
-	bootstrapScripts := rootAnkhFile.Bootstrap.Scripts
-	if len(bootstrapScripts) > 0 {
-		log.Infof("Found bootstrap scripts, executing those now...")
-		runScripts(ctx, bootstrapScripts)
-	} else {
-		log.Infof("`bootstrap` section not found in config. Skipping.");
-	}
 
 	dependencies := rootAnkhFile.Dependencies
 	if ctx.AnkhConfig.CurrentContext.ClusterAdmin && len(rootAnkhFile.AdminDependencies) > 0 {
@@ -50,16 +69,16 @@ func execute(ctx *ankh.ExecutionContext) {
 	}
 
 	executeAnkhFile := func(ankhFile ankh.AnkhFile) {
-		verb := "Templating"
 		if ctx.Apply {
-			verb = "Applying"
+			// run the bootstrap scripts, if they exist
+			bootstrapScripts := ankhFile.Bootstrap.Scripts
+			if len(bootstrapScripts) > 0 {
+				log.Info("Bootstrapping...")
+				runScripts(ctx, bootstrapScripts)
+			}
 		}
 
-		ctx.Logger.Infof("%v release \"%v\" with context \"%s\" using environment \"%s\" to namespace \"%s\"", verb,
-			ctx.AnkhConfig.CurrentContext.Release,
-			ctx.AnkhConfig.CurrentContext.KubeContext,
-			ctx.AnkhConfig.CurrentContext.Environment,
-			ankhFile.Namespace)
+		logExecuteAnkhFile(ctx, ankhFile)
 
 		helmOutput, err := helm.Template(ctx, ankhFile)
 		check(err)
@@ -86,15 +105,15 @@ func execute(ctx *ankh.ExecutionContext) {
 		check(err)
 
 		wd, _ := os.Getwd()
-		ctx.Logger.Infof("Running from directory %v", wd)
+		ctx.Logger.Debugf("Running from directory %v", wd)
 
 		// Should this be configurable?
 		path := "ankh.yaml"
 
-		ctx.Logger.Infof("Gathering local configuration...")
+		ctx.Logger.Debugf("Gathering local configuration...")
 		ankhFile, err := ankh.ParseAnkhFile(path)
 		if err == nil {
-			ctx.Logger.Infof("- OK: %v", path)
+			ctx.Logger.Debugf("- OK: %v", path)
 		}
 		check(err)
 
@@ -202,17 +221,20 @@ func main() {
 	})
 
 	app.Command("inspect", "Inspect charts in ankh.yaml and display information.", func(cmd *cli.Cmd) {
+		cmd.Spec = "[-f] [--chart]"
+		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+		chart := cmd.StringOpt("chart", "", "Limits the inspect command to only the specified chart")
 
 		cmd.Command("values", "For each chart, display contents of values.yaml, "+
 			"ankh-values.yaml, and ankh-resource-profiles.yaml", func(cmd *cli.Cmd) {
 
-			cmd.Spec = "[-f] [--use-context]"
-			ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+			cmd.Spec += " [--use-context]"
 			useContext := cmd.BoolOpt("use-context", false, "Filter values by current context")
 
 			cmd.Action = func() {
 				ctx.AnkhFilePath = *ankhFilePath
 				ctx.UseContext = *useContext
+				ctx.Chart = *chart
 				inspect(ctx, helm.InspectValues)
 				os.Exit(0)
 			}
@@ -220,12 +242,9 @@ func main() {
 
 		cmd.Command("chart", "For each chart, display contents of the Charts.yaml file",
 			func(cmd *cli.Cmd) {
-
-				cmd.Spec = "[-f]"
-				ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
-
 				cmd.Action = func() {
 					ctx.AnkhFilePath = *ankhFilePath
+					ctx.Chart = *chart
 					inspect(ctx, helm.InspectChart)
 					os.Exit(0)
 				}
@@ -233,12 +252,9 @@ func main() {
 
 		cmd.Command("templates", "For each chart, display contents of each raw template file",
 			func(cmd *cli.Cmd) {
-
-				cmd.Spec = "[-f]"
-				ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
-
 				cmd.Action = func() {
 					ctx.AnkhFilePath = *ankhFilePath
+					ctx.Chart = *chart
 					inspect(ctx, helm.InspectTemplates)
 					os.Exit(0)
 				}
@@ -323,22 +339,29 @@ func inspect(ctx *ankh.ExecutionContext,
 	var result string
 
 	ankhFile, err := ankh.ParseAnkhFile(ctx.AnkhFilePath)
-	if err == nil {
-		log.Infof("- OK: %v", ctx.AnkhFilePath)
-	}
 	check(err)
 
-	if len(ankhFile.Charts) > 0 {
-		ctx.Logger.Debug("Inspecting charts")
-		for _, chart := range ankhFile.Charts {
-			output, err := cb(ctx, ankhFile, chart)
-			check(err)
-			result += output
-		}
-	} else {
+	if len(ankhFile.Charts) < 1 {
 		log.Infof(
 			"%s does not contain any charts. Inspect commands only operate on ankh.yaml files containing charts",
 			ctx.AnkhFilePath)
+		return
+	}
+
+	ctx.Logger.Debug("Inspecting charts")
+	for _, chart := range ankhFile.Charts {
+		if ctx.Chart != "" && chart.Name != ctx.Chart {
+			continue
+		}
+
+		output, err := cb(ctx, ankhFile, chart)
+		check(err)
+		result += output
+	}
+
+	if result == "" {
+		ctx.Logger.Fatalf("Chart %s was specified with `--chart` but does not exist in the charts array", ctx.Chart)
+		return
 	}
 
 	fmt.Println(result)
@@ -350,7 +373,7 @@ func check(err error) {
 	}
 }
 
-func runScripts(ctx *ankh.ExecutionContext, scripts []struct { Path string }) {
+func runScripts(ctx *ankh.ExecutionContext, scripts []struct{ Path string }) {
 	for _, script := range scripts {
 		path := script.Path
 		if path == "" {
@@ -368,7 +391,7 @@ func runScripts(ctx *ankh.ExecutionContext, scripts []struct { Path string }) {
 		}
 		log.Infof("Running script: %s", path)
 		if ctx.DryRun {
-			log.Infof("- OK (dry) %s", path)
+			log.Infof("- OK (dry run) %s", path)
 			break
 		}
 		// pass kube context and the "global" config as a yaml environment variable
@@ -378,8 +401,8 @@ func runScripts(ctx *ankh.ExecutionContext, scripts []struct { Path string }) {
 			check(err)
 			cmd.Env = append(
 				os.Environ(),
-				"ANKH_CONFIG_GLOBAL=" + string(global),
-				"ANKH_KUBE_CONTEXT=" + string(ctx.AnkhConfig.CurrentContext.KubeContext))
+				"ANKH_CONFIG_GLOBAL="+string(global),
+				"ANKH_KUBE_CONTEXT="+string(ctx.AnkhConfig.CurrentContext.KubeContext))
 		}
 		var stdOut, stdErr bytes.Buffer
 		cmd.Stdout = &stdOut

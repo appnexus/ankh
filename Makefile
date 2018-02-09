@@ -37,11 +37,11 @@ cover-clean:
 .PHONY: cover-generate
 cover-generate: cover-clean
 	@cd $(REPOROOT)/src/ankh; $(foreach p,$(TEST_PACKAGES),go test $(p) -coverprofile=coverage/$(subst /,_,$(p)).out;)
-	@cat $(REPOROOT)/src/ankh/coverage/*.out | awk 'NR==1 || !/^mode/' > $(REPOROOT)/src/ankh/coverage/all.cover
+	@cat $(REPOROOT)/src/ankh/coverage/*.out | awk 'NR==1 || !/^mode/' > $(REPOROOT)/coverage.txt
 
 .PHONY: cover
 cover: cover-generate
 
 .PHONY: cover-html
 cover-html: cover-generate
-	@go tool cover -html=$(REPOROOT)/src/ankh/coverage/all.cover
+	@go tool cover -html=$(REPOROOT)/coverage.txt
