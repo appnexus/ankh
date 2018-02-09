@@ -23,6 +23,8 @@ import (
 	"ankh/util"
 )
 
+var AnkhBuildVersion string
+
 var log = logrus.New()
 
 func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) {
@@ -329,6 +331,11 @@ func main() {
 				os.Exit(0)
 			}
 		})
+	})
+
+	app.Command("version", "Show version info", func(cmd *cli.Cmd) {
+		fmt.Println(AnkhBuildVersion)
+		os.Exit(0)
 	})
 
 	app.Run(os.Args)

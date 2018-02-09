@@ -3,6 +3,7 @@ REPOROOT = $(abspath $(dir $(THIS_MAKEFILE)))
 TEST_PACKAGES = $(subst $(REPOROOT)/src/,,$(shell go list -f '{{if gt (len .TestGoFiles) 0}}{{.Dir}}{{end}}' ./...))
 
 export GOPATH := $(REPOROOT)/
+export VERSION ?= DEVELOPMENT
 export GOCMD ?= go
 
 .PHONY: all
@@ -16,7 +17,7 @@ clean:
 
 .PHONY: ankh
 ankh:
-	cd $(REPOROOT)/src/ankh/cmd/ankh; $(GOCMD) install
+	cd $(REPOROOT)/src/ankh/cmd/ankh; $(GOCMD) install -ldflags "-X main.AnkhBuildVersion=$(VERSION)"
 
 .PHONY: install
 install: ankh

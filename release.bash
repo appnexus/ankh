@@ -1,8 +1,14 @@
 #!/bin/bash
 
+if [ -z "$VERSION" ] ; then
+	echo "Must provide VERSION"
+	exit 1
+fi
+
+make clean || exit 1
+
 release_dir=release
 mkdir -p $release_dir
-rm -f $release_dir/*
 
 function release() {
 	export GOOS=$1
