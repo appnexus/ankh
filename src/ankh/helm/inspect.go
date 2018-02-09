@@ -19,7 +19,7 @@ func InspectValues(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ank
 
 	ctx.Logger.Debug("Inspecting values for chart %s", chart.Name)
 
-	result += "\n---\n# Chart: " + chart.Name
+	result += "---\n# Chart: " + chart.Name
 	result += fmt.Sprintf("\n# Source: %s\n", ctx.AnkhFilePath)
 
 	type Values struct {

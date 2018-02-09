@@ -1,0 +1,20 @@
+---
+# Chart: test_chart
+# Source: /path/to/ankh.yaml
+default_values:
+  default_key: default_value
+values:
+  host: test.devnxs.net
+resource_profiles:
+  cpu: 0.1
+---
+# Source: /tmp/ankh/ankh-resource-profiles.yaml
+replicas: 1
+---
+# Source: /tmp/ankh/ankh-values.yaml
+port: 8080
+---
+# Source: /tmp/ankh/values.yaml
+host: localhost
+port: 8080
+name: test-app

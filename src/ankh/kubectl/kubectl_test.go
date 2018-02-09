@@ -130,6 +130,5 @@ func TestExecute(t *testing.T) {
 		if err == nil || err.Error() != expected {
 			t.Errorf("Expected output: %s; found: %s", expected, err.Error())
 		}
-
 	})
 }

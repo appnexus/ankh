@@ -93,33 +93,16 @@ func TestInspectValues(t *testing.T) {
 		}
 
 		out, err := InspectValues(ctx, ankhFile, chart)
+		out = strings.TrimSpace(out)
 		if err != nil {
 			t.Error(err.Error())
 		}
 
-		expected := `---
-# Chart: test_chart
-# Source: /path/to/ankh.yaml
-default_values:
-  default_key: default_value
-values:
-  host: test.devnxs.net
-resource_profiles:
-  cpu: 0.1
----
-# Source: /tmp/ankh/ankh-resource-profiles.yaml
-replicas: 1
----
-# Source: /tmp/ankh/ankh-values.yaml
-port: 8080
----
-# Source: /tmp/ankh/values.yaml
-host: localhost
-port: 8080
-name: test-app
-`
-  	if out != expected {
-  		t.Errorf("\nExpected output: %s\n\n Found: %s", expected, out)
+		bytes, _ := ioutil.ReadFile("testoutput/inspect-values-context.yaml")
+		expected := strings.TrimSpace(string(bytes))
+		
+		if out != expected {
+			t.Errorf(util.LineDiff(expected, out))
 		}
 	})
 
@@ -144,45 +127,16 @@ name: test-app
 		}
 
 		out, err := InspectValues(ctx, ankhFile, chart)
+		out = strings.TrimSpace(out)
 		if err != nil {
 			t.Error(err.Error())
 		}
 
-		expected := `---
-# Chart: test_chart
-# Source: /path/to/ankh.yaml
-default_values:
-  default_key: default_value
-values:
-  dev:
-    host: test.devnxs.net
-  prod:
-    host: test.adnxs.net
-resource_profiles:
-  constrained:
-    cpu: 0.1
-  natural:
-    cpu: 0.3
----
-# Source: /tmp/ankh/ankh-resource-profiles.yaml
-constrained:
-  replicas: 1
-natural:
-  replicas: 2
----
-# Source: /tmp/ankh/ankh-values.yaml
-production:
-  port: 80
-dev:
-  port: 8080
----
-# Source: /tmp/ankh/values.yaml
-host: localhost
-port: 8080
-name: test-app
-`
+		bytes, _ := ioutil.ReadFile("testoutput/inspect-values.yaml")
+		expected := strings.TrimSpace(string(bytes))
+
 		if out != expected {
-			t.Errorf("\nExpected output: %s\n\n Found: %s", expected, out)
+			t.Errorf(util.LineDiff(expected, out))
 		}
 	})
 }
@@ -239,11 +193,11 @@ func TestInspectChart(t *testing.T) {
 
 		out = strings.TrimSpace(out)
 
-		expected := `# Chart: test_chart
-helm inspect chart --kube-context dev`
+		bytes, _ := ioutil.ReadFile("testoutput/inspect-chart.yaml")
+		expected := strings.TrimSpace(string(bytes))
 
 		if out != expected {
-			t.Errorf("Expected: %s, found: %s", expected, out)
+			t.Errorf(util.LineDiff(expected, out))
 		}
 	})
 }
@@ -275,11 +229,10 @@ func TestInspectTemplates(t *testing.T) {
 		}
 
 		out = strings.TrimSpace(out)
-		bytes, _ := ioutil.ReadFile("testdata/inspect-template.yaml")
-
+		bytes, _ := ioutil.ReadFile("testoutput/inspect-template.yaml")
 		expected := strings.TrimSpace(string(bytes))
 		if out != string(expected) {
-			t.Errorf("Expected: %s, found: %s", expected, out)
+			t.Errorf(util.LineDiff(expected, out))
 		}
 	})
 }

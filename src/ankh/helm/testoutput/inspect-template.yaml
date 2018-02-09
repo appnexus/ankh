@@ -1,5 +1,5 @@
----
 # Chart: test_chart
+---
 # Source: test_chart/templates/ingress.yaml
 {{ if .Values.ingress }}
 apiVersion: extensions/v1beta1
@@ -22,6 +22,7 @@ spec:
           servicePort: {{ .Values.service.externalPort }}
 {{ end }}
 
+---
 # Source: test_chart/templates/service.yaml
 apiVersion: v1
 kind: Service

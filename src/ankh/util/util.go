@@ -325,3 +325,36 @@ func MultiErrorFormat(errs []error) string {
 
 	return strings.Join(s, "\n")
 }
+
+// LineDiff takes two strings and returns a description of the first differing line.
+func LineDiff(expected, found string) string {
+	if expected == found {
+		return ""
+	}
+
+	a := strings.SplitAfter(expected, "\n")
+	b := strings.SplitAfter(found, "\n")
+	out := ""
+	expected = ""
+	found = ""
+	i := 0
+
+	for ; i < len(a) && i < len(b); i++ {
+		if a[i] != b[i] {
+			break
+		}
+	}
+
+	if i < len(a) {
+		expected = a[i]
+	}
+
+	if i < len(b) {
+		found = b[i]
+	}
+
+	out += fmt.Sprintf("Diff at line %d",i + 1)
+	out += fmt.Sprintf("\nExpected: '%s'", strconv.Quote(expected))
+	out += fmt.Sprintf(", found: '%s'", strconv.Quote(found))
+	return out
+}

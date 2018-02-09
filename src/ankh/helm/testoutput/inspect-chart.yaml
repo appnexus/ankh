@@ -1,0 +1,3 @@
+---
+# Chart: test_chart
+helm inspect chart --kube-context dev /tmp/ankh
