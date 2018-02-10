@@ -24,7 +24,7 @@ function release() {
 	bin=ankh-${GOOS}-${GOARCH}
 	targz=${bin}.tar.gz
 	rm -f ${release_dir}/${bin} ${release_dir}/${targz}
-	env GOOS=${GOOS} GOARCH=${GOARCH} make && cp ${bin_src_path} ${release_dir}/${bin} && (cd $release_dir && tar cvfz ${targz} ${bin}) || exit 1
+	env GOOS=${GOOS} GOARCH=${GOARCH} make && cp ${bin_src_path} ${release_dir}/${bin} && (cd $release_dir && rm -f ankh && cp ${bin} ankh && tar cvfz ${targz} ankh && rm -f ankh) || exit 1
 }
 
 release linux amd64 $(uname -a | grep -q Darwin 2>/dev/null && echo "linux_amd64" || echo "")
