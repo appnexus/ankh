@@ -19,7 +19,7 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 	helmArgs := []string{"helm", "template", "--kube-context", currentContext.KubeContext, "--namespace", ankhFile.Namespace}
 
 	if currentContext.Release != "" {
-		helmArgs = append(helmArgs, []string{"--release", currentContext.Release}...)
+		helmArgs = append(helmArgs, []string{"--name", currentContext.Release}...)
 	}
 
 	// Check if Global contains anything and append `--set` flags to the helm
