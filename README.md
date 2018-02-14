@@ -2,6 +2,15 @@
 
 Another Kubernetes Helper for shipping code.
 
+## Dependencies
+Ankh uses kubectl and helm under the hood, make sure you install them.
+Kubectl: https://kubernetes.io/docs/tasks/tools/install-kubectl/
+Helm (version 2.7 or newer): https://github.com/kubernetes/helm
+
+## Build and Installation
+To build Ankh, just run `make`
+
+To install Ankh, simply run `make install`.
 
 ## Introduction
 
