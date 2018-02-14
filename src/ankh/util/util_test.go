@@ -2,8 +2,6 @@ package util
 
 import (
 	"fmt"
-	"reflect"
-	"sort"
 	"testing"
 
 	"github.com/sirupsen/logrus"
