@@ -25,6 +25,7 @@ type ExecutionContext struct {
 	AnkhConfigPath string
 	KubeConfigPath string
 	DataDir        string
+	HelmSetValues  map[string]string
 
 	Logger *logrus.Logger
 }

@@ -21,7 +21,12 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		helmArgs = append(helmArgs, []string{"--name", currentContext.Release}...)
 	}
 
+	for key, val := range ctx.HelmSetValues {
+		helmArgs = append(helmArgs, "--set", "global."+key+"="+val)
+	}
+
 	files, err := ankh.FindChartFiles(ctx, ankhFile, chart)
+
 	if err != nil {
 		return "", err
 	}
