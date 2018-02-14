@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"ankh"
-	"ankh/util"
 
 	"gopkg.in/yaml.v2"
 )
@@ -20,14 +19,6 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 
 	if currentContext.Release != "" {
 		helmArgs = append(helmArgs, []string{"--name", currentContext.Release}...)
-	}
-
-	// Check if Global contains anything and append `--set` flags to the helm
-	// command for each item
-	if currentContext.Global != nil {
-		for _, item := range util.Collapse(currentContext.Global, nil, nil) {
-			helmArgs = append(helmArgs, "--set", "global."+item)
-		}
 	}
 
 	files, err := ankh.FindChartFiles(ctx, ankhFile, chart)
@@ -112,6 +103,26 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		}
 
 		helmArgs = append(helmArgs, "-f", resourceProfilesPath)
+	}
+
+	// Check if Global contains anything and append them
+	if currentContext.Global != nil {
+		ctx.Logger.Debugf("found global values for the current context")
+
+		globalYamlBytes, err := yaml.Marshal(map[string]interface{}{
+			"global": currentContext.Global,
+		})
+		if err != nil {
+			return "", err
+		}
+
+		ctx.Logger.Debugf("writing global values to %s", files.GlobalPath)
+
+		if err := ioutil.WriteFile(files.GlobalPath, globalYamlBytes, 0644); err != nil {
+			return "", err
+		}
+
+		helmArgs = append(helmArgs, "-f", files.GlobalPath)
 	}
 
 	helmArgs = append(helmArgs, files.ChartDir)
