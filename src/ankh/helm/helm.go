@@ -26,11 +26,20 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 	// command for each item
 	if currentContext.Global != nil {
 		for _, item := range util.Collapse(currentContext.Global, nil, nil) {
-			helmArgs = append(helmArgs, "--set", "global."+item)
+			k := strings.Split(item, "=")
+			if _, inMap := ctx.HelmSetValues[k[0]]; inMap {
+				ctx.Logger.Debugf("Overriding ankh config global value %v with value supplied to command line", k[0])
+			} else {
+				helmArgs = append(helmArgs, "--set", "global."+item)
+			}
 		}
 	}
 
+	for key, val := range ctx.HelmSetValues {
+		helmArgs = append(helmArgs, "--set", "global."+key+"="+val)
+	}
 	files, err := ankh.FindChartFiles(ctx, ankhFile, chart)
+
 	if err != nil {
 		return "", err
 	}
