@@ -116,6 +116,7 @@ type Chart struct {
 type ChartFiles struct {
 	Dir                      string
 	ChartDir                 string
+	GlobalPath               string
 	ValuesPath               string
 	AnkhValuesPath           string
 	AnkhResourceProfilesPath string
@@ -257,6 +258,7 @@ func FindChartFiles(ctx *ExecutionContext, ankhFile AnkhFile, chart Chart) (Char
 	files = ChartFiles{
 		Dir:                      tmpDir,
 		ChartDir:                 chartDir,
+		GlobalPath:               filepath.Join(tmpDir, "global.yaml"),
 		ValuesPath:               filepath.Join(chartDir, "values.yaml"),
 		AnkhValuesPath:           filepath.Join(chartDir, "ankh-values.yaml"),
 		AnkhResourceProfilesPath: filepath.Join(chartDir, "ankh-resource-profiles.yaml"),

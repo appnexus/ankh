@@ -2,8 +2,6 @@ package util
 
 import (
 	"fmt"
-	"reflect"
-	"sort"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -49,36 +47,6 @@ func TestCustomFormatterFormat(t *testing.T) {
 				t.Fail()
 			}
 		})
-	}
-}
-
-func TestCollapse(t *testing.T) {
-	m := map[string]interface{}{
-		"str": "one",
-		"obj": map[interface{}]interface{}{
-			"str":     "two",
-			"bool":    true,
-			"float64": float64(10.12345),
-			"int":     int(123),
-			"unknown": float32(10.54321),
-		},
-	}
-
-	expected := []string{
-		"str=one",
-		"obj.int=123",
-		"obj.str=two",
-		"obj.bool=true",
-		"obj.float64=10.12345",
-	}
-	sort.Strings(expected)
-	result := Collapse(m, nil, nil)
-	sort.Strings(result)
-
-	if !reflect.DeepEqual(result, expected) {
-		t.Logf("expected: %v", expected)
-		t.Logf("got:      %v", result)
-		t.Fail()
 	}
 }
 

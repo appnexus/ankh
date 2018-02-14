@@ -60,50 +60,6 @@ func (f *CustomFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	return []byte(fmt.Sprintf("# %s%-8s%s%s\n", color, prefix, reset, entry.Message)), nil
 }
 
-// Collapse recursively traverses a map and tries to collapse it to a flat
-// slice of `key.key.key=value` pairs
-func Collapse(x interface{}, path []string, acc []string) []string {
-	if path == nil {
-		path = []string{}
-	}
-	if acc == nil {
-		acc = []string{}
-	}
-
-	switch x := x.(type) {
-	case map[string]interface{}:
-		var arr []string
-		for key, value := range x {
-			newPath := append(path, key)
-			arr = append(arr, Collapse(value, newPath, acc)...)
-		}
-		return arr
-	// TODO: this could probably be cleaned up, but basically we've got a mix of
-	// `interface{}` and `string` keys even though they are really all string
-	// keys.
-	case map[interface{}]interface{}:
-		var arr []string
-		for key, value := range x {
-			// This will result in a panic if we have something other than a string key.
-			newPath := append(path, key.(string))
-			arr = append(arr, Collapse(value, newPath, acc)...)
-		}
-		return arr
-	case bool:
-		return append(acc, strings.Join(path, ".")+"="+strconv.FormatBool(x))
-	case float64:
-		return append(acc, strings.Join(path, ".")+"="+strconv.FormatFloat(x, 'f', -1, 64))
-	case string:
-		return append(acc, strings.Join(path, ".")+"="+string(x))
-	case int:
-		return append(acc, strings.Join(path, ".")+"="+strconv.Itoa(x))
-	default:
-		// Just exclude datatypes we don't know about. It's possible this isn't
-		// handling all the cases that yaml parsing can provide
-		return acc
-	}
-}
-
 // Untar takes a destination path and a reader; a tar reader loops over the tarfile
 // creating the file structure at 'dst' along the way, and writing any files
 func Untar(dst string, r io.Reader) error {
