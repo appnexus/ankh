@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 	"syscall"
 	"time"
 
@@ -134,7 +135,7 @@ func execute(ctx *ankh.ExecutionContext) {
 
 func main() {
 	app := cli.App("ankh", "Another Kubernetes Helper")
-	app.Spec = "[-v] [--ankhconfig] [--kubeconfig] [--datadir]"
+	app.Spec = "[-v] [--ankhconfig] [--kubeconfig] [--datadir] [--set...]"
 
 	var (
 		verbose    = app.BoolOpt("v verbose", false, "Verbose debug mode")
@@ -156,6 +157,11 @@ func main() {
 			Desc:   "The data directory for ankh template history",
 			EnvVar: "ANKHDATADIR",
 		})
+		helmSet = app.Strings(cli.StringsOpt{
+			Name:  "set",
+			Desc:  "Global variables passed to helm with helm --set, will override variables set in ankhconfig global",
+			Value: []string{},
+		})
 	)
 
 	log.Out = os.Stdout
@@ -171,6 +177,15 @@ func main() {
 		} else {
 			log.Level = logrus.InfoLevel
 		}
+		helmVars := map[string]string{}
+		for _, helmkvPair := range *helmSet {
+			k := strings.Split(helmkvPair, "=")
+			if len(k) != 2 {
+				log.Debugf("Malformed helm set value '%v', skipping...", helmkvPair)
+			} else {
+				helmVars[k[0]] = k[1]
+			}
+		}
 
 		ctx = &ankh.ExecutionContext{
 			Verbose:        *verbose,
@@ -178,6 +193,7 @@ func main() {
 			KubeConfigPath: *kubeconfig,
 			DataDir:        path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
 			Logger:         log,
+			HelmSetValues:  helmVars,
 		}
 
 		ankhConfig, err := ankh.GetAnkhConfig(ctx)
