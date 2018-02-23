@@ -27,6 +27,8 @@ type ExecutionContext struct {
 	DataDir        string
 	HelmSetValues  map[string]string
 
+	HelmVersion, KubectlVersion string
+
 	Logger *logrus.Logger
 }
 

@@ -86,10 +86,28 @@ func execute(ctx *ankh.ExecutionContext) {
 
 		logExecuteAnkhFile(ctx, ankhFile)
 
+		if ctx.HelmVersion == "" {
+			ver, err := helm.Version()
+			if err != nil {
+				ctx.Logger.Fatalf("Failed to get helm version info: please ensure helm is installed (version 2.7.X or greater) and accessible from your $PATH")
+			}
+			ctx.HelmVersion = ver
+			ctx.Logger.Debug("Using helm version: ", strings.TrimSpace(ver))
+		}
+
 		helmOutput, err := helm.Template(ctx, ankhFile)
 		check(err)
 
 		if ctx.Apply || ctx.Explain {
+			if ctx.KubectlVersion == "" {
+				ver, err := kubectl.Version()
+				if err != nil {
+					ctx.Logger.Fatalf("Failed to get kubectl version info: please ensure kubectl is installed and accessible from your $PATH")
+				}
+				ctx.KubectlVersion = ver
+				ctx.Logger.Debug("Using kubectl version: ", strings.TrimSpace(ver))
+			}
+
 			kubectlOutput, err := kubectl.Execute(ctx, kubectl.Apply, helmOutput, ankhFile, nil)
 			check(err)
 
@@ -184,6 +202,7 @@ func main() {
 		} else {
 			log.Level = logrus.InfoLevel
 		}
+
 		helmVars := map[string]string{}
 		for _, helmkvPair := range *helmSet {
 			k := strings.Split(helmkvPair, "=")
@@ -373,8 +392,22 @@ func main() {
 	})
 
 	app.Command("version", "Show version info", func(cmd *cli.Cmd) {
-		fmt.Println(AnkhBuildVersion)
-		os.Exit(0)
+		cmd.Action = func() {
+			ctx.Logger.Infof("Ankh version info:")
+			fmt.Println(AnkhBuildVersion)
+
+			ctx.Logger.Infof("`helm version --client` output:")
+			ver, err := helm.Version()
+			check(err)
+			fmt.Print(ver)
+
+			ctx.Logger.Infof("`kubectl version --client` output:")
+			ver, err = kubectl.Version()
+			check(err)
+			fmt.Print(ver)
+
+			os.Exit(0)
+		}
 	})
 
 	app.Run(os.Args)

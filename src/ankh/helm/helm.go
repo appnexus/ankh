@@ -162,11 +162,24 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 	}
 
 	helmOutput, err := helmCmd.CombinedOutput()
-
 	if err != nil {
-		return "", fmt.Errorf("error running the helm command: %s", helmOutput)
+		outputMsg := ""
+		if len(helmOutput) > 0 {
+			outputMsg = fmt.Sprintf(" -- the helm process had the following output on stdout/stderr:\n%s", helmOutput)
+		}
+		return "", fmt.Errorf("error running the helm command: %v%v", err, outputMsg)
 	}
 
+	return string(helmOutput), nil
+}
+
+func Version() (string, error) {
+	helmArgs := []string{"helm", "version", "--client"}
+	helmCmd := exec.Command(helmArgs[0], helmArgs[1:]...)
+	helmOutput, err := helmCmd.Output()
+	if err != nil {
+		return "", err
+	}
 	return string(helmOutput), nil
 }
 
