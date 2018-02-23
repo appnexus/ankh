@@ -20,12 +20,14 @@ type ExecutionContext struct {
 	AnkhConfig          AnkhConfig
 	AnkhFilePath, Chart string
 
-	Verbose, DryRun, Apply, UseContext bool
+	Verbose, DryRun, Apply, Explain, UseContext bool
 
 	AnkhConfigPath string
 	KubeConfigPath string
 	DataDir        string
 	HelmSetValues  map[string]string
+
+	HelmVersion, KubectlVersion string
 
 	Logger *logrus.Logger
 }

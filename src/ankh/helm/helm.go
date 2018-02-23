@@ -13,9 +13,29 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+func explain(args []string) string {
+	indent := "    "
+
+	explain := strings.Join(args[0:len(args)-1], " ")
+
+	// The final arg is on its own line (this is typically the Chart argument)
+	explain += fmt.Sprintf(" \\\n%v%v", indent, args[len(args)-1])
+
+	// Newline and 2 space indent on each -f arg
+	explain = strings.Replace(explain, "-f", fmt.Sprintf("\\\n%v-f", indent), -1)
+
+	// This is going to be followed by 0 or more other explains, so chain them with &&.
+	// The caller strips the tailing && and whitespace. Weird, but fine.
+	return explain + " && \\\n"
+}
+
 func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.AnkhFile) (string, error) {
 	currentContext := ctx.AnkhConfig.CurrentContext
-	helmArgs := []string{"helm", "template", "--kube-context", currentContext.KubeContext, "--namespace", ankhFile.Namespace}
+	helmArgs := []string{"helm", "template", "--kube-context", currentContext.KubeContext}
+
+	if ankhFile.Namespace != "" {
+		helmArgs = append(helmArgs, []string{"--namespace", ankhFile.Namespace}...)
+	}
 
 	if currentContext.Release != "" {
 		helmArgs = append(helmArgs, []string{"--name", currentContext.Release}...)
@@ -134,13 +154,32 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 
 	ctx.Logger.Debugf("running helm command %s", strings.Join(helmArgs, " "))
 
-	helmCmd := exec.Command(helmArgs[0], helmArgs[1:]...)
-	helmOutput, err := helmCmd.CombinedOutput()
 
-	if err != nil {
-		return "", fmt.Errorf("error running the helm command: %s", helmOutput)
+	helmCmd := exec.Command(helmArgs[0], helmArgs[1:]...)
+
+	if ctx.Explain {
+		return explain(helmCmd.Args), nil
 	}
 
+	helmOutput, err := helmCmd.CombinedOutput()
+	if err != nil {
+		outputMsg := ""
+		if len(helmOutput) > 0 {
+			outputMsg = fmt.Sprintf(" -- the helm process had the following output on stdout/stderr:\n%s", helmOutput)
+		}
+		return "", fmt.Errorf("error running the helm command: %v%v", err, outputMsg)
+	}
+
+	return string(helmOutput), nil
+}
+
+func Version() (string, error) {
+	helmArgs := []string{"helm", "version", "--client"}
+	helmCmd := exec.Command(helmArgs[0], helmArgs[1:]...)
+	helmOutput, err := helmCmd.Output()
+	if err != nil {
+		return "", err
+	}
 	return string(helmOutput), nil
 }
 

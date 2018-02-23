@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -32,6 +33,8 @@ func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) {
 	verb := "Templating"
 	if ctx.Apply {
 		verb = "Applying"
+	} else if ctx.Explain {
+		verb = "Explaining"
 	}
 
 	releaseLog := ""
@@ -72,7 +75,7 @@ func execute(ctx *ankh.ExecutionContext) {
 	}
 
 	executeAnkhFile := func(ankhFile ankh.AnkhFile) {
-		if ctx.Apply {
+		if ctx.Apply || ctx.Explain {
 			// run the bootstrap scripts, if they exist
 			bootstrapScripts := ankhFile.Bootstrap.Scripts
 			if len(bootstrapScripts) > 0 {
@@ -83,14 +86,36 @@ func execute(ctx *ankh.ExecutionContext) {
 
 		logExecuteAnkhFile(ctx, ankhFile)
 
+		if ctx.HelmVersion == "" {
+			ver, err := helm.Version()
+			if err != nil {
+				ctx.Logger.Fatalf("Failed to get helm version info: please ensure helm is installed (version 2.7.X or greater) and accessible from your $PATH")
+			}
+			ctx.HelmVersion = ver
+			ctx.Logger.Debug("Using helm version: ", strings.TrimSpace(ver))
+		}
+
 		helmOutput, err := helm.Template(ctx, ankhFile)
 		check(err)
 
-		if ctx.Apply {
+		if ctx.Apply || ctx.Explain {
+			if ctx.KubectlVersion == "" {
+				ver, err := kubectl.Version()
+				if err != nil {
+					ctx.Logger.Fatalf("Failed to get kubectl version info: please ensure kubectl is installed and accessible from your $PATH")
+				}
+				ctx.KubectlVersion = ver
+				ctx.Logger.Debug("Using kubectl version: ", strings.TrimSpace(ver))
+			}
+
 			kubectlOutput, err := kubectl.Execute(ctx, kubectl.Apply, helmOutput, ankhFile, nil)
 			check(err)
 
-			if ctx.Verbose {
+			if ctx.Explain {
+				// Sweet string badnesss.
+				helmOutput = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(helmOutput), "&& \\"))
+				fmt.Println(fmt.Sprintf("(%s) | \\\n%s", helmOutput, kubectlOutput))
+			} else if ctx.Verbose {
 				fmt.Println(kubectlOutput)
 			}
 		} else {
@@ -177,6 +202,7 @@ func main() {
 		} else {
 			log.Level = logrus.InfoLevel
 		}
+
 		helmVars := map[string]string{}
 		for _, helmkvPair := range *helmSet {
 			k := strings.Split(helmkvPair, "=")
@@ -204,6 +230,22 @@ func main() {
 		log.Debugf("Using KubeConfigPath %v (KUBECONFIG = '%v')", ctx.KubeConfigPath, os.Getenv("KUBECONFIG"))
 		log.Debugf("Using AnkhConfigPath %v (ANKHCONFIG = '%v')", ctx.AnkhConfigPath, os.Getenv("ANKHCONFIG"))
 	}
+
+	app.Command("explain", "Explain how an ankh file would be applied to a kubernetes cluster", func(cmd *cli.Cmd) {
+		cmd.Spec = "[-f] [--chart]"
+
+		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+		chart := cmd.StringOpt("chart", "", "Limits the explain command to only the specified chart")
+
+		cmd.Action = func() {
+			ctx.AnkhFilePath = *ankhFilePath
+			ctx.Chart = *chart
+			ctx.Explain = true
+
+			execute(ctx)
+			os.Exit(0)
+		}
+	})
 
 	app.Command("apply", "Deploy an ankh file to a kubernetes cluster", func(cmd *cli.Cmd) {
 		cmd.Spec = "[-f] [--dry-run] [--chart]"
@@ -350,8 +392,22 @@ func main() {
 	})
 
 	app.Command("version", "Show version info", func(cmd *cli.Cmd) {
-		fmt.Println(AnkhBuildVersion)
-		os.Exit(0)
+		cmd.Action = func() {
+			ctx.Logger.Infof("Ankh version info:")
+			fmt.Println(AnkhBuildVersion)
+
+			ctx.Logger.Infof("`helm version --client` output:")
+			ver, err := helm.Version()
+			check(err)
+			fmt.Print(ver)
+
+			ctx.Logger.Infof("`kubectl version --client` output:")
+			ver, err = kubectl.Version()
+			check(err)
+			fmt.Print(ver)
+
+			os.Exit(0)
+		}
 	})
 
 	app.Run(os.Args)
@@ -403,6 +459,13 @@ func runScripts(ctx *ankh.ExecutionContext, scripts []struct{ Path string }) {
 			log.Warnf("Missing path in script %s", script)
 			break
 		}
+		if !filepath.IsAbs(path) {
+			cwd, err := os.Getwd()
+			if err != nil {
+				log.Fatalf("Failed to get working directory when attempting to run script %s", script)
+			}
+			path = filepath.Join(cwd, path)
+		}
 		_, err := os.Stat(path)
 		if os.IsNotExist(err) {
 			log.Fatalf("Script not found: %s", path)
@@ -419,13 +482,31 @@ func runScripts(ctx *ankh.ExecutionContext, scripts []struct{ Path string }) {
 		}
 		// pass kube context and the "global" config as a yaml environment variable
 		cmd := exec.Command(path)
+		envVars := []string{}
 		if ctx.AnkhConfig.CurrentContext.Global != nil {
 			global, err := yaml.Marshal(ctx.AnkhConfig.CurrentContext.Global)
 			check(err)
-			cmd.Env = append(
-				os.Environ(),
-				"ANKH_CONFIG_GLOBAL="+string(global),
-				"ANKH_KUBE_CONTEXT="+string(ctx.AnkhConfig.CurrentContext.KubeContext))
+			envVars = []string{
+				"ANKH_CONFIG_GLOBAL=" + string(global),
+				"ANKH_KUBE_CONTEXT=" + string(ctx.AnkhConfig.CurrentContext.KubeContext),
+			}
+		}
+		if ctx.Explain {
+			explainVars := []string{}
+			for _, s := range envVars {
+				replaced := strings.Replace(s, "\n", "\\n", -1)
+				eqIdx := strings.Index(replaced, "=")
+				eVar := fmt.Sprintf("export %v='%v' &&", replaced[0:eqIdx], replaced[eqIdx+1:])
+				explainVars = append(explainVars, eVar)
+			}
+			explain := strings.Join(explainVars, " ")
+			explain += " "
+			explain += strings.Join(cmd.Args, " ")
+			fmt.Println(explain)
+			break
+		}
+		if len(envVars) > 0 {
+			cmd.Env = append(os.Environ(), envVars...)
 		}
 		var stdOut, stdErr bytes.Buffer
 		cmd.Stdout = &stdOut
