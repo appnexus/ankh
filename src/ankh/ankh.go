@@ -20,7 +20,7 @@ type ExecutionContext struct {
 	AnkhConfig          AnkhConfig
 	AnkhFilePath, Chart string
 
-	Verbose, DryRun, Apply, UseContext bool
+	Verbose, DryRun, Apply, Explain, UseContext bool
 
 	AnkhConfigPath string
 	KubeConfigPath string

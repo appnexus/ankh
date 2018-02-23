@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os/exec"
+	"strings"
 )
 
 type action string
@@ -43,6 +44,10 @@ func Execute(ctx *ankh.ExecutionContext, act action, input string, ankhFile ankh
 
 	if ctx.Verbose {
 		ctx.Logger.Infof("running kubectl command: %v", kubectlArgs)
+	}
+
+	if ctx.Explain {
+		return strings.Join(kubectlCmd.Args, " "), nil
 	}
 
 	kubectlStdoutPipe, _ := kubectlCmd.StdoutPipe()
