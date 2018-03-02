@@ -17,8 +17,13 @@ dig () {
 
     services=$(echo "$allServices" | jq "$extractService")
     externalName=$(echo "$services" | jq '. | .externalName')
-    parentNamespace=$(echo $externalName | awk -F. '{print $2}')
-    clusterIP=$(echo "$services" | jq '. | .clusterIP')
+    suffix=$(echo $externalName | awk -F. '{print $4}')
+
+    if [ "$suffix" == "cluster" ]; then
+	parentNamespace=$(echo $externalName | awk -F. '{print $2}')
+    else
+	parentNamespace=""
+    fi
 
     if [ -z "$services" ]; then
 	availableNamespaces=$(echo "$allServices" | jq "$extractNamespaces")
@@ -34,6 +39,7 @@ dig () {
     if [ "$externalName" != "null" ]; then
 	externalString="externalName $externalName"
     else
+	clusterIP=$(echo "$services" | jq '. | .clusterIP')
 	externalString="clusterIP $clusterIP"
     fi
 
