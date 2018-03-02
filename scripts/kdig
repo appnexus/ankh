@@ -27,7 +27,7 @@ dig () {
 	    exit 0
 	fi
 
-	echo -e "Service $service is not resolveable from $namespace. It exists as a service in namespaces:\n$availableNamespaces"
+	echo -e "Service $service is not resolvable from $namespace. It exists as a service in namespaces:\n$availableNamespaces"
 	exit 0
     fi
 
