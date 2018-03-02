@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# vim: set syntax=sh:
+
+set -e
+
+if ! hash kubectl 2>/dev/null; then echo "Please install \`kubectl\` before running this command (https://kubernetes.io/docs/tasks/tools/install-kubectl/)"; exit 1; fi
+if ! hash jq 2>/dev/null; then echo "Please install \`jq\` before running this command (https://github.com/stedolan/jq/wiki/Installation)"; exit 1; fi
+
+service=$1
+namespace=$2
+allServices=$(kubectl get services --all-namespaces -o json)
+parseKubectl=".items[] | {externalName: .spec.externalName, name: .metadata.name, namespace: .metadata.namespace, clusterIP: .spec.clusterIP}"
+
+dig () {
+    extractService="$parseKubectl | select(.name=="\""$service"\"") | select(.namespace=="\""$namespace"\"")"
+    extractNamespaces="$parseKubectl | select(.name=="\""$service"\"") | .namespace"
+
+    services=$(echo "$allServices" | jq "$extractService")
+    externalName=$(echo "$services" | jq '. | .externalName')
+    parentNamespace=$(echo $externalName | awk -F. '{print $2}')
+    clusterIP=$(echo "$services" | jq '. | .clusterIP')
+
+    if [ -z "$services" ]; then
+	availableNamespaces=$(echo "$allServices" | jq "$extractNamespaces")
+	if [ -z "$availableNamespaces" ]; then
+	    echo "Service $service does not exist in this kube context"
+	    exit 0
+	fi
+
+	echo -e "Service $service is not resolveable from $namespace. It exists as a service in namespaces:\n$availableNamespaces"
+	exit 0
+    fi
+
+    if [ "$externalName" != "null" ]; then
+	externalString="externalName $externalName"
+    else
+	externalString="clusterIP $clusterIP"
+    fi
+
+    echo "Service $service has $externalString in namespace $namespace"
+}
+
+while true; do
+    dig
+    if [ ! -z "$parentNamespace" ]; then
+	namespace=$parentNamespace
+    else
+	exit 0
+    fi
+done
