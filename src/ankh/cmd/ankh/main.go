@@ -68,10 +68,15 @@ func execute(ctx *ankh.ExecutionContext) {
 	}
 	check(err)
 
-	dependencies := rootAnkhFile.Dependencies
-	if ctx.AnkhConfig.CurrentContext.ClusterAdmin && len(rootAnkhFile.AdminDependencies) > 0 {
-		log.Infof("Found admin dependencies, processing those first...")
-		dependencies = append(rootAnkhFile.AdminDependencies, dependencies...)
+	dependencies := []string{}
+	if ctx.Chart == "" {
+		dependencies = rootAnkhFile.Dependencies
+		if ctx.AnkhConfig.CurrentContext.ClusterAdmin && len(rootAnkhFile.AdminDependencies) > 0 {
+			log.Infof("Found admin dependencies, processing those first...")
+			dependencies = append(rootAnkhFile.AdminDependencies, dependencies...)
+		}
+	} else {
+		log.Debugf("Skipping dependencies since we are operating only on chart %v", ctx.Chart)
 	}
 
 	executeAnkhFile := func(ankhFile ankh.AnkhFile) {
