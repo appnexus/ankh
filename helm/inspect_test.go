@@ -1,8 +1,6 @@
 package helm
 
 import (
-	"ankh"
-	"ankh/util"
 	"fmt"
 	"github.com/sirupsen/logrus"
 	"io/ioutil"
@@ -10,6 +8,9 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/appnexus/ankh/context"
+	"github.com/appnexus/ankh/util"
 )
 
 const CHART_NAME = "test_chart"

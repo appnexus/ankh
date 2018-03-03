@@ -19,10 +19,10 @@ import (
 	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v2"
 
-	"ankh"
-	"ankh/helm"
-	"ankh/kubectl"
-	"ankh/util"
+	"github.com/appnexus/ankh/context"
+	"github.com/appnexus/ankh/helm"
+	"github.com/appnexus/ankh/kubectl"
+	"github.com/appnexus/ankh/util"
 )
 
 var AnkhBuildVersion string
@@ -30,11 +30,14 @@ var AnkhBuildVersion string
 var log = logrus.New()
 
 func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) {
-	verb := "Templating"
-	if ctx.Apply {
+	verb := ""
+	switch ctx.Mode {
+	case ankh.Apply:
 		verb = "Applying"
-	} else if ctx.Explain {
+	case ankh.Explain:
 		verb = "Explaining"
+	case ankh.Template:
+		verb = "Templating"
 	}
 
 	releaseLog := ""
@@ -80,7 +83,10 @@ func execute(ctx *ankh.ExecutionContext) {
 	}
 
 	executeAnkhFile := func(ankhFile ankh.AnkhFile) {
-		if ctx.Apply || ctx.Explain {
+		switch ctx.Mode {
+		case ankh.Apply:
+			fallthrough
+		case ankh.Explain:
 			// run the bootstrap scripts, if they exist
 			bootstrapScripts := ankhFile.Bootstrap.Scripts
 			if len(bootstrapScripts) > 0 {
@@ -94,7 +100,7 @@ func execute(ctx *ankh.ExecutionContext) {
 		if ctx.HelmVersion == "" {
 			ver, err := helm.Version()
 			if err != nil {
-				ctx.Logger.Fatalf("Failed to get helm version info: please ensure helm is installed (version 2.7.X or greater) and accessible from your $PATH")
+				ctx.Logger.Fatalf("Failed to get helm version info: %v", err)
 			}
 			ctx.HelmVersion = ver
 			ctx.Logger.Debug("Using helm version: ", strings.TrimSpace(ver))
@@ -103,27 +109,30 @@ func execute(ctx *ankh.ExecutionContext) {
 		helmOutput, err := helm.Template(ctx, ankhFile)
 		check(err)
 
-		if ctx.Apply || ctx.Explain {
+		switch ctx.Mode {
+		case ankh.Apply:
+			fallthrough
+		case ankh.Explain:
 			if ctx.KubectlVersion == "" {
 				ver, err := kubectl.Version()
 				if err != nil {
-					ctx.Logger.Fatalf("Failed to get kubectl version info: please ensure kubectl is installed and accessible from your $PATH")
+					ctx.Logger.Fatalf("Failed to get kubectl version info: %v", err)
 				}
 				ctx.KubectlVersion = ver
 				ctx.Logger.Debug("Using kubectl version: ", strings.TrimSpace(ver))
 			}
 
-			kubectlOutput, err := kubectl.Execute(ctx, kubectl.Apply, helmOutput, ankhFile, nil)
+			kubectlOutput, err := kubectl.Execute(ctx, helmOutput, ankhFile, nil)
 			check(err)
 
-			if ctx.Explain {
+			if ctx.Mode == ankh.Explain {
 				// Sweet string badnesss.
 				helmOutput = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(helmOutput), "&& \\"))
 				fmt.Println(fmt.Sprintf("(%s) | \\\n%s", helmOutput, kubectlOutput))
 			} else if ctx.Verbose {
 				fmt.Println(kubectlOutput)
 			}
-		} else {
+		case ankh.Template:
 			fmt.Println(helmOutput)
 		}
 	}
@@ -219,16 +228,27 @@ func main() {
 		}
 
 		ctx = &ankh.ExecutionContext{
-			Verbose:        *verbose,
-			AnkhConfigPath: *ankhconfig,
-			KubeConfigPath: *kubeconfig,
-			DataDir:        path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
-			Logger:         log,
-			HelmSetValues:  helmVars,
+			Verbose:           *verbose,
+			AnkhConfigPath:    *ankhconfig,
+			KubeConfigPath:    *kubeconfig,
+			DataDir:           path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
+			Logger:            log,
+			HelmSetValues:     helmVars,
+			WarnOnConfigError: ctx.WarnOnConfigError,
+			IgnoreConfigError: ctx.IgnoreConfigError,
 		}
 
 		ankhConfig, err := ankh.GetAnkhConfig(ctx)
-		check(err)
+		if err != nil {
+			if ctx.WarnOnConfigError {
+				for _, s := range strings.Split(err.Error(), "\n") {
+					log.Warnf("%v", s)
+				}
+			} else if !ctx.IgnoreConfigError {
+				// The config validation errors are not recoverable.
+				check(err)
+			}
+		}
 
 		ctx.AnkhConfig = ankhConfig
 
@@ -236,7 +256,7 @@ func main() {
 		log.Debugf("Using AnkhConfigPath %v (ANKHCONFIG = '%v')", ctx.AnkhConfigPath, os.Getenv("ANKHCONFIG"))
 	}
 
-	app.Command("explain", "Explain how an ankh file would be applied to a kubernetes cluster", func(cmd *cli.Cmd) {
+	app.Command("explain", "Explain how an ankh file would be applied to a Kubernetes cluster", func(cmd *cli.Cmd) {
 		cmd.Spec = "[-f] [--chart]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
@@ -245,14 +265,14 @@ func main() {
 		cmd.Action = func() {
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.Chart = *chart
-			ctx.Explain = true
+			ctx.Mode = ankh.Explain
 
 			execute(ctx)
 			os.Exit(0)
 		}
 	})
 
-	app.Command("apply", "Deploy an ankh file to a kubernetes cluster", func(cmd *cli.Cmd) {
+	app.Command("apply", "Deploy an ankh file to a Kubernetes cluster", func(cmd *cli.Cmd) {
 		cmd.Spec = "[-f] [--dry-run] [--chart]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
@@ -263,7 +283,7 @@ func main() {
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.DryRun = *dryRun
 			ctx.Chart = *chart
-			ctx.Apply = true
+			ctx.Mode = ankh.Apply
 
 			execute(ctx)
 			os.Exit(0)
@@ -279,6 +299,7 @@ func main() {
 		cmd.Action = func() {
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.Chart = *chart
+			ctx.Mode = ankh.Template
 
 			execute(ctx)
 			os.Exit(0)
@@ -327,7 +348,53 @@ func main() {
 	})
 
 	app.Command("config", "Manage ankh configuration", func(cmd *cli.Cmd) {
-		cmd.Command("view", "Merge all available configs and show the result", func(cmd *cli.Cmd) {
+		ctx.WarnOnConfigError = true
+
+		cmd.Command("init", "Initialize ankh configuration", func(cmd *cli.Cmd) {
+			// Sloppy
+			ctx.WarnOnConfigError = false
+			ctx.IgnoreConfigError = true
+
+			cmd.Action = func() {
+				if len(ctx.AnkhConfig.SupportedEnvironments) == 0 {
+					ctx.AnkhConfig.SupportedEnvironments = []string{"production", "dev"}
+					ctx.Logger.Infof("Initializing `supported-environments`: %v", ctx.AnkhConfig.SupportedEnvironments)
+				}
+
+				if len(ctx.AnkhConfig.SupportedResourceProfiles) == 0 {
+					ctx.AnkhConfig.SupportedResourceProfiles = []string{"natural", "constrained"}
+					ctx.Logger.Infof("Initializing `supported-resource-profiles`: %v", ctx.AnkhConfig.SupportedResourceProfiles)
+				}
+
+				if ctx.AnkhConfig.CurrentContextName == "" {
+					ctx.AnkhConfig.CurrentContextName = "minikube"
+					ctx.Logger.Infof("Initializing `current-context`: %v", ctx.AnkhConfig.CurrentContextName)
+				}
+
+				if len(ctx.AnkhConfig.Contexts) == 0 {
+					ctx.AnkhConfig.Contexts = map[string]ankh.Context{
+						"minikube": {
+							KubeContext:     "minikube",
+							Environment:     "dev",
+							ResourceProfile: "constrained",
+							HelmRegistryURL: "https://kubernetes-charts.storage.googleapis.com",
+							ClusterAdmin:    true,
+						},
+					}
+					ctx.Logger.Infof("Initializing `contexts` to a single sample context for kube-context `minikube`")
+				}
+
+				out, err := yaml.Marshal(ctx.AnkhConfig)
+				check(err)
+
+				err = ioutil.WriteFile(ctx.AnkhConfigPath, out, 0644)
+				check(err)
+
+				os.Exit(0)
+			}
+		})
+
+		cmd.Command("view", "View ankh configuration", func(cmd *cli.Cmd) {
 			cmd.Action = func() {
 				out, err := yaml.Marshal(ctx.AnkhConfig)
 				check(err)
@@ -397,6 +464,8 @@ func main() {
 	})
 
 	app.Command("version", "Show version info", func(cmd *cli.Cmd) {
+		ctx.WarnOnConfigError = true
+
 		cmd.Action = func() {
 			ctx.Logger.Infof("Ankh version info:")
 			fmt.Println(AnkhBuildVersion)
@@ -453,7 +522,7 @@ func inspect(ctx *ankh.ExecutionContext,
 
 func check(err error) {
 	if err != nil {
-		log.Fatalf("Cannot proceed: %v\n", err)
+		log.Fatalf("Cannot proceed: %v", err)
 	}
 }
 
@@ -496,7 +565,7 @@ func runScripts(ctx *ankh.ExecutionContext, scripts []struct{ Path string }) {
 				"ANKH_KUBE_CONTEXT=" + string(ctx.AnkhConfig.CurrentContext.KubeContext),
 			}
 		}
-		if ctx.Explain {
+		if ctx.Mode == ankh.Explain {
 			explainVars := []string{}
 			for _, s := range envVars {
 				replaced := strings.Replace(s, "\n", "\\n", -1)

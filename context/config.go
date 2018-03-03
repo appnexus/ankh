@@ -6,13 +6,17 @@ import (
 	"os"
 	"path/filepath"
 
-	"ankh/util"
-	"crypto/tls"
+	"github.com/appnexus/ankh/util"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
-	"net/http"
-	"strings"
-	"time"
+)
+
+type Mode string
+
+const (
+	Apply    Mode = "apply"
+	Explain  Mode = "explain"
+	Template Mode = "template"
 )
 
 // Captures all of the context required to execute a single iteration of Ankh
@@ -20,7 +24,9 @@ type ExecutionContext struct {
 	AnkhConfig          AnkhConfig
 	AnkhFilePath, Chart string
 
-	Verbose, DryRun, Apply, Explain, UseContext bool
+	Mode Mode
+
+	Verbose, DryRun, UseContext, WarnOnConfigError, IgnoreConfigError bool
 
 	AnkhConfigPath string
 	KubeConfigPath string
@@ -76,27 +82,27 @@ func (ankhConfig *AnkhConfig) ValidateAndInit() []error {
 		errors = append(errors, fmt.Errorf("context '%s' not found in `contexts`", ankhConfig.CurrentContextName))
 	} else {
 		if util.Contains(ankhConfig.SupportedEnvironments, selectedContext.Environment) == false {
-			errors = append(errors, fmt.Errorf("environment '%s' not found in `supported-environments`", selectedContext.Environment))
+			errors = append(errors, fmt.Errorf("current context '%s' has environment '%s': not found in `supported-environments` == %v", ankhConfig.CurrentContextName, selectedContext.Environment, ankhConfig.SupportedEnvironments))
 		}
 
 		if util.Contains(ankhConfig.SupportedResourceProfiles, selectedContext.ResourceProfile) == false {
-			errors = append(errors, fmt.Errorf("resource profile '%s' not found in `supported-resource-profiles`", selectedContext.ResourceProfile))
+			errors = append(errors, fmt.Errorf("current context '%s' has resource profile '%s': not found in `supported-resource-profiles` == %v", ankhConfig.CurrentContextName, selectedContext.ResourceProfile, ankhConfig.SupportedResourceProfiles))
 		}
 
 		if selectedContext.HelmRegistryURL == "" {
-			errors = append(errors, fmt.Errorf("missing or empty `helm-registry-url`"))
+			errors = append(errors, fmt.Errorf("current context '%s' has missing or empty `helm-registry-url`", ankhConfig.CurrentContextName))
 		}
 
 		if selectedContext.KubeContext == "" {
-			errors = append(errors, fmt.Errorf("missing or empty `kube-context`"))
+			errors = append(errors, fmt.Errorf("current context '%s' has missing or empty `kube-context`", ankhConfig.CurrentContextName))
 		}
 
 		if selectedContext.Environment == "" {
-			errors = append(errors, fmt.Errorf("missing or empty `environment`"))
+			errors = append(errors, fmt.Errorf("current context '%s' has missing or empty `environment`", ankhConfig.CurrentContextName))
 		}
 
 		if selectedContext.ResourceProfile == "" {
-			errors = append(errors, fmt.Errorf("missing or empty `resource-profile`"))
+			errors = append(errors, fmt.Errorf("current-context '%s' has missing or empty `resource-profile`", ankhConfig.CurrentContextName))
 		}
 		ankhConfig.CurrentContext = selectedContext
 	}
@@ -122,151 +128,6 @@ type ChartFiles struct {
 	ValuesPath               string
 	AnkhValuesPath           string
 	AnkhResourceProfilesPath string
-}
-
-func CreateReducedYAMLFile(filename, key string) ([]byte, error) {
-	in := make(map[string]interface{})
-	var result []byte
-	inBytes, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return result, err
-	}
-
-	if err = yaml.UnmarshalStrict(inBytes, &in); err != nil {
-		return result, err
-	}
-
-	out := make(map[interface{}]interface{})
-
-	if in[key] == nil {
-		return result, fmt.Errorf("missing `%s` key", key)
-	}
-
-	switch t := in[key].(type) {
-	case map[interface{}]interface{}:
-		for k, v := range t {
-			// TODO: using `.(string)` here could cause a panic in cases where the
-			// key isn't a string, which is pretty uncommon
-
-			// TODO: validate
-			out[k.(string)] = v
-		}
-	default:
-		out[key] = in[key]
-	}
-
-	outBytes, err := yaml.Marshal(&out)
-	if err != nil {
-		return result, err
-	}
-
-	if err := ioutil.WriteFile(filename, outBytes, 0644); err != nil {
-		return result, err
-	}
-
-	return outBytes, nil
-}
-
-func GetChartFileContent(ctx *ExecutionContext, path string, useContext bool, key string) ([]byte, error) {
-	var result []byte
-	bytes, err := ioutil.ReadFile(fmt.Sprintf("%s", path))
-	if err == nil {
-
-		if useContext {
-			bytes, err = CreateReducedYAMLFile(path, key)
-			if err != nil {
-				return result, err
-			}
-		}
-
-		result = bytes
-	} else {
-		ctx.Logger.Debugf("%s not found", path)
-	}
-
-	if len(bytes) > 0 {
-		result = append([]byte("---\n# Source: "+path+"\n"), bytes...)
-	}
-
-	return result, nil
-}
-
-func FindChartFiles(ctx *ExecutionContext, ankhFile AnkhFile, chart Chart) (ChartFiles, error) {
-	name := chart.Name
-	version := chart.Version
-
-	dirPath := filepath.Join(filepath.Dir(ankhFile.Path), "charts", name)
-	_, dirErr := os.Stat(dirPath)
-
-	files := ChartFiles{}
-	// Setup a directory where we'll either copy the chart files, if we've got a
-	// directory, or we'll download and extract a tarball to the temp dir. Then
-	// we'll mutate some of the ankh specific files based on the current
-	// environment and resource profile. Then we'll use those files as arguments
-	// to the helm command.
-	tmpDir, err := ioutil.TempDir(ctx.DataDir, name+"-")
-	if err != nil {
-		return files, err
-	}
-
-	tarballFileName := fmt.Sprintf("%s-%s.tgz", name, version)
-	tarballURL := fmt.Sprintf("%s/%s", strings.TrimRight(
-		ctx.AnkhConfig.CurrentContext.HelmRegistryURL, "/"), tarballFileName)
-
-	// If we already have a dir, let's just copy it to a temp directory so we can
-	// make changes to the ankh specific yaml files before passing them as `-f`
-	// args to `helm template`
-	if dirErr == nil {
-		if err := util.CopyDir(dirPath, filepath.Join(tmpDir, name)); err != nil {
-			return files, err
-		}
-	} else {
-
-		// TODO: this code should be modified to properly fetch charts
-		ok := false
-		for attempt := 1; attempt <= 5; attempt++ {
-			ctx.Logger.Debugf("downloading chart from %s (attempt %v)", tarballURL, attempt)
-			tr := &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			}
-			client := &http.Client{
-				Transport: tr,
-				Timeout:   time.Duration(5 * time.Second),
-			}
-			resp, err := client.Get(tarballURL)
-			if err != nil {
-				return files, err
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode == 200 {
-				ctx.Logger.Debugf("untarring chart to %s", tmpDir)
-				if err = util.Untar(tmpDir, resp.Body); err != nil {
-					return files, err
-				}
-
-				ok = true
-				break
-			} else {
-				ctx.Logger.Warningf("got a status code %v when trying to call %s (attempt %v)", resp.StatusCode, tarballURL, attempt)
-			}
-		}
-		if !ok {
-			return files, fmt.Errorf("failed to fetch helm chart from URL: %v", tarballURL)
-		}
-	}
-
-	chartDir := filepath.Join(tmpDir, name)
-	files = ChartFiles{
-		Dir:                      tmpDir,
-		ChartDir:                 chartDir,
-		GlobalPath:               filepath.Join(tmpDir, "global.yaml"),
-		ValuesPath:               filepath.Join(chartDir, "values.yaml"),
-		AnkhValuesPath:           filepath.Join(chartDir, "ankh-values.yaml"),
-		AnkhResourceProfilesPath: filepath.Join(chartDir, "ankh-resource-profiles.yaml"),
-	}
-
-	return files, nil
 }
 
 // AnkhFile defines the shape of the `ankh.yaml` file which is used to define
@@ -308,7 +169,7 @@ func ParseAnkhFile(filename string) (AnkhFile, error) {
 
 	err = yaml.UnmarshalStrict(ankhYaml, &config)
 	if err != nil {
-		return config, fmt.Errorf("unable to process %s file: %v", filename, err)
+		return config, fmt.Errorf("error loading ankh file '%v': %v\nAll Ankh yamls are parsed strictly. Please refer to README.md for the correct schema of an Ankh file", filename, err)
 	}
 
 	// Add the absolute path of the config to the struct
@@ -334,12 +195,12 @@ func GetAnkhConfig(ctx *ExecutionContext) (AnkhConfig, error) {
 
 	err = yaml.UnmarshalStrict(ankhRcFile, &ankhConfig)
 	if err != nil {
-		return ankhConfig, fmt.Errorf("unable to process ankh config '%s': %v", ctx.AnkhConfigPath, err)
+		return ankhConfig, fmt.Errorf("error loading ankh config '%s': %v", ctx.AnkhConfigPath, err)
 	}
 
 	errs := ankhConfig.ValidateAndInit()
 	if len(errs) > 0 {
-		return ankhConfig, fmt.Errorf("ankh config validation error(s):\n%s", util.MultiErrorFormat(errs))
+		return ankhConfig, fmt.Errorf("error(s) validating ankh config '%s':\n%s", ctx.AnkhConfigPath, util.MultiErrorFormat(errs))
 	}
 
 	return ankhConfig, nil

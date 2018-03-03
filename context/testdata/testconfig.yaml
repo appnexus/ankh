@@ -1,0 +1,52 @@
+# current-context defines which context you currently have "selected". It's
+# common for this value to change frequently as you move around to different
+# clusters.
+current-context: minikube
+
+# supported-environments define a list of your supported environments. Used for
+# validation of ankh files. It's best practice to keep this value in sync with
+# the rest of your teams so there isn't drift.
+supported-environments:
+  - dev
+  - production
+
+# supported-resource-profiles define a list of your supported profiles. Used for
+# validation of ankh files. Resource profiles are typically used for values that relate
+# to how beefy your app needs to be. If you're running a production cluster that
+# customers can hit, you'll probably want to support a value like "natural".
+# Alternatively if you want your app to run on a resource strapped local
+# cluster, you might consider also supporting something like "constrained". It's
+# best practice to keep this value in sync with the rest of your teams so there
+# isn't drift.
+supported-resource-profiles:
+  - natural
+  - constrained
+
+# contexts are the different ways in which your ankh files can be deployed to
+# kubernetes clusters. Each key in this object is a context and the names can be
+# whatever you like.
+contexts:
+  minikube:
+    # kube-context ties this context to a `kubectl` context
+    kube-context: minikube
+
+    # environment should be one of your `supported-environments` defined above
+    environment: dev
+
+    # resource-profile should be one of your `supported-resource-profiles` defined above
+    resource-profile: natural
+
+    # release name provided to helm - empty by default
+    release: ""
+
+    # helm-registry-url instructs ankh where to pull charts from
+    helm-registry-url: https://kubernetes-charts.storage.googleapis.com/
+
+    # cluster-admin controls if the `admin-dependencies` in an ankh file are
+    # executed before the rest of the `dependencies`
+    cluster-admin: true
+
+    # global can be any nested objects with values that need to be passed to
+    # every chart. Arrays are not supported within `global`.
+    global:
+      foo: bar

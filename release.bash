@@ -14,19 +14,17 @@ function release() {
 	export GOOS=$1
 	export GOARCH=$2
 
-	bin_src_path=bin/ankh
-	if [ ! -z "$3" ] ; then
-		bin_src_path=bin/${3}/ankh
-	fi
-
+	bin_src_path=ankh/ankh
 	echo "Building for GOOS=${GOOS} and GOARCH=${GOARCH} using binary from ${bin_src_path}"
 
 	bin=ankh-${GOOS}-${GOARCH}
 	targz=${bin}.tar.gz
 	rm -f ${release_dir}/${bin} ${release_dir}/${targz}
-	env GOOS=${GOOS} GOARCH=${GOARCH} make && cp ${bin_src_path} ${release_dir}/${bin} && (cd $release_dir && rm -f ankh && cp ${bin} ankh && tar cvfz ${targz} ankh && rm -f ankh) || exit 1
+	env GOOS=${GOOS} GOARCH=${GOARCH} make && file ${bin_src_path} && cp ${bin_src_path} ${release_dir}/${bin} && (cd $release_dir && rm -f ankh && cp ${bin} ankh && tar cvfz ${targz} ankh && rm -f ankh) || exit 1
 }
 
-release linux amd64 $(uname -a | grep -q Darwin 2>/dev/null && echo "linux_amd64" || echo "")
+release linux amd64
 
-release darwin amd64 $(uname -a | grep -v -q Darwin 2>/dev/null && echo "darwin_amd64" || echo "")
+release darwin amd64
+
+make clean

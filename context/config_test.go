@@ -14,7 +14,7 @@ charts:
     version: 0.0.0
 `
 
-const minimalValidAnkhConfigYAMLPath string = "../../config/ankhconfig.yaml"
+const minimalValidAnkhConfigYAMLPath string = "testdata/testconfig.yaml"
 
 func newValidAnkhConfig() AnkhConfig {
 	return AnkhConfig{
@@ -134,7 +134,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		hasCorrectError := false
 		for _, err := range errs {
-			if strings.Contains(err.Error(), "environment 'nope' not found in `supported-environments`") {
+			if strings.Contains(err.Error(), "current context 'test' has environment 'nope': not found in `supported-environments` == [dev]") {
 				hasCorrectError = true
 			}
 		}
@@ -158,7 +158,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		hasCorrectError := false
 		for _, err := range errs {
-			if strings.Contains(err.Error(), "resource profile 'nope' not found in `supported-resource-profiles`") {
+			if strings.Contains(err.Error(), "current context 'test' has resource profile 'nope': not found in `supported-resource-profiles` == [constrained]") {
 				hasCorrectError = true
 			}
 		}

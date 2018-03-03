@@ -1,9 +1,8 @@
 # golang
-bin/
-pkg/
+ankh/ankh
 release/
-src/ankh/coverage/*
-!src/ankh/coverage/.gitkeep
+coverage/*
+!coverage/.gitkeep
 coverage.txt
 
 # IDE
