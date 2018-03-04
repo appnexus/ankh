@@ -1,27 +1,26 @@
 THIS_MAKEFILE = $(lastword $(MAKEFILE_LIST))
 REPOROOT = $(abspath $(dir $(THIS_MAKEFILE)))
-TEST_PACKAGES = $(subst $(REPOROOT)/src/,,$(shell go list -f '{{if gt (len .TestGoFiles) 0}}{{.Dir}}{{end}}' ./...))
+TEST_PACKAGES := ankh context helm kubectl util
 
-export GOPATH := $(REPOROOT)/
 export VERSION ?= DEVELOPMENT
 export GOCMD ?= go
 
 .PHONY: all
 all: ankh
 
-.PHONY: clean
-clean:
-	@rm -rf $(REPOROOT)/bin
-	@rm -rf $(REPOROOT)/pkg
-	@rm -rf $(REPOROOT)/release
-
 .PHONY: ankh
 ankh:
-	cd $(REPOROOT)/src/ankh/cmd/ankh; $(GOCMD) install -ldflags "-X main.AnkhBuildVersion=$(VERSION)"
+	@echo "GOPATH is ${GOPATH}"
+	cd $(REPOROOT)/ankh && $(GOCMD) build -ldflags "-X main.AnkhBuildVersion=$(VERSION)"
+
+.PHONY: clean
+clean:
+	@rm -f ankh/ankh && rm -rf release/
 
 .PHONY: install
-install: ankh
-	sudo cp -f $(REPOROOT)/bin/ankh /usr/local/bin/ankh
+install:
+	@echo "GOPATH is ${GOPATH}"
+	cd $(REPOROOT)/ankh && $(GOCMD) install -ldflags "-X main.AnkhBuildVersion=$(VERSION)"
 
 .PHONY: release
 release:
@@ -29,12 +28,12 @@ release:
 
 .PHONY: cover-clean
 cover-clean:
-	@rm -f $(REPOROOT)/src/ankh/coverage/*
+	@rm -f $(REPOROOT)/coverage/*
 
 .PHONY: cover-generate
 cover-generate: cover-clean
-	@cd $(REPOROOT)/src/ankh; $(foreach p,$(TEST_PACKAGES),$(GOCMD) test $(p) -coverprofile=coverage/$(subst /,_,$(p)).out;)
-	@cat $(REPOROOT)/src/ankh/coverage/*.out | awk 'NR==1 || !/^mode/' > $(REPOROOT)/coverage.txt
+	@$(foreach p,$(TEST_PACKAGES),$(GOCMD) test github.com/appnexus/ankh/$(p) -coverprofile=coverage/$(subst /,_,$(p)).out;)
+	@cat $(REPOROOT)/coverage/*.out | awk 'NR==1 || !/^mode/' > $(REPOROOT)/coverage.txt
 
 .PHONY: cover
 cover: cover-generate

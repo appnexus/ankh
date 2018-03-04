@@ -1,7 +1,7 @@
 # current-context defines which context you currently have "selected". It's
 # common for this value to change frequently as you move around to different
 # clusters.
-current-context: minikube-local
+current-context: minikube
 
 # supported-environments define a list of your supported environments. Used for
 # validation of ankh files. It's best practice to keep this value in sync with
@@ -26,7 +26,7 @@ supported-resource-profiles:
 # kubernetes clusters. Each key in this object is a context and the names can be
 # whatever you like.
 contexts:
-  minikube-local:
+  minikube:
     # kube-context ties this context to a `kubectl` context
     kube-context: minikube
 
@@ -36,7 +36,8 @@ contexts:
     # resource-profile should be one of your `supported-resource-profiles` defined above
     resource-profile: natural
 
-    release: beta
+    # release name provided to helm - empty by default
+    release: ""
 
     # helm-registry-url instructs ankh where to pull charts from
     helm-registry-url: https://kubernetes-charts.storage.googleapis.com/

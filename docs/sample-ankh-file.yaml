@@ -1,0 +1,17 @@
+namespace: test
+
+charts:
+  - name: mychart
+    version: 1.0.0
+    default-values:
+      some:
+        value: 1
+    values:
+      production:
+        another:
+          value: "bar"
+      dev:
+        another:
+          value: "hello"
+        foo: "bar"
+

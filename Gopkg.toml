@@ -1,0 +1,11 @@
+[[constraint]]
+  name = "github.com/jawher/mow.cli"
+  version = "1.0.3"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/mattn/go-isatty"
+
+[[constraint]]
+  name = "github.com/sirupsen/logrus"
+  version = "1.0.4"

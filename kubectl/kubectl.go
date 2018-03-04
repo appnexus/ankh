@@ -1,31 +1,29 @@
 package kubectl
 
 import (
-	"ankh"
 	"fmt"
 	"io/ioutil"
 	"os/exec"
 	"strings"
-)
 
-type action string
-
-const (
-	Apply  action = "apply"
-	Delete action = "delete"
+	"github.com/appnexus/ankh/context"
 )
 
 func Version() (string, error) {
 	kubectlArgs := []string{"kubectl", "version", "--client"}
 	kubectlCmd := exec.Command(kubectlArgs[0], kubectlArgs[1:]...)
-	kubectlOutput, err := kubectlCmd.Output()
+	kubectlOutput, err := kubectlCmd.CombinedOutput()
 	if err != nil {
-		return "", err
+		outputMsg := ""
+		if len(kubectlOutput) > 0 {
+			outputMsg = fmt.Sprintf(" -- the kubectl process had the following output on stdout/stderr:\n%s", kubectlOutput)
+		}
+		return "", fmt.Errorf("%v%v", err, outputMsg)
 	}
 	return string(kubectlOutput), nil
 }
 
-func Execute(ctx *ankh.ExecutionContext, act action, input string, ankhFile ankh.AnkhFile,
+func Execute(ctx *ankh.ExecutionContext, input string, ankhFile ankh.AnkhFile,
 	cmd func(name string, arg ...string) *exec.Cmd) (string, error) {
 
 	if cmd == nil {
@@ -33,7 +31,7 @@ func Execute(ctx *ankh.ExecutionContext, act action, input string, ankhFile ankh
 	}
 
 	kubectlArgs := []string{
-		"kubectl", string(act),
+		"kubectl", "apply",
 		"--context", ctx.AnkhConfig.CurrentContext.KubeContext,
 	}
 
@@ -56,7 +54,7 @@ func Execute(ctx *ankh.ExecutionContext, act action, input string, ankhFile ankh
 		ctx.Logger.Infof("running kubectl command: %v", kubectlArgs)
 	}
 
-	if ctx.Explain {
+	if ctx.Mode == ankh.Explain {
 		return strings.Join(kubectlCmd.Args, " "), nil
 	}
 

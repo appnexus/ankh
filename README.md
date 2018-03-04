@@ -146,7 +146,7 @@ An Ankh file tracks the target namespace and all of the charts you want to manag
 | ------------- |:---:|:-------------:| 
 | namespace     |string|The namespace to use when running `helm` and `kubectl`|
 | bootstrap     |`Script`|Optional. A bootstrap script to run before applying any charts.|
-| admin_dependencies|[]string|Optional. Path to dependent directories, each containing an ankh.yaml that should be run, in order. These dependencies are only satisified when `cluster-admin` is true in the current `Context`, and they are always run before regular `dependencies`|
+| admin-dependencies|[]string|Optional. Path to dependent directories, each containing an ankh.yaml that should be run, in order. These dependencies are only satisified when `cluster-admin` is true in the current `Context`, and they are always run before regular `dependencies`|
 | dependencies     |[]string|Optional. Path to dependent directories, each containing an ankh.yaml that should be run, in order.|
 
 #### `Script`

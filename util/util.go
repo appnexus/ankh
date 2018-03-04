@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"fmt"
+	"gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
 	"os"
@@ -313,4 +314,47 @@ func LineDiff(expected, found string) string {
 	out += fmt.Sprintf("\nExpected: '%s'", strconv.Quote(expected))
 	out += fmt.Sprintf(", found: '%s'", strconv.Quote(found))
 	return out
+}
+
+func CreateReducedYAMLFile(filename, key string) ([]byte, error) {
+	in := make(map[string]interface{})
+	var result []byte
+	inBytes, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return result, err
+	}
+
+	if err = yaml.UnmarshalStrict(inBytes, &in); err != nil {
+		return result, err
+	}
+
+	out := make(map[interface{}]interface{})
+
+	if in[key] == nil {
+		return result, fmt.Errorf("missing `%s` key", key)
+	}
+
+	switch t := in[key].(type) {
+	case map[interface{}]interface{}:
+		for k, v := range t {
+			// TODO: using `.(string)` here could cause a panic in cases where the
+			// key isn't a string, which is pretty uncommon
+
+			// TODO: validate
+			out[k.(string)] = v
+		}
+	default:
+		out[key] = in[key]
+	}
+
+	outBytes, err := yaml.Marshal(&out)
+	if err != nil {
+		return result, err
+	}
+
+	if err := ioutil.WriteFile(filename, outBytes, 0644); err != nil {
+		return result, err
+	}
+
+	return outBytes, nil
 }

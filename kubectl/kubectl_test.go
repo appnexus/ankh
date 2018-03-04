@@ -1,13 +1,14 @@
 package kubectl
 
 import (
-	"ankh"
 	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/appnexus/ankh/context"
 )
 
 const KUBE_CONFIG_PATH = "/path/to/config"
@@ -17,6 +18,7 @@ const INPUT = "test yaml"
 
 func newCtx() *ankh.ExecutionContext {
 	return &ankh.ExecutionContext{
+		Mode:           ankh.Apply,
 		KubeConfigPath: KUBE_CONFIG_PATH,
 		AnkhConfig: ankh.AnkhConfig{
 			CurrentContext: ankh.Context{
@@ -72,31 +74,12 @@ func TestExecute(t *testing.T) {
 			Namespace: NAMESPACE,
 		}
 
-		output, err := Execute(ctx, Apply, INPUT, config, execCommandContext)
+		output, err := Execute(ctx, INPUT, config, execCommandContext)
 
 		if err != nil {
 			t.Error(err)
 		}
 		expected := fmt.Sprintf("kubectl apply --context %s --namespace %s --kubeconfig %s -f - %s",
-			KUBE_CONTEXT, NAMESPACE, KUBE_CONFIG_PATH, INPUT)
-
-		if output != expected {
-			t.Errorf("Expected command: %s; found: %s", expected, output)
-		}
-	})
-
-	t.Run("delete", func(t *testing.T) {
-		ctx := newCtx()
-		config := ankh.AnkhFile{
-			Namespace: NAMESPACE,
-		}
-
-		output, err := Execute(ctx, Delete, INPUT, config, execCommandContext)
-
-		if err != nil {
-			t.Error(err)
-		}
-		expected := fmt.Sprintf("kubectl delete --context %s --namespace %s --kubeconfig %s -f - %s",
 			KUBE_CONTEXT, NAMESPACE, KUBE_CONFIG_PATH, INPUT)
 
 		if output != expected {
@@ -111,7 +94,7 @@ func TestExecute(t *testing.T) {
 			Namespace: NAMESPACE,
 		}
 
-		output, err := Execute(ctx, Apply, INPUT, config, execCommandContext)
+		output, err := Execute(ctx, INPUT, config, execCommandContext)
 
 		if err != nil {
 			t.Error(err)
@@ -131,9 +114,9 @@ func TestExecute(t *testing.T) {
 			Namespace: NAMESPACE,
 		}
 
-		_, err := Execute(ctx, Apply, INPUT, config, execCommandContextFail)
+		_, err := Execute(ctx, INPUT, config, execCommandContextFail)
 
-		expected := "error running the kubectl command:\nOoops!"
+		expected := "error running the kubectl command: exit status 1 -- the kubectl process had the following output on stderr:\nOoops!"
 
 		if err == nil || err.Error() != expected {
 			t.Errorf("Expected output: %s; found: %s", expected, err.Error())

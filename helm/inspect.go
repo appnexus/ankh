@@ -1,18 +1,38 @@
 package helm
 
 import (
-	"ankh"
 	"fmt"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"strings"
+
+	"github.com/appnexus/ankh/context"
+	"github.com/appnexus/ankh/util"
 )
 
-var findChartFiles = ankh.FindChartFiles
-var getChartFileContent = ankh.GetChartFileContent
-var execContext = exec.Command
+func getChartFileContent(ctx *ankh.ExecutionContext, path string, useContext bool, key string) ([]byte, error) {
+	var result []byte
+	bytes, err := ioutil.ReadFile(fmt.Sprintf("%s", path))
+	if err == nil {
+		if useContext {
+			bytes, err = util.CreateReducedYAMLFile(path, key)
+			if err != nil {
+				return result, err
+			}
+		}
+
+		result = bytes
+	} else {
+		ctx.Logger.Debugf("%s not found", path)
+	}
+
+	if len(bytes) > 0 {
+		result = append([]byte("---\n# Source: "+path+"\n"), bytes...)
+	}
+
+	return result, nil
+}
 
 func InspectValues(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ankh.Chart) (string, error) {
 	var result string
