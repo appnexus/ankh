@@ -8,9 +8,15 @@ Kubectl: https://kubernetes.io/docs/tasks/tools/install-kubectl/
 Helm (version 2.7 or newer): https://github.com/kubernetes/helm
 
 ## Build and Installation
-To build Ankh, just run `make`
 
-To install Ankh, simply run `make install`.
+### Using `make`
+For a build to `ankh/ankh`, run `make`
+For an install to your GOPATH, run `make install`
+
+### Using `go get`
+```
+go get github.com/appnexus/ankh/ankh
+```
 
 ## Introduction
 
