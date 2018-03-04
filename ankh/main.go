@@ -25,7 +25,7 @@ import (
 	"github.com/appnexus/ankh/util"
 )
 
-var AnkhBuildVersion string
+var AnkhBuildVersion string = "DEVELOPMENT"
 
 var log = logrus.New()
 
