@@ -10,8 +10,12 @@ Helm (version 2.7 or newer): https://github.com/kubernetes/helm
 ## Build and Installation
 
 ### Using `make`
-For a build to `ankh/ankh`, run `make`
-For an install to your GOPATH, run `make install`
+```
+make # builds to ankh/ankh
+```
+```
+make install # installs to $GOPATH/bin
+```
 
 ### Using `go get`
 ```
