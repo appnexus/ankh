@@ -58,7 +58,9 @@ Simplicity, transparency and composability are the primary design goals of Ankh.
 
 **ankh template** runs `helm template` with all derived yaml values, prefixing any logging output with a comment `#` to ensure the output is still valid yaml.
 
-**ankh apply** runs `kubectl apply` using the the templated output.
+**ankh explain** outputs a bash-compatible representation of the underlying invocations to `helm template` and `kubectl apply`.
+
+**ankh apply** runs `kubectl apply` using the `helm template` output.
 
 Ankh makes it easy to observe and verify incremental changes. It can be used to achieve reproducible deployments when combined with source control, or even simple CI / CD pipelines.
 
