@@ -174,12 +174,12 @@ func execute(ctx *ankh.ExecutionContext) {
 
 func main() {
 	app := cli.App("ankh", "Another Kubernetes Helper")
-	app.Spec = "[-v] [--ankhconfig] [--kubeconfig] [--datadir] [--set...]"
+	app.Spec = "[-v] [--config] [--kubeconfig] [--datadir] [--context] [--set...]"
 
 	var (
 		verbose    = app.BoolOpt("v verbose", false, "Verbose debug mode")
 		ankhconfig = app.String(cli.StringOpt{
-			Name:   "ankhconfig",
+			Name:   "config",
 			Value:  path.Join(os.Getenv("HOME"), ".ankh", "config"),
 			Desc:   "The ankh config to use",
 			EnvVar: "ANKHCONFIG",
@@ -189,6 +189,12 @@ func main() {
 			Value:  path.Join(os.Getenv("HOME"), ".kube/config"),
 			Desc:   "The kube config to use when invoking kubectl",
 			EnvVar: "KUBECONFIG",
+		})
+		contextOverride = app.String(cli.StringOpt{
+			Name:   "context",
+			Value:  "",
+			Desc:   "The context to use. Overrides `current-context` in your Ankh config",
+			EnvVar: "ANKHCONTEXT",
 		})
 		datadir = app.String(cli.StringOpt{
 			Name:   "datadir",
@@ -231,6 +237,7 @@ func main() {
 			Verbose:           *verbose,
 			AnkhConfigPath:    *ankhconfig,
 			KubeConfigPath:    *kubeconfig,
+			ContextOverride:   *contextOverride,
 			DataDir:           path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
 			Logger:            log,
 			HelmSetValues:     helmVars,
@@ -306,7 +313,7 @@ func main() {
 		}
 	})
 
-	app.Command("inspect", "Inspect charts in ankh.yaml and display information.", func(cmd *cli.Cmd) {
+	app.Command("inspect", "Inspect charts in ankh.yaml and display information", func(cmd *cli.Cmd) {
 		cmd.Spec = "[-f] [--chart]"
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		chart := cmd.StringOpt("chart", "", "Limits the inspect command to only the specified chart")
@@ -425,7 +432,7 @@ func main() {
 					}
 				}
 				if !ok {
-					log.Errorf("Context \"%v\" not found under `contexts`.", context)
+					log.Errorf("Context '%v' not found in `contexts`", context)
 					log.Info("The following contexts are available:")
 					for name, _ := range ctx.AnkhConfig.Contexts {
 						log.Infof("- %v", name)

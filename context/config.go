@@ -28,10 +28,11 @@ type ExecutionContext struct {
 
 	Verbose, DryRun, UseContext, WarnOnConfigError, IgnoreConfigError bool
 
-	AnkhConfigPath string
-	KubeConfigPath string
-	DataDir        string
-	HelmSetValues  map[string]string
+	AnkhConfigPath  string
+	KubeConfigPath  string
+	ContextOverride	string
+	DataDir         string
+	HelmSetValues   map[string]string
 
 	HelmVersion, KubectlVersion string
 
@@ -62,47 +63,51 @@ type AnkhConfig struct {
 
 // ValidateAndInit ensures the AnkhConfig is internally sane and populates
 // special fields if necessary.
-func (ankhConfig *AnkhConfig) ValidateAndInit() []error {
+func (ankhConfig *AnkhConfig) ValidateAndInit(contextOverride string) []error {
 	errors := []error{}
 
+	if contextOverride != "" {
+		ankhConfig.CurrentContextName = contextOverride
+	}
+
 	if ankhConfig.CurrentContextName == "" {
-		errors = append(errors, fmt.Errorf("missing or empty `current-context`"))
+		errors = append(errors, fmt.Errorf("Missing or empty `current-context`"))
 	}
 
 	if ankhConfig.SupportedEnvironments == nil || len(ankhConfig.SupportedEnvironments) == 0 {
-		errors = append(errors, fmt.Errorf("missing or empty `supported-environments`"))
+		errors = append(errors, fmt.Errorf("Missing or empty `supported-environments`"))
 	}
 
 	if ankhConfig.SupportedResourceProfiles == nil || len(ankhConfig.SupportedResourceProfiles) == 0 {
-		errors = append(errors, fmt.Errorf("missing or empty `supported-resource-profiles`"))
+		errors = append(errors, fmt.Errorf("Missing or empty `supported-resource-profiles`"))
 	}
 
 	selectedContext, contextExists := ankhConfig.Contexts[ankhConfig.CurrentContextName]
 	if contextExists == false {
-		errors = append(errors, fmt.Errorf("context '%s' not found in `contexts`", ankhConfig.CurrentContextName))
+		errors = append(errors, fmt.Errorf("Context '%s' not found in `contexts`", ankhConfig.CurrentContextName))
 	} else {
 		if util.Contains(ankhConfig.SupportedEnvironments, selectedContext.Environment) == false {
-			errors = append(errors, fmt.Errorf("current context '%s' has environment '%s': not found in `supported-environments` == %v", ankhConfig.CurrentContextName, selectedContext.Environment, ankhConfig.SupportedEnvironments))
+			errors = append(errors, fmt.Errorf("Current context '%s' has environment '%s': not found in `supported-environments` == %v", ankhConfig.CurrentContextName, selectedContext.Environment, ankhConfig.SupportedEnvironments))
 		}
 
 		if util.Contains(ankhConfig.SupportedResourceProfiles, selectedContext.ResourceProfile) == false {
-			errors = append(errors, fmt.Errorf("current context '%s' has resource profile '%s': not found in `supported-resource-profiles` == %v", ankhConfig.CurrentContextName, selectedContext.ResourceProfile, ankhConfig.SupportedResourceProfiles))
+			errors = append(errors, fmt.Errorf("Current context '%s' has resource profile '%s': not found in `supported-resource-profiles` == %v", ankhConfig.CurrentContextName, selectedContext.ResourceProfile, ankhConfig.SupportedResourceProfiles))
 		}
 
 		if selectedContext.HelmRegistryURL == "" {
-			errors = append(errors, fmt.Errorf("current context '%s' has missing or empty `helm-registry-url`", ankhConfig.CurrentContextName))
+			errors = append(errors, fmt.Errorf("Current context '%s' has missing or empty `helm-registry-url`", ankhConfig.CurrentContextName))
 		}
 
 		if selectedContext.KubeContext == "" {
-			errors = append(errors, fmt.Errorf("current context '%s' has missing or empty `kube-context`", ankhConfig.CurrentContextName))
+			errors = append(errors, fmt.Errorf("Current context '%s' has missing or empty `kube-context`", ankhConfig.CurrentContextName))
 		}
 
 		if selectedContext.Environment == "" {
-			errors = append(errors, fmt.Errorf("current context '%s' has missing or empty `environment`", ankhConfig.CurrentContextName))
+			errors = append(errors, fmt.Errorf("Current context '%s' has missing or empty `environment`", ankhConfig.CurrentContextName))
 		}
 
 		if selectedContext.ResourceProfile == "" {
-			errors = append(errors, fmt.Errorf("current-context '%s' has missing or empty `resource-profile`", ankhConfig.CurrentContextName))
+			errors = append(errors, fmt.Errorf("Current context '%s' has missing or empty `resource-profile`", ankhConfig.CurrentContextName))
 		}
 		ankhConfig.CurrentContext = selectedContext
 	}
@@ -186,21 +191,21 @@ func GetAnkhConfig(ctx *ExecutionContext) (AnkhConfig, error) {
 
 	ankhRcFile, err := ioutil.ReadFile(ctx.AnkhConfigPath)
 	if err != nil {
-		return ankhConfig, fmt.Errorf("unable to read ankh config '%s': %v", ctx.AnkhConfigPath, err)
+		return ankhConfig, fmt.Errorf("Unable to read ankh config '%s': %v", ctx.AnkhConfigPath, err)
 	}
 
 	if err := os.MkdirAll(ctx.DataDir, 0755); err != nil {
-		return ankhConfig, fmt.Errorf("unable to make data dir '%s': %v", ctx.DataDir, err)
+		return ankhConfig, fmt.Errorf("Unable to make data dir '%s': %v", ctx.DataDir, err)
 	}
 
 	err = yaml.UnmarshalStrict(ankhRcFile, &ankhConfig)
 	if err != nil {
-		return ankhConfig, fmt.Errorf("error loading ankh config '%s': %v", ctx.AnkhConfigPath, err)
+		return ankhConfig, fmt.Errorf("Error loading ankh config '%s': %v", ctx.AnkhConfigPath, err)
 	}
 
-	errs := ankhConfig.ValidateAndInit()
+	errs := ankhConfig.ValidateAndInit(ctx.ContextOverride)
 	if len(errs) > 0 {
-		return ankhConfig, fmt.Errorf("error(s) validating ankh config '%s':\n%s", ctx.AnkhConfigPath, util.MultiErrorFormat(errs))
+		return ankhConfig, fmt.Errorf("Error(s) validating ankh config '%s':\n%s", ctx.AnkhConfigPath, util.MultiErrorFormat(errs))
 	}
 
 	return ankhConfig, nil

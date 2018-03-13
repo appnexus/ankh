@@ -37,10 +37,35 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 	t.Run("valid AnkhConfig", func(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 
-		errs := ankhConfig.ValidateAndInit()
+		errs := ankhConfig.ValidateAndInit("")
 
 		if len(errs) > 0 {
 			t.Logf("got errors when trying to validate an AnkhConfig: %v", errs)
+			t.Fail()
+		}
+	})
+
+	t.Run("valid AnkhConfig with two contexts and context override", func(t *testing.T) {
+		ankhConfig := newValidAnkhConfig()
+
+		secondContext := ankhConfig.Contexts["test"]
+		secondContext.KubeContext = "secondkubecontext"
+		ankhConfig.Contexts["secondcontext"] = secondContext
+
+		errs := ankhConfig.ValidateAndInit("secondcontext")
+
+		if len(errs) > 0 {
+			t.Logf("got errors when trying to validate an AnkhConfig: %v", errs)
+			t.Fail()
+		}
+
+		if ankhConfig.CurrentContextName != "secondcontext" {
+			t.Logf("did not get CurrentContextName equal to the override name 'secondcontext': got %v", ankhConfig.CurrentContextName)
+			t.Fail()
+		}
+
+		if ankhConfig.CurrentContext.KubeContext != "secondkubecontext" {
+			t.Logf("did not get CurrentContext with a KubeContext consistent with the override context 'secondkubecontext': got %v", ankhConfig.CurrentContext.KubeContext)
 			t.Fail()
 		}
 	})
@@ -49,11 +74,11 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 		ankhConfig.CurrentContextName = ""
 
-		errs := ankhConfig.ValidateAndInit()
+		errs := ankhConfig.ValidateAndInit("")
 
 		hasCorrectError := false
 		for _, err := range errs {
-			if strings.Contains(err.Error(), "missing or empty `current-context`") {
+			if strings.Contains(err.Error(), "Missing or empty `current-context`") {
 				hasCorrectError = true
 			}
 		}
@@ -64,15 +89,26 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		}
 	})
 
+	t.Run("missing current context with configOverride", func(t *testing.T) {
+		ankhConfig := newValidAnkhConfig()
+		ankhConfig.CurrentContextName = ""
+
+		errs := ankhConfig.ValidateAndInit("test")
+		if len(errs) > 0 {
+			t.Logf("was expecting no errors, but got these `errs`: %+v", errs)
+			t.Fail()
+		}
+	})
+
 	t.Run("missing supported-environments", func(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 		ankhConfig.SupportedEnvironments = []string{}
 
-		errs := ankhConfig.ValidateAndInit()
+		errs := ankhConfig.ValidateAndInit("")
 
 		hasCorrectError := false
 		for _, err := range errs {
-			if strings.Contains(err.Error(), "missing or empty `supported-environments`") {
+			if strings.Contains(err.Error(), "Missing or empty `supported-environments`") {
 				hasCorrectError = true
 			}
 		}
@@ -87,11 +123,11 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 		ankhConfig.SupportedResourceProfiles = []string{}
 
-		errs := ankhConfig.ValidateAndInit()
+		errs := ankhConfig.ValidateAndInit("")
 
 		hasCorrectError := false
 		for _, err := range errs {
-			if strings.Contains(err.Error(), "missing or empty `supported-resource-profiles`") {
+			if strings.Contains(err.Error(), "Missing or empty `supported-resource-profiles`") {
 				hasCorrectError = true
 			}
 		}
@@ -106,11 +142,11 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 		ankhConfig.Contexts = map[string]Context{}
 
-		errs := ankhConfig.ValidateAndInit()
+		errs := ankhConfig.ValidateAndInit("")
 
 		hasCorrectError := false
 		for _, err := range errs {
-			if strings.Contains(err.Error(), "context 'test' not found in `contexts`") {
+			if strings.Contains(err.Error(), "Context 'test' not found in `contexts`") {
 				hasCorrectError = true
 			}
 		}
@@ -130,11 +166,11 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit()
+		errs := ankhConfig.ValidateAndInit("")
 
 		hasCorrectError := false
 		for _, err := range errs {
-			if strings.Contains(err.Error(), "current context 'test' has environment 'nope': not found in `supported-environments` == [dev]") {
+			if strings.Contains(err.Error(), "Current context 'test' has environment 'nope': not found in `supported-environments` == [dev]") {
 				hasCorrectError = true
 			}
 		}
@@ -154,11 +190,11 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit()
+		errs := ankhConfig.ValidateAndInit("")
 
 		hasCorrectError := false
 		for _, err := range errs {
-			if strings.Contains(err.Error(), "current context 'test' has resource profile 'nope': not found in `supported-resource-profiles` == [constrained]") {
+			if strings.Contains(err.Error(), "Current context 'test' has resource profile 'nope': not found in `supported-resource-profiles` == [constrained]") {
 				hasCorrectError = true
 			}
 		}
@@ -178,11 +214,11 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit()
+		errs := ankhConfig.ValidateAndInit("")
 
 		hasCorrectError := false
 		for _, err := range errs {
-			if strings.Contains(err.Error(), "missing or empty `helm-registry-url`") {
+			if strings.Contains(err.Error(), "Current context 'test' has missing or empty `helm-registry-url`") {
 				hasCorrectError = true
 			}
 		}
@@ -202,11 +238,11 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit()
+		errs := ankhConfig.ValidateAndInit("")
 
 		hasCorrectError := false
 		for _, err := range errs {
-			if strings.Contains(err.Error(), "missing or empty `kube-context`") {
+			if strings.Contains(err.Error(), "Current context 'test' has missing or empty `kube-context`") {
 				hasCorrectError = true
 			}
 		}
@@ -226,7 +262,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit()
+		errs := ankhConfig.ValidateAndInit("")
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -250,7 +286,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit()
+		errs := ankhConfig.ValidateAndInit("")
 
 		hasCorrectError := false
 		for _, err := range errs {
