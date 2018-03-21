@@ -106,13 +106,12 @@ func InspectChart(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ankh
 
 	ctx.Logger.Debugf("Inspecting chart.yaml for chart %s", chart.Name)
 
-	currentContext := ctx.AnkhConfig.CurrentContext
 	result += fmt.Sprintf("\n---\n# Chart: %s\n", chart.Name)
 	files, err := findChartFiles(ctx, ankhFile, chart)
 	if err != nil {
 		return "", err
 	}
-	helmArgs := []string{"helm", "inspect", "chart", "--kube-context", currentContext.KubeContext}
+	helmArgs := []string{"helm", "inspect", "chart"}
 
 	helmArgs = append(helmArgs, files.ChartDir)
 

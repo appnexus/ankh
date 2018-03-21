@@ -54,12 +54,16 @@ func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) {
 
 	namespaceLog := ""
 	if ankhFile.Namespace != "" {
-		namespaceLog = fmt.Sprintf(" to namespace \"%s\"", ankhFile.Namespace)
+		namespaceLog = fmt.Sprintf(" and namespace \"%s\"", ankhFile.Namespace)
 	}
 
-	ctx.Logger.Infof("%v %v%vwith context \"%s\" using environment \"%s\"%v", verb,
-		releaseLog, dryLog,
-		ctx.AnkhConfig.CurrentContext.KubeContext,
+	contextLog := fmt.Sprintf("kube context \"%s\"", ctx.AnkhConfig.CurrentContext.KubeContext)
+	if ctx.AnkhConfig.CurrentContext.KubeServer != "" {
+		contextLog = fmt.Sprintf("kube server \"%s\"", ctx.AnkhConfig.CurrentContext.KubeServer)
+	}
+
+	ctx.Logger.Infof("%v %v%vto %v using environment \"%s\"%v", verb,
+		releaseLog, dryLog, contextLog,
 		ctx.AnkhConfig.CurrentContext.Environment,
 		namespaceLog)
 }
