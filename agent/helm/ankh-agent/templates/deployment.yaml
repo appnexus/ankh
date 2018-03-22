@@ -1,0 +1,71 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      namespace: {{ .Release.Namespace }}
+      labels:
+        app: {{ .Chart.Name }}
+    spec:
+      serviceAccount: {{ .Chart.Name }}
+      containers:
+      - name: git-sync
+        image: k8s.gcr.io/git-sync:v2.0.4
+        volumeMounts:
+        - name: git
+          mountPath: /git
+        - name: {{ .Chart.Name }}-ssh
+          mountPath: /etc/git-secret/
+        env:
+        - name: GIT_SYNC_REPO
+          value: "{{ .Values.git.repo }}"
+        - name: GIT_SYNC_SSH
+          value: "true"
+        - name: GIT_SYNC_DEST
+          value: "repo"
+        - name: GIT_SYNC_DEPTH
+          value: "1"
+        - name: GIT_SYNC_BRANCH
+          value: "{{ .Values.git.branch }}"
+      - name: {{ .Chart.Name }}
+        image: jondlm/ankh-agent:0.0.1
+        volumeMounts:
+        - name: git
+          mountPath: /git
+        - mountPath: /root/.ankh/config
+          name: {{ .Chart.Name }}-config
+          subPath: ankhconfig
+        - mountPath: /root/.kube/config
+          name: {{ .Chart.Name }}-config
+          subPath: kubeconfig
+        command:
+          - lazywatch
+        args:
+          - /git/repo
+          - --
+          - ash
+          - -c
+          - 'cd /git/repo && echo "{{ .Values.logDeployPrefix }} git_hash=$(git rev-parse --short HEAD)" && if [ -f /git/repo/ankh.yaml ]; then ankh apply; else; kubectl apply --recursive -f /git/repo/; fi'
+        resources:
+          requests:
+            cpu: 0.1
+            memory: 100Mi
+          limits:
+            cpu: 0.5
+            memory: 500Mi
+      volumes:
+      - name: git
+        emptyDir: {}
+      - name: {{ .Chart.Name }}-ssh
+        secret:
+          secretName: {{ .Chart.Name }}-ssh
+          defaultMode: 256
+      - name: {{ .Chart.Name }}-config
+        configMap:
+          name: {{ .Chart.Name }}-config

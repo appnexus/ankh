@@ -1,0 +1,41 @@
+rbac:
+  # If rbac is enabled, the chart will install the correct roles and binding
+  # for ankh-agent to work
+  enabled: true
+
+# This is a string that's printed in the logs before each deploy. If you're
+# using log aggregation, this can be helpful for finding the logs about
+# deploys.
+logDeployPrefix: "[ankh-agent-deploy]"
+
+git:
+  # Points to a git repo containing an `ankh.yaml` file at the root directory. If
+  # that's not found, ankh-agent will instead do a `kubectl apply --recursive -f
+  # <dir>`. Currently only access over SSH is supported by this chart.
+  repo: "ssh://git@foocompany.com/foo.git" 
+
+  # The git branch to sync with
+  branch: "master"
+
+ssh:
+  # An ssh private key to connect to the git.repo
+  key: "mykey"
+
+  # Content is dropped to ~/.ssh/known_hosts in the container. Use this to
+  # bypass the "trust this computer" prompt that typically pops up the first
+  # time you connect to a host.
+  knownHosts: "knownhosts"
+
+ankhconfig: |
+  supported-environments: [ "dev", "production" ]
+  supported-resource-profiles: ["natural", "constrained" ]
+  current-context: local
+  contexts:
+    local:
+      kube-context: local # pre-setup kubectl context by the chart that points to the current cluster
+      environment: dev
+      resource-profile: constrained
+      release: ""
+      helm-registry-url: https://my-helm-repo.com
+      cluster-admin: true
+
