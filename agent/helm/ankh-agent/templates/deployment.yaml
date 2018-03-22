@@ -16,7 +16,7 @@ spec:
       serviceAccount: {{ .Chart.Name }}
       containers:
       - name: git-sync
-        image: k8s.gcr.io/git-sync:v2.0.4
+        image: jondlm/git-sync:v2.0.4
         volumeMounts:
         - name: git
           mountPath: /git
@@ -34,10 +34,10 @@ spec:
         - name: GIT_SYNC_BRANCH
           value: "{{ .Values.git.branch }}"
       - name: {{ .Chart.Name }}
-        image: jondlm/ankh-agent:0.0.1
+        image: jondlm/ankh-agent:0.0.2
         volumeMounts:
-        - name: git
-          mountPath: /git
+        - mountPath: /git
+          name: git
         - mountPath: /root/.ankh/config
           name: {{ .Chart.Name }}-config
           subPath: ankhconfig
@@ -47,11 +47,11 @@ spec:
         command:
           - lazywatch
         args:
-          - /git/repo
+          - /git
           - --
           - ash
           - -c
-          - 'cd /git/repo && echo "{{ .Values.logDeployPrefix }} git_hash=$(git rev-parse --short HEAD)" && if [ -f /git/repo/ankh.yaml ]; then ankh apply; else; kubectl apply --recursive -f /git/repo/; fi'
+          - 'cd /git/repo && echo "{{ .Values.logDeployPrefix }} git_hash=$(git rev-parse --short HEAD)" && if [ -f /git/repo/ankh.yaml ]; then ankh apply; else kubectl apply --recursive -f /git/repo/; fi'
         resources:
           requests:
             cpu: 0.1
