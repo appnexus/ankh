@@ -38,6 +38,8 @@ func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) {
 		verb = "Explaining"
 	case ankh.Template:
 		verb = "Templating"
+	case ankh.Lint:
+		verb = "Linting"
 	}
 
 	releaseLog := ""
@@ -134,6 +136,16 @@ func execute(ctx *ankh.ExecutionContext) {
 			}
 		case ankh.Template:
 			fmt.Println(helmOutput)
+		case ankh.Lint:
+			errors := helm.Lint(ctx, helmOutput, ankhFile)
+			if len(errors) > 0 {
+				for _, err := range errors {
+					ctx.Logger.Warningf("%v", err)
+				}
+				check(fmt.Errorf("Lint found %d errors.", len(errors)))
+			}
+
+			ctx.Logger.Infof("No issues.")
 		}
 	}
 
@@ -291,6 +303,22 @@ func main() {
 			ctx.DryRun = *dryRun
 			ctx.Chart = *chart
 			ctx.Mode = ankh.Apply
+
+			execute(ctx)
+			os.Exit(0)
+		}
+	})
+
+	app.Command("lint", "Lint an ankh file, checking for possible errors or mistakes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[-f] [--chart]"
+
+		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+		chart := cmd.StringOpt("chart", "", "Limits the lint command to only the specified chart")
+
+		cmd.Action = func() {
+			ctx.AnkhFilePath = *ankhFilePath
+			ctx.Chart = *chart
+			ctx.Mode = ankh.Lint
 
 			execute(ctx)
 			os.Exit(0)
@@ -529,7 +557,7 @@ func inspect(ctx *ankh.ExecutionContext,
 
 func check(err error) {
 	if err != nil {
-		log.Fatalf("Cannot proceed: %v", err)
+		log.Fatalf("%v", err)
 	}
 }
 

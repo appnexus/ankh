@@ -16,6 +16,7 @@ type Mode string
 const (
 	Apply    Mode = "apply"
 	Explain  Mode = "explain"
+	Lint  Mode = "lint"
 	Template Mode = "template"
 )
 
