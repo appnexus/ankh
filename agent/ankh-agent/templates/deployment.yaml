@@ -16,7 +16,7 @@ spec:
       serviceAccount: {{ .Chart.Name }}
       containers:
       - name: {{ .Chart.Name }}
-        image: jondlm/ankh-agent:0.3.1
+        image: jondlm/ankh-agent:0.3.2
         volumeMounts:
         - mountPath: /root/.ssh
           name: {{ .Chart.Name }}-ssh
