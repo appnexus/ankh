@@ -1,6 +1,6 @@
 FROM alpine:3.7
 
-RUN apk add --update git curl bash openssl
+RUN apk add --update git curl bash openssh
 
 # Install `kubectl`
 RUN curl -sLO https://storage.googleapis.com/kubernetes-release/release/v1.9.3/bin/linux/amd64/kubectl &&\
@@ -20,8 +20,8 @@ RUN curl -sLO https://github.com/appnexus/ankh/releases/download/v1.0.0-beta.3/a
   mv ankh /usr/local/bin &&\
   rm ankh-linux-amd64.tar.gz
 
-# Install `lazywatch`
-RUN curl -sLO https://github.com/jondlm/lazywatch/releases/download/0.0.4/lazywatch_linux_amd64 &&\
-  chmod +x lazywatch_linux_amd64 &&\
-  mv lazywatch_linux_amd64 /usr/local/bin/lazywatch
+# Install `gitwatch`
+RUN curl -sLO https://github.com/jondlm/gitwatch/releases/download/0.3.1/gitwatch_linux_amd64 &&\
+  chmod +x gitwatch_linux_amd64 &&\
+  mv gitwatch_linux_amd64 /usr/local/bin/gitwatch
 

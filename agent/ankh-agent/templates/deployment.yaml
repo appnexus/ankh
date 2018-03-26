@@ -15,29 +15,11 @@ spec:
     spec:
       serviceAccount: {{ .Chart.Name }}
       containers:
-      - name: git-sync
-        image: jondlm/git-sync:v2.0.4
-        volumeMounts:
-        - name: git
-          mountPath: /git
-        - name: {{ .Chart.Name }}-ssh
-          mountPath: /etc/git-secret/
-        env:
-        - name: GIT_SYNC_REPO
-          value: "{{ .Values.git.repo }}"
-        - name: GIT_SYNC_SSH
-          value: "true"
-        - name: GIT_SYNC_DEST
-          value: "repo"
-        - name: GIT_SYNC_DEPTH
-          value: "1"
-        - name: GIT_SYNC_BRANCH
-          value: "{{ .Values.git.branch }}"
       - name: {{ .Chart.Name }}
-        image: jondlm/ankh-agent:0.0.2
+        image: jondlm/ankh-agent:0.3.1
         volumeMounts:
-        - mountPath: /git
-          name: git
+        - mountPath: /root/.ssh
+          name: {{ .Chart.Name }}-ssh
         - mountPath: /root/.ankh/config
           name: {{ .Chart.Name }}-config
           subPath: ankhconfig
@@ -45,23 +27,26 @@ spec:
           name: {{ .Chart.Name }}-config
           subPath: kubeconfig
         command:
-          - lazywatch
+          - gitwatch
         args:
-          - /git
+          - --dir
+          - /repo
+          - --repo
+          - {{ .Values.git.repo }}
+          - --key
+          - /root/.ssh/id_rsa
           - --
           - ash
           - -c
-          - 'cd /git/repo && echo "{{ .Values.logDeployPrefix }} git_hash=$(git rev-parse --short HEAD)" && if [ -f /git/repo/ankh.yaml ]; then ankh apply; else kubectl apply --recursive -f /git/repo/; fi'
+          - "cd /repo && echo \"{{ .Values.logDeployPrefix }} git_hash=$(git rev-parse --short HEAD)\" && if [ -f /repo/ankh.yaml ]; then ankh apply; else kubectl apply --recursive -f /repo/; fi"
         resources:
           requests:
             cpu: 0.1
-            memory: 100Mi
+            memory: 50Mi
           limits:
             cpu: 0.5
             memory: 500Mi
       volumes:
-      - name: git
-        emptyDir: {}
       - name: {{ .Chart.Name }}-ssh
         secret:
           secretName: {{ .Chart.Name }}-ssh

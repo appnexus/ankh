@@ -12,19 +12,16 @@ git:
   # Points to a git repo containing an `ankh.yaml` file at the root directory. If
   # that's not found, ankh-agent will instead do a `kubectl apply --recursive -f
   # <dir>`. Currently only access over SSH is supported by this chart.
-  repo: "ssh://git@foocompany.com/foo.git" 
-
-  # The git branch to sync with
-  branch: "master"
+  repo: "ssh://foo@example.com/bar.git"
 
 ssh:
   # An ssh private key to connect to the git.repo
-  key: "mykey"
+  id_rsa: |
 
   # Content is dropped to ~/.ssh/known_hosts in the container. Use this to
   # bypass the "trust this computer" prompt that typically pops up the first
   # time you connect to a host.
-  knownHosts: "knownhosts"
+  known_hosts: |
 
 ankhconfig: |
   supported-environments: [ "dev", "production" ]
@@ -32,10 +29,9 @@ ankhconfig: |
   current-context: local
   contexts:
     local:
-      kube-context: local # pre-setup kubectl context by the chart that points to the current cluster
+      kube-context: local
       environment: dev
       resource-profile: constrained
       release: ""
-      helm-registry-url: https://my-helm-repo.com
+      helm-registry-url: https://example.com
       cluster-admin: true
-
