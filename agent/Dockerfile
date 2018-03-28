@@ -21,7 +21,7 @@ RUN curl -sLO https://github.com/appnexus/ankh/releases/download/v1.0.0-beta.3/a
   rm ankh-linux-amd64.tar.gz
 
 # Install `gitwatch`
-RUN curl -sLO https://github.com/jondlm/gitwatch/releases/download/0.3.1/gitwatch_linux_amd64 &&\
+RUN curl -sLO https://github.com/jondlm/gitwatch/releases/download/0.7.0/gitwatch_linux_amd64 &&\
   chmod +x gitwatch_linux_amd64 &&\
   mv gitwatch_linux_amd64 /usr/local/bin/gitwatch
 

@@ -14,6 +14,27 @@ git:
   # <dir>`. Currently only access over SSH is supported by this chart.
   repo: "ssh://foo@example.com/bar.git"
 
+slack:
+  # If slack is enabled, the chart will configure ankh-agent to send deployment
+  # notifications to a slack channel via a webhook.
+  enabled: true
+
+  # The channel deployment notifications will be sent to. It supports things
+  # like "#my-channel" or "@johndoe" and must begin with either a # or an @
+  channel: "#example"
+
+  # This should be set to something that uniquely identifies this deployment of
+  # ankh-agent. It's displayed at the top of each slack message notification.
+  title: "deploy to my-cluster"
+
+  # The slack webhook URL where notifications will be POSTed to
+  webhook: https://hooks.slack.com/services/x/x/x
+
+  # In some rare cases, you may need to use an HTTP proxy to talk to slack, this
+  # allows for that. Feel free to omit if you don't need it.
+  # E.g. http://webproxy.example.com:8000
+  proxy: ""
+
 ssh:
   # An ssh private key to connect to the git.repo
   id_rsa: |

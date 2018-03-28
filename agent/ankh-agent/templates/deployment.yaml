@@ -35,6 +35,18 @@ spec:
           - {{ .Values.git.repo }}
           - --key
           - /root/.ssh/id_rsa
+          {{- if .Values.slack.enabled }}
+          - --slack-webhook
+          - {{ .Values.slack.webhook }}
+          - --slack-title
+          - "{{ .Values.slack.title }}"
+          {{- if ne .Values.slack.proxy "" }}
+          - --slack-http-proxy
+          - {{ .Values.slack.proxy }}
+          {{- end }}
+          - --slack-channel
+          - "{{ .Values.slack.channel }}"
+          {{- end }}
           - --
           - ash
           - -c
