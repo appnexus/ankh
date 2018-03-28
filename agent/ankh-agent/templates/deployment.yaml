@@ -1,0 +1,68 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      namespace: {{ .Release.Namespace }}
+      labels:
+        app: {{ .Chart.Name }}
+    spec:
+      serviceAccount: {{ .Chart.Name }}
+      containers:
+      - name: {{ .Chart.Name }}
+        image: jondlm/ankh-agent:0.7.0
+        volumeMounts:
+        - mountPath: /root/.ssh
+          name: {{ .Chart.Name }}-ssh
+        - mountPath: /root/.ankh/config
+          name: {{ .Chart.Name }}-config
+          subPath: ankhconfig
+        - mountPath: /root/.kube/config
+          name: {{ .Chart.Name }}-config
+          subPath: kubeconfig
+        command:
+          - gitwatch
+        args:
+          - --dir
+          - /repo
+          - --repo
+          - {{ .Values.git.repo }}
+          - --key
+          - /root/.ssh/id_rsa
+          {{- if .Values.slack.enabled }}
+          - --slack-webhook
+          - {{ .Values.slack.webhook }}
+          - --slack-title
+          - "{{ .Values.slack.title }}"
+          {{- if ne .Values.slack.proxy "" }}
+          - --slack-http-proxy
+          - {{ .Values.slack.proxy }}
+          {{- end }}
+          - --slack-channel
+          - "{{ .Values.slack.channel }}"
+          {{- end }}
+          - --
+          - ash
+          - -c
+          - "cd /repo && echo \"{{ .Values.logDeployPrefix }} git_hash=$(git rev-parse --short HEAD)\" && if [ -f /repo/ankh.yaml ]; then ankh apply; else kubectl apply --recursive -f /repo/; fi"
+        resources:
+          requests:
+            cpu: 0.1
+            memory: 50Mi
+          limits:
+            cpu: 0.5
+            memory: 500Mi
+      volumes:
+      - name: {{ .Chart.Name }}-ssh
+        secret:
+          secretName: {{ .Chart.Name }}-ssh
+          defaultMode: 256
+      - name: {{ .Chart.Name }}-config
+        configMap:
+          name: {{ .Chart.Name }}-config
