@@ -16,6 +16,7 @@ type KubeObject struct {
 		Labels map[string]string
 	}
 	Spec struct {
+		Type     string
 		Selector map[string]string
 		Template struct {
 			Metadata struct {
@@ -53,17 +54,19 @@ func LintObject(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, obj KubeObje
 	case "deployment":
 		// The Deployment should create pods with the `release` label
 		if obj.Spec.Template.Metadata.Labels["release"] != release {
-			e := fmt.Errorf("Object with kind '%v' and name '%v': object's spec.template.metadata.labels is missing a `release` label with the release name as a value (in this case, '%v'). Found these labels on spec.template.metadata: %+v", obj.Kind, obj.Metadata.Name, release, obj.Spec.Template.Metadata.Labels)
+			e := fmt.Errorf("Deployment with name '%v': object's spec.template.metadata.labels is missing a `release` label with the release name as a value (in this case, '%v'). Found these labels on spec.template.metadata: %+v", obj.Kind, obj.Metadata.Name, release, obj.Spec.Template.Metadata.Labels)
 			errors = append(errors, e)
 		}
-		ctx.Logger.Debugf("Object with kind '%v' and name '%v': object spec.template.metadata.labels exists, and the release label is %v", obj.Kind, obj.Metadata.Name, obj.Spec.Template.Metadata.Labels["release"])
+		ctx.Logger.Debugf("Deployment with name '%v': object spec.template.metadata.labels exists, and the release label is %v", obj.Kind, obj.Metadata.Name, obj.Spec.Template.Metadata.Labels["release"])
 	case "service":
-		// The Service should target pods with the `release` label
-		if obj.Spec.Selector["release"] != release {
-			e := fmt.Errorf("Object with kind '%v' and name '%v': object's spec.selector is missing the `release` key with the release name as a value (in this case, '%v'). Found these keys on spec.selector: %+v", obj.Kind, obj.Metadata.Name, release, obj.Spec.Selector)
-			errors = append(errors, e)
+		// If the Service is not targeting an ExternalName, it should target pods with a `release` label
+		if obj.Spec.Type != "ExternalName" {
+			if obj.Spec.Selector["release"] != release {
+				e := fmt.Errorf("Service with type '%v' and name '%v': object's spec.selector is missing the `release` key with the release name as a value (in this case, '%v'). Found these keys on spec.selector: %+v", obj.Spec.Type, obj.Metadata.Name, release, obj.Spec.Selector)
+				errors = append(errors, e)
+			}
+			ctx.Logger.Debugf("Service with type '%v' and name '%v': object spec.selector exists, and the release key is %v", obj.Spec.Type, obj.Metadata.Name, obj.Spec.Selector["release"])
 		}
-		ctx.Logger.Debugf("Object with kind '%v' and name '%v': object spec.selector exists, and the release key is %v", obj.Kind, obj.Metadata.Name, obj.Spec.Selector["release"])
 	}
 
 	return errors
@@ -81,7 +84,12 @@ func Lint(ctx *ankh.ExecutionContext, helmOutput string, ankhFile ankh.AnkhFile)
 			break
 		}
 
-		ctx.Logger.Debug("Decoded a kube object with kind %v", obj.Kind)
+		ctx.Logger.Debugf("Decoded a kube object with kind '%v'", obj.Kind)
+		if obj.Kind == "" {
+			// Ignore empty documents
+			ctx.Logger.Debugf("Skipping empty document")
+			continue
+		}
 
 		errors := LintObject(ctx, ankhFile, obj)
 		if len(errors) > 0 {
