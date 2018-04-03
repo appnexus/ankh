@@ -9,6 +9,11 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+type Container struct {
+	Name string
+	Image string
+}
+
 type KubeObject struct {
 	Kind     string
 	Metadata struct {
@@ -21,6 +26,9 @@ type KubeObject struct {
 		Template struct {
 			Metadata struct {
 				Labels map[string]string
+			}
+			Spec struct {
+				Containers []Container
 			}
 		}
 	}
@@ -72,10 +80,51 @@ func LintObject(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, obj KubeObje
 	return errors
 }
 
+func PedanticLintObject(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, obj KubeObject) []error {
+	errors := []error{}
+	switch strings.ToLower(obj.Kind) {
+	case "deployment":
+		for _, c := range obj.Spec.Template.Spec.Containers {
+			if !strings.HasPrefix(c.Image, "TODO REPO") {
+				// TODO: stick this in a conf file
+				e := fmt.Errorf("[Pedantic] Deployment with name '%v': has container '%v' with image '%v'. Deployment " +
+					"image must point to 'TODO REPO'", obj.Metadata.Name, c.Name, c.Image)
+				errors = append(errors, e)
+			}
+		}
+	}
+	return errors
+}
+
+func PedanticLint(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, objects []KubeObject) [] error {
+	allErrors := []error{}
+	ctx.Logger.Debugf("[Pedantic] Linting %v", ankhFile.Path)
+	hasService := false
+
+	for _, obj := range objects {
+		if obj.Kind == "Service" {
+			hasService = true
+		}
+		errors := PedanticLintObject(ctx, ankhFile, obj)
+		if len(errors) > 0 {
+			allErrors = append(allErrors, errors...)
+		}
+	}
+
+	// Verify chart has a service object
+	if !hasService {
+		e := fmt.Errorf("Chart is missing a service object")
+		allErrors = append(allErrors, e)
+	}
+	return allErrors
+}
+
 func Lint(ctx *ankh.ExecutionContext, helmOutput string, ankhFile ankh.AnkhFile) []error {
 	decoder := yaml.NewDecoder(strings.NewReader(helmOutput))
 
 	allErrors := []error{}
+	objects := []KubeObject{}
+
 	ctx.Logger.Debugf("Linting %v", ankhFile.Path)
 	for {
 		obj := KubeObject{}
@@ -91,11 +140,21 @@ func Lint(ctx *ankh.ExecutionContext, helmOutput string, ankhFile ankh.AnkhFile)
 			continue
 		}
 
+		objects = append(objects, obj)
+
 		errors := LintObject(ctx, ankhFile, obj)
 		if len(errors) > 0 {
 			allErrors = append(allErrors, errors...)
 		}
 	}
+
+	if ctx.Pedantic {
+		errors := PedanticLint(ctx, ankhFile, objects)
+		if len(errors) > 0 {
+			allErrors = append(allErrors, errors...)
+		}
+	}
+
 	ctx.Logger.Debugf("Finished linting %v - found %v errors", ankhFile.Path, len(allErrors))
 	return allErrors
 }

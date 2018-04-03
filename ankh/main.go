@@ -310,8 +310,9 @@ func main() {
 	})
 
 	app.Command("lint", "Lint an ankh file, checking for possible errors or mistakes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--chart]"
+		cmd.Spec = "[-p] [-f] [--chart]"
 
+		pedantic := cmd.BoolOpt("p pedantic", false, "Pedantic mode - enforce best practices")
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		chart := cmd.StringOpt("chart", "", "Limits the lint command to only the specified chart")
 
@@ -319,6 +320,7 @@ func main() {
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.Chart = *chart
 			ctx.Mode = ankh.Lint
+			ctx.Pedantic = *pedantic
 
 			execute(ctx)
 			os.Exit(0)

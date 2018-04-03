@@ -27,7 +27,7 @@ type ExecutionContext struct {
 
 	Mode Mode
 
-	Verbose, DryRun, UseContext, WarnOnConfigError, IgnoreConfigError bool
+	Verbose, DryRun, Pedantic, UseContext, WarnOnConfigError, IgnoreConfigError bool
 
 	AnkhConfigPath  string
 	KubeConfigPath  string
