@@ -130,13 +130,33 @@ func PedanticLintObject(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, obj 
 	case *appsv1beta1.Deployment:
 		deployment := obj.(*appsv1beta1.Deployment)
 			for _, c := range deployment.Spec.Template.Spec.Containers {
-				if !strings.HasPrefix(c.Image, "TODO REPO") {
-					// TODO: stick this in a conf file
-					e := fmt.Errorf("[Pedantic] Deployment with name '%v' has container '%v' with image '%v'. Deployment "+
-						"image must point to 'TODO REPO'", deployment.ObjectMeta.Name, c.Name, c.Image)
+
+				// Deployment images should only point to our production repositories
+				validRepo := false
+				repos := ctx.AnkhConfig.SupportedImageRepositories
+				if len(repos) > 0 {
+					for _, repo := range repos {
+						if strings.HasPrefix(c.Image, repo) {
+							ctx.Logger.Debugf("[Pedantic] Deployment with name '%v' has container '%v' with image '%v' "+
+								"correctly pointing to '%v", deployment.ObjectMeta.Name, c.Name, c.Image, repo)
+							validRepo = true
+							break
+						}
+					}
+
+					if !validRepo {
+						e := fmt.Errorf("[Pedantic] Deployment with name '%v' has container '%v' with image '%v'. Deployment "+
+							"image must point to one of %v", deployment.ObjectMeta.Name, c.Name, c.Image, repos)
+						errors = append(errors, e)
+					}
+				}
+
+				// Deployment should omit imagePullPolicy or have it set to IfNotPresent since we use immutable images in production.
+				if c.ImagePullPolicy != "" && c.ImagePullPolicy != apiv1.PullIfNotPresent {
+					e := fmt.Errorf("[Pedantic]  Deployment with name '%v' has container '%v' with pull policy '%v'. " +
+						"Pull policy should be set to '%v' or omitted.", deployment.ObjectMeta.Name, c.Name, c.ImagePullPolicy,
+							apiv1.PullIfNotPresent)
 					errors = append(errors, e)
-					ctx.Logger.Debugf("Deployment with name '%v' has container '%v' with image '%v' correctly pointing to " +
-						"'%v", deployment.ObjectMeta.Name, c.Name, c.Image, "TODO REPO")
 				}
 			}
 		}
