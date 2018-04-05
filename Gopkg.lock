@@ -2,10 +2,93 @@
 
 
 [[projects]]
+  name = "github.com/PuerkitoBio/purell"
+  packages = ["."]
+  revision = "8a290539e2e8629dbc4e6bad948158f790ec31f4"
+
+[[projects]]
+  name = "github.com/PuerkitoBio/urlesc"
+  packages = ["."]
+  revision = "5bd2802263f21d8788851d5305584c82a5c75d7e"
+
+[[projects]]
+  name = "github.com/davecgh/go-spew"
+  packages = ["spew"]
+  revision = "5215b55f46b2b919f50a1df0eaa5886afe4e3b3d"
+
+[[projects]]
+  name = "github.com/docker/distribution"
+  packages = [
+    "digest",
+    "reference"
+  ]
+  revision = "cd27f179f2c10c5d300e6d09025b538c475b0d51"
+
+[[projects]]
+  name = "github.com/emicklei/go-restful"
+  packages = [
+    ".",
+    "log"
+  ]
+  revision = "ff4f55a206334ef123e4f79bbf348980da81ca46"
+
+[[projects]]
+  name = "github.com/ghodss/yaml"
+  packages = ["."]
+  revision = "73d445a93680fa1a78ae23a5839bad48f32ba1ee"
+
+[[projects]]
+  name = "github.com/go-openapi/jsonpointer"
+  packages = ["."]
+  revision = "46af16f9f7b149af66e5d1bd010e3574dc06de98"
+
+[[projects]]
+  name = "github.com/go-openapi/jsonreference"
+  packages = ["."]
+  revision = "13c6e3589ad90f49bd3e3bbe2c2cb3d7a4142272"
+
+[[projects]]
+  name = "github.com/go-openapi/spec"
+  packages = ["."]
+  revision = "6aced65f8501fe1217321abf0749d354824ba2ff"
+
+[[projects]]
+  name = "github.com/go-openapi/swag"
+  packages = ["."]
+  revision = "1d0bd113de87027671077d3c71eb3ac5d7dbba72"
+
+[[projects]]
+  name = "github.com/gogo/protobuf"
+  packages = [
+    "proto",
+    "sortkeys"
+  ]
+  revision = "c0656edd0d9eab7c66d1eb0c568f9039345796f7"
+
+[[projects]]
+  name = "github.com/golang/glog"
+  packages = ["."]
+  revision = "44145f04b68cf362d9c4df2182967c2275eaefed"
+
+[[projects]]
+  name = "github.com/google/gofuzz"
+  packages = ["."]
+  revision = "44d81051d367757e1c7c6a5a86423ece9afcf63c"
+
+[[projects]]
   name = "github.com/jawher/mow.cli"
   packages = ["."]
   revision = "0e80ee9f63156ea1954dc2375c33a1c7e752c25c"
   version = "v1.0.3"
+
+[[projects]]
+  name = "github.com/mailru/easyjson"
+  packages = [
+    "buffer",
+    "jlexer",
+    "jwriter"
+  ]
+  revision = "d5b7844b561a7bc640052f1b935f7b800330d7e0"
 
 [[projects]]
   branch = "master"
@@ -20,9 +103,30 @@
   version = "v1.0.4"
 
 [[projects]]
+  name = "github.com/spf13/pflag"
+  packages = ["."]
+  revision = "9ff6c6923cfffbcd502984b8e0c80539a94968b7"
+
+[[projects]]
+  name = "github.com/ugorji/go"
+  packages = ["codec"]
+  revision = "ded73eae5db7e7a0ef6f55aace87a2873c5d2b74"
+
+[[projects]]
   name = "golang.org/x/crypto"
   packages = ["ssh/terminal"]
   revision = "1875d0a70c90e57f11972aefd42276df65e895b9"
+
+[[projects]]
+  branch = "master"
+  name = "golang.org/x/net"
+  packages = [
+    "http2",
+    "http2/hpack",
+    "idna",
+    "lex/httplex"
+  ]
+  revision = "b3c676e531a6dc479fa1b35ac961c13f5e2b4d2e"
 
 [[projects]]
   name = "golang.org/x/sys"
@@ -33,13 +137,134 @@
   revision = "3dbebcf8efb6a5011a60c2b4591c1022a759af8a"
 
 [[projects]]
+  name = "golang.org/x/text"
+  packages = [
+    "cases",
+    "collate",
+    "collate/build",
+    "internal",
+    "internal/colltab",
+    "internal/gen",
+    "internal/tag",
+    "internal/triegen",
+    "internal/ucd",
+    "language",
+    "runes",
+    "secure/bidirule",
+    "secure/precis",
+    "transform",
+    "unicode/bidi",
+    "unicode/cldr",
+    "unicode/norm",
+    "unicode/rangetable",
+    "width"
+  ]
+  revision = "f21a4dfb5e38f5895301dc265a8def02365cc3d0"
+  version = "v0.3.0"
+
+[[projects]]
+  name = "gopkg.in/inf.v0"
+  packages = ["."]
+  revision = "d2d2541c53f18d2a059457998ce2876cc8e67cbf"
+  version = "v0.9.1"
+
+[[projects]]
   name = "gopkg.in/yaml.v2"
   packages = ["."]
   revision = "7f97868eec74b32b0982dd158a51a446d1da7eb5"
 
+[[projects]]
+  name = "k8s.io/apimachinery"
+  packages = [
+    "pkg/api/equality",
+    "pkg/api/meta",
+    "pkg/api/resource",
+    "pkg/apimachinery",
+    "pkg/apimachinery/announced",
+    "pkg/apimachinery/registered",
+    "pkg/apis/meta/v1",
+    "pkg/apis/meta/v1/unstructured",
+    "pkg/apis/meta/v1alpha1",
+    "pkg/conversion",
+    "pkg/conversion/queryparams",
+    "pkg/conversion/unstructured",
+    "pkg/fields",
+    "pkg/labels",
+    "pkg/openapi",
+    "pkg/runtime",
+    "pkg/runtime/schema",
+    "pkg/runtime/serializer",
+    "pkg/runtime/serializer/json",
+    "pkg/runtime/serializer/protobuf",
+    "pkg/runtime/serializer/recognizer",
+    "pkg/runtime/serializer/versioning",
+    "pkg/selection",
+    "pkg/types",
+    "pkg/util/diff",
+    "pkg/util/errors",
+    "pkg/util/framer",
+    "pkg/util/intstr",
+    "pkg/util/json",
+    "pkg/util/net",
+    "pkg/util/rand",
+    "pkg/util/runtime",
+    "pkg/util/sets",
+    "pkg/util/validation",
+    "pkg/util/validation/field",
+    "pkg/util/wait",
+    "pkg/util/yaml",
+    "pkg/watch",
+    "third_party/forked/golang/reflect"
+  ]
+  revision = "8a12651bddd061e6fac22c64db4fb0fe5b1013d2"
+
+[[projects]]
+  name = "k8s.io/client-go"
+  packages = [
+    "kubernetes/scheme",
+    "pkg/api",
+    "pkg/api/v1",
+    "pkg/apis/admissionregistration",
+    "pkg/apis/admissionregistration/v1alpha1",
+    "pkg/apis/apps",
+    "pkg/apis/apps/v1beta1",
+    "pkg/apis/authentication",
+    "pkg/apis/authentication/v1",
+    "pkg/apis/authentication/v1beta1",
+    "pkg/apis/authorization",
+    "pkg/apis/authorization/v1",
+    "pkg/apis/authorization/v1beta1",
+    "pkg/apis/autoscaling",
+    "pkg/apis/autoscaling/v1",
+    "pkg/apis/autoscaling/v2alpha1",
+    "pkg/apis/batch",
+    "pkg/apis/batch/v1",
+    "pkg/apis/batch/v2alpha1",
+    "pkg/apis/certificates",
+    "pkg/apis/certificates/v1beta1",
+    "pkg/apis/extensions",
+    "pkg/apis/extensions/v1beta1",
+    "pkg/apis/networking",
+    "pkg/apis/networking/v1",
+    "pkg/apis/policy",
+    "pkg/apis/policy/v1beta1",
+    "pkg/apis/rbac",
+    "pkg/apis/rbac/v1alpha1",
+    "pkg/apis/rbac/v1beta1",
+    "pkg/apis/settings",
+    "pkg/apis/settings/v1alpha1",
+    "pkg/apis/storage",
+    "pkg/apis/storage/v1",
+    "pkg/apis/storage/v1beta1",
+    "pkg/util",
+    "pkg/util/parsers"
+  ]
+  revision = "d92e8497f71b7b4e0494e5bd204b48d34bd6f254"
+  version = "v4.0.0"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "41d2422f49f006cebc3d85407a183007f58840f2cc03ef9f8d64103edfa44bd6"
+  inputs-digest = "0e8e7c17719c427ab50ec2c4fd8bb5bf25e6055433282973eea1a606faacc857"
   solver-name = "gps-cdcl"
   solver-version = 1
