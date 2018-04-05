@@ -16,7 +16,7 @@ type Mode string
 const (
 	Apply    Mode = "apply"
 	Explain  Mode = "explain"
-	Lint  Mode = "lint"
+	Lint     Mode = "lint"
 	Template Mode = "template"
 )
 
@@ -31,7 +31,7 @@ type ExecutionContext struct {
 
 	AnkhConfigPath  string
 	KubeConfigPath  string
-	ContextOverride	string
+	ContextOverride string
 	DataDir         string
 	HelmSetValues   map[string]string
 
@@ -55,12 +55,12 @@ type Context struct {
 // AnkhConfig defines the shape of the ~/.ankh/config file used for global
 // configuration options
 type AnkhConfig struct {
-	SupportedEnvironments     []string           `yaml:"supported-environments"`
-	SupportedResourceProfiles []string           `yaml:"supported-resource-profiles"`
-	SupportedImageRepositories [] string          `yaml:"supported-image-repositories"`
-	CurrentContextName        string             `yaml:"current-context"`
-	CurrentContext            Context            `yaml:"-"` // private, filled in by init code. The `-` instructs the yaml lib to not look for this field
-	Contexts                  map[string]Context `yaml:"contexts"`
+	SupportedEnvironments      []string           `yaml:"supported-environments"`
+	SupportedResourceProfiles  []string           `yaml:"supported-resource-profiles"`
+	SupportedImageRepositories []string           `yaml:"supported-image-repositories"`
+	CurrentContextName         string             `yaml:"current-context"`
+	CurrentContext             Context            `yaml:"-"` // private, filled in by init code. The `-` instructs the yaml lib to not look for this field
+	Contexts                   map[string]Context `yaml:"contexts"`
 }
 
 // ValidateAndInit ensures the AnkhConfig is internally sane and populates

@@ -5,11 +5,11 @@ import (
 	"github.com/appnexus/ankh/context"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
-	appsv1beta1 "k8s.io/client-go/pkg/apis/apps/v1beta1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiv1 "k8s.io/client-go/pkg/api/v1"
+	appsv1beta1 "k8s.io/client-go/pkg/apis/apps/v1beta1"
 )
 
 type Container struct {
@@ -69,7 +69,7 @@ func LintObjectMeta(ctx *ankh.ExecutionContext, meta v1.ObjectMeta, kind string)
 	return errors
 }
 
-func LintObject(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, obj runtime.Object) []error {
+func LintObject(ctx *ankh.ExecutionContext, obj runtime.Object) []error {
 	errors := []error{}
 	release := ctx.AnkhConfig.CurrentContext.Release
 
@@ -85,12 +85,12 @@ func LintObject(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, obj runtime.
 
 		// The Deployment should create pods with the `release` label
 		if deployment.Spec.Template.ObjectMeta.Labels["release"] != release {
-			e := fmt.Errorf("Deployment with name '%v': object's spec.template.metadata.labels is missing a `release` " +
+			e := fmt.Errorf("Deployment with name '%v': object's spec.template.metadata.labels is missing a `release` "+
 				"label with the release name as a value (in this case, '%v'). Found these labels on spec.template.metadata: %+v",
-					deployment.Kind, deployment.ObjectMeta.Name, release, deployment.Spec.Template.ObjectMeta.Labels)
+				deployment.Kind, deployment.ObjectMeta.Name, release, deployment.Spec.Template.ObjectMeta.Labels)
 			errors = append(errors, e)
 		}
-		ctx.Logger.Debugf("Deployment with name '%v': object spec.template.metadata.labels exists, and the release " +
+		ctx.Logger.Debugf("Deployment with name '%v': object spec.template.metadata.labels exists, and the release "+
 			"label is %v", deployment.Kind, deployment.ObjectMeta.Name, deployment.Spec.Template.ObjectMeta.Labels["release"])
 
 	case *apiv1.Service:
@@ -101,21 +101,21 @@ func LintObject(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, obj runtime.
 			errors = append(errors, metaErrors...)
 		}
 
-			// If the Service is not targeting an ExternalName, it should target pods with a `release` label
-			if service.Spec.Type != "ExternalName" {
-				if service.Spec.Selector["release"] != release {
-					e := fmt.Errorf("Service with type '%v' and name '%v': object's spec.selector is missing the `release` " +
-						"key with the release name as a value (in this case, '%v'). Found these keys on spec.selector: %+v",
-							service.Spec.Type, service.ObjectMeta.Name, release, service.Spec.Selector)
-					errors = append(errors, e)
-				}
-				ctx.Logger.Debugf("Service with type '%v' and name '%v': object spec.selector exists, and the release " +
-					"key is %v", service.Spec.Type, service.ObjectMeta.Name, service.Spec.Selector["release"])
+		// If the Service is not targeting an ExternalName, it should target pods with a `release` label
+		if service.Spec.Type != "ExternalName" {
+			if service.Spec.Selector["release"] != release {
+				e := fmt.Errorf("Service with type '%v' and name '%v': object's spec.selector is missing the `release` "+
+					"key with the release name as a value (in this case, '%v'). Found these keys on spec.selector: %+v",
+					service.Spec.Type, service.ObjectMeta.Name, release, service.Spec.Selector)
+				errors = append(errors, e)
 			}
+			ctx.Logger.Debugf("Service with type '%v' and name '%v': object spec.selector exists, and the release "+
+				"key is %v", service.Spec.Type, service.ObjectMeta.Name, service.Spec.Selector["release"])
+		}
 	}
 
 	if ctx.Pedantic {
-		pedanticErrors := PedanticLintObject(ctx, ankhFile, obj)
+		pedanticErrors := PedanticLintObject(ctx, obj)
 		if len(pedanticErrors) > 0 {
 			errors = append(errors, pedanticErrors...)
 		}
@@ -124,42 +124,77 @@ func LintObject(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, obj runtime.
 	return errors
 }
 
-func PedanticLintObject(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, obj runtime.Object) []error {
+func PedanticLintObject(ctx *ankh.ExecutionContext, obj runtime.Object) []error {
 	errors := []error{}
+
 	switch obj.(type) {
 	case *appsv1beta1.Deployment:
 		deployment := obj.(*appsv1beta1.Deployment)
-			for _, c := range deployment.Spec.Template.Spec.Containers {
 
-				// Deployment images should only point to our production repositories
-				validRepo := false
-				repos := ctx.AnkhConfig.SupportedImageRepositories
-				if len(repos) > 0 {
-					for _, repo := range repos {
-						if strings.HasPrefix(c.Image, repo) {
-							ctx.Logger.Debugf("[Pedantic] Deployment with name '%v' has container '%v' with image '%v' "+
-								"correctly pointing to '%v", deployment.ObjectMeta.Name, c.Name, c.Image, repo)
-							validRepo = true
-							break
-						}
-					}
+		for _, c := range deployment.Spec.Template.Spec.Containers {
 
-					if !validRepo {
-						e := fmt.Errorf("[Pedantic] Deployment with name '%v' has container '%v' with image '%v'. Deployment "+
-							"image must point to one of %v", deployment.ObjectMeta.Name, c.Name, c.Image, repos)
-						errors = append(errors, e)
+			// Deployment images should only point to our production repositories
+			validRepo := false
+			repos := ctx.AnkhConfig.SupportedImageRepositories
+			if len(repos) > 0 {
+				for _, repo := range repos {
+					if strings.HasPrefix(c.Image, repo) {
+						ctx.Logger.Debugf("[Pedantic] Container '%v' in deployment '%v' has image '%v' "+
+							"correctly pointing to '%v'.", c.Name, deployment.ObjectMeta.Name, c.Image, repo)
+						validRepo = true
+						break
 					}
 				}
 
-				// Deployment should omit imagePullPolicy or have it set to IfNotPresent since we use immutable images in production.
-				if c.ImagePullPolicy != "" && c.ImagePullPolicy != apiv1.PullIfNotPresent {
-					e := fmt.Errorf("[Pedantic]  Deployment with name '%v' has container '%v' with pull policy '%v'. " +
-						"Pull policy should be set to '%v' or omitted.", deployment.ObjectMeta.Name, c.Name, c.ImagePullPolicy,
-							apiv1.PullIfNotPresent)
+				if !validRepo {
+					e := fmt.Errorf("[Pedantic] Container '%v' in deployment '%v' has image '%v'. Deployment "+
+						"image must point to one of %v.", c.Name, deployment.ObjectMeta.Name, c.Image, repos)
 					errors = append(errors, e)
 				}
 			}
+
+			// Deployment should omit imagePullPolicy or have it set to IfNotPresent since we use immutable images in production.
+			if c.ImagePullPolicy != "" && c.ImagePullPolicy != apiv1.PullIfNotPresent {
+				e := fmt.Errorf("[Pedantic] Container '%v' in deployment '%v' has pull policy '%v'. "+
+					"Pull policy should be set to '%v' or omitted.", c.Name, deployment.ObjectMeta.Name, c.ImagePullPolicy,
+					apiv1.PullIfNotPresent)
+				errors = append(errors, e)
+			} else {
+				ctx.Logger.Debugf("[Pedantic] Container '%v' in deployment '%v' has correctly omitted imagePolicy "+
+					"or set it to '%v'.", c.Name, deployment.Name, apiv1.PullIfNotPresent)
+			}
+
+			// Deployment should specify a readinessProbe
+			if c.ReadinessProbe == nil {
+				e := fmt.Errorf("[Pedantic] Container '%v' in deployment '%v' is missing a readinessProbe."+
+					c.Name, deployment.ObjectMeta.Name)
+				errors = append(errors, e)
+			} else {
+				ctx.Logger.Debugf("[Pedantic] Container '%v' in deployment '%v' specifies a readiness probe."+
+					c.Name, deployment.Name)
+			}
+
+			// Deployment should specify resource limits
+			if c.Resources.Limits == nil {
+				e := fmt.Errorf("[Pedantic] Container '%v' in deployment '%v' is missing resources.limits."+
+					c.Name, deployment.ObjectMeta.Name)
+				errors = append(errors, e)
+			} else {
+				ctx.Logger.Debugf("[Pedantic] Container '%v' in deployment '%v' specifies resources.limits."+
+					c.Name, deployment.Name)
+			}
+
+			// Deployment should specify resource requests
+			if c.Resources.Requests == nil {
+				e := fmt.Errorf("[Pedantic] Container '%v' in deployment '%v' is missing resources.requests."+
+					c.Name, deployment.ObjectMeta.Name)
+				errors = append(errors, e)
+			} else {
+				ctx.Logger.Debugf("[Pedantic] Container '%v' in deployment '%v' specifies resources.requests."+
+					c.Name, deployment.Name)
+			}
 		}
+	}
 
 	return errors
 }
@@ -181,7 +216,7 @@ func Lint(ctx *ankh.ExecutionContext, helmOutput string, ankhFile ankh.AnkhFile)
 
 		ctx.Logger.Debugf("Decoded a kube object with kind '%v'", obj.GetObjectKind().GroupVersionKind().Kind)
 
-		errors := LintObject(ctx, ankhFile, obj)
+		errors := LintObject(ctx, obj)
 		if len(errors) > 0 {
 			allErrors = append(allErrors, errors...)
 		}
