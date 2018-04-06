@@ -133,7 +133,7 @@ func PedanticLintObject(ctx *ankh.ExecutionContext, obj runtime.Object) []error 
 
 		for _, c := range deployment.Spec.Template.Spec.Containers {
 
-			// Deployment images should only point to our production repositories
+			// Deployment images should only point to supported image repositories
 			validRepo := false
 			repos := ctx.AnkhConfig.SupportedImageRepositories
 			if len(repos) > 0 {
@@ -153,7 +153,7 @@ func PedanticLintObject(ctx *ankh.ExecutionContext, obj runtime.Object) []error 
 				}
 			}
 
-			// Deployment should omit imagePullPolicy or have it set to IfNotPresent since we use immutable images in production.
+			// Deployment should omit imagePullPolicy or have it set to IfNotPresent, as one should use immutable images in production.
 			if c.ImagePullPolicy != "" && c.ImagePullPolicy != apiv1.PullIfNotPresent {
 				e := fmt.Errorf("[Pedantic] Container '%v' in deployment '%v' has pull policy '%v'. "+
 					"Pull policy should be set to '%v' or omitted.", c.Name, deployment.ObjectMeta.Name, c.ImagePullPolicy,
