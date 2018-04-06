@@ -1,6 +1,6 @@
 FROM alpine:3.7
 
-RUN apk add --update git curl bash openssh
+RUN apk add --update git curl bash openssl
 
 # Install `kubectl`
 RUN curl -sLO https://storage.googleapis.com/kubernetes-release/release/v1.9.3/bin/linux/amd64/kubectl &&\
