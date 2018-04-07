@@ -29,6 +29,38 @@ var AnkhBuildVersion string = "DEVELOPMENT"
 
 var log = logrus.New()
 
+func filterOutput(ctx *ankh.ExecutionContext, helmOutput string, filter string) string {
+	filters := strings.Split(ctx.Filter, ",")
+	ctx.Logger.Debugf("Filtering with inclusive list `%v`", filters)
+
+	// The golang yaml library doesn't actually support whitespace/comment
+	// preserving round-trip parsing. So, we're going to filter the "hard way".
+	filtered := ""
+	objs := strings.Split(helmOutput, "---")
+	for _, obj := range objs {
+		lines := strings.Split(obj, "\n")
+		for _, line := range lines {
+			if !strings.HasPrefix(line, "kind:") {
+				continue
+			}
+			matched := false
+			for _, s := range filters {
+				kind := strings.Trim(line[5:], " ")
+				if strings.EqualFold(kind, s) {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				filtered += obj
+				break
+			}
+		}
+	}
+
+	return filtered
+}
+
 func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) {
 	verb := ""
 	switch ctx.Mode {
@@ -111,6 +143,10 @@ func execute(ctx *ankh.ExecutionContext) {
 		helmOutput, err := helm.Template(ctx, ankhFile)
 		check(err)
 
+		if ctx.Filter != "" {
+			helmOutput = filterOutput(ctx, helmOutput, ctx.Filter)
+		}
+
 		switch ctx.Mode {
 		case ankh.Apply:
 			fallthrough
@@ -186,7 +222,7 @@ func execute(ctx *ankh.ExecutionContext) {
 
 func main() {
 	app := cli.App("ankh", "Another Kubernetes Helper")
-	app.Spec = "[-v] [--config] [--kubeconfig] [--datadir] [--context] [--set...]"
+	app.Spec = "[-v] [--config] [--kubeconfig] [--datadir] [--context] [--set...] [--filter]"
 
 	var (
 		verbose    = app.BoolOpt("v verbose", false, "Verbose debug mode")
@@ -219,6 +255,11 @@ func main() {
 			Desc:  "Global variables passed to helm with helm --set, will override variables set in ankhconfig global",
 			Value: []string{},
 		})
+		filter = app.String(cli.StringOpt{
+			Name:  "filter",
+			Desc:  "A comma separated list of Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Anything object whose `kind:` does not match this filter will be excluded from the action.",
+			Value: "",
+		})
 	)
 
 	log.Out = os.Stdout
@@ -250,6 +291,7 @@ func main() {
 			AnkhConfigPath:    *ankhconfig,
 			KubeConfigPath:    *kubeconfig,
 			ContextOverride:   *contextOverride,
+			Filter:            *filter,
 			DataDir:           path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
 			Logger:            log,
 			HelmSetValues:     helmVars,
