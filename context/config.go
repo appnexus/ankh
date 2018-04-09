@@ -16,7 +16,7 @@ type Mode string
 const (
 	Apply    Mode = "apply"
 	Explain  Mode = "explain"
-	Lint  Mode = "lint"
+	Lint     Mode = "lint"
 	Template Mode = "template"
 )
 
@@ -31,11 +31,11 @@ type ExecutionContext struct {
 
 	AnkhConfigPath  string
 	KubeConfigPath  string
-	ContextOverride	string
+	ContextOverride string
 	DataDir         string
 	HelmSetValues   map[string]string
 
-	Filter string
+	Filters []string
 
 	HelmVersion, KubectlVersion string
 
