@@ -29,9 +29,8 @@ var AnkhBuildVersion string = "DEVELOPMENT"
 
 var log = logrus.New()
 
-func filterOutput(ctx *ankh.ExecutionContext, helmOutput string, filter string) string {
-	filters := strings.Split(ctx.Filter, ",")
-	ctx.Logger.Debugf("Filtering with inclusive list `%v`", filters)
+func filterOutput(ctx *ankh.ExecutionContext, helmOutput string) string {
+	ctx.Logger.Debugf("Filtering with inclusive list `%v`", ctx.Filters)
 
 	// The golang yaml library doesn't actually support whitespace/comment
 	// preserving round-trip parsing. So, we're going to filter the "hard way".
@@ -44,7 +43,7 @@ func filterOutput(ctx *ankh.ExecutionContext, helmOutput string, filter string) 
 				continue
 			}
 			matched := false
-			for _, s := range filters {
+			for _, s := range ctx.Filters {
 				kind := strings.Trim(line[5:], " ")
 				if strings.EqualFold(kind, s) {
 					matched = true
@@ -143,8 +142,8 @@ func execute(ctx *ankh.ExecutionContext) {
 		helmOutput, err := helm.Template(ctx, ankhFile)
 		check(err)
 
-		if ctx.Filter != "" {
-			helmOutput = filterOutput(ctx, helmOutput, ctx.Filter)
+		if len(ctx.Filters) > 0 {
+			helmOutput = filterOutput(ctx, helmOutput)
 		}
 
 		switch ctx.Mode {
@@ -222,7 +221,7 @@ func execute(ctx *ankh.ExecutionContext) {
 
 func main() {
 	app := cli.App("ankh", "Another Kubernetes Helper")
-	app.Spec = "[-v] [--config] [--kubeconfig] [--datadir] [--context] [--set...] [--filter]"
+	app.Spec = "[-v] [--config] [--kubeconfig] [--datadir] [--context] [--set...] [--filter...]"
 
 	var (
 		verbose    = app.BoolOpt("v verbose", false, "Verbose debug mode")
@@ -255,10 +254,10 @@ func main() {
 			Desc:  "Global variables passed to helm with helm --set, will override variables set in ankhconfig global",
 			Value: []string{},
 		})
-		filter = app.String(cli.StringOpt{
+		filter = app.Strings(cli.StringsOpt{
 			Name:  "filter",
-			Desc:  "A comma separated list of Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Anything object whose `kind:` does not match this filter will be excluded from the action.",
-			Value: "",
+			Desc:  "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action.",
+			Value: []string{},
 		})
 	)
 
@@ -286,12 +285,17 @@ func main() {
 			}
 		}
 
+		filters := []string{}
+		for _, filter := range *filter {
+			filters = append(filters, string(filter))
+		}
+
 		ctx = &ankh.ExecutionContext{
 			Verbose:           *verbose,
 			AnkhConfigPath:    *ankhconfig,
 			KubeConfigPath:    *kubeconfig,
 			ContextOverride:   *contextOverride,
-			Filter:            *filter,
+			Filters:           filters,
 			DataDir:           path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
 			Logger:            log,
 			HelmSetValues:     helmVars,
