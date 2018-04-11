@@ -7,5 +7,9 @@
   name = "github.com/mattn/go-isatty"
 
 [[constraint]]
+  branch = "master"
+  name = "github.com/imdario/mergo"
+
+[[constraint]]
   name = "github.com/sirupsen/logrus"
   version = "1.0.4"

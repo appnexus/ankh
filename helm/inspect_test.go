@@ -26,13 +26,13 @@ func newCtx() *ankh.ExecutionContext {
 		AnkhFilePath: ANKH_FILE_PATH,
 		AnkhConfig: ankh.AnkhConfig{
 			CurrentContext: ankh.Context{
-				Environment:     "dev",
-				ResourceProfile: "constrained",
-				HelmRegistryURL: "http://localhost",
-				KubeContext:     "dev",
+				EnvironmentClass: "dev",
+				ResourceProfile:  "constrained",
+				HelmRegistryURL:  "http://localhost",
+				KubeContext:      "dev",
 			},
-			SupportedEnvironments:     []string{"dev"},
-			SupportedResourceProfiles: []string{"constrained"},
+			SupportedEnvironmentClasses: []string{"dev"},
+			SupportedResourceProfiles:   []string{"constrained"},
 		},
 	}
 }

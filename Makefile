@@ -1,6 +1,6 @@
 THIS_MAKEFILE = $(lastword $(MAKEFILE_LIST))
 REPOROOT = $(abspath $(dir $(THIS_MAKEFILE)))
-TEST_PACKAGES := ankh context helm kubectl util
+TEST_PACKAGES := ankh config context helm kubectl util
 
 export VERSION ?= DEVELOPMENT
 export GOCMD ?= go

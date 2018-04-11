@@ -3,10 +3,10 @@
 # clusters.
 current-context: minikube
 
-# supported-environments define a list of your supported environments. Used for
-# validation of ankh files. It's best practice to keep this value in sync with
+# supported-environment-classes define a list of your supported environment classes.
+# Used for validation of ankh files. It's best practice to keep this value in sync with
 # the rest of your teams so there isn't drift.
-supported-environments:
+supported-environment-classes:
   - dev
   - production
 
@@ -30,8 +30,8 @@ contexts:
     # kube-context ties this context to a `kubectl` context
     kube-context: minikube
 
-    # environment should be one of your `supported-environments` defined above
-    environment: dev
+    # environment should be one of your `supported-environment-classes` defined above
+    environment-class: dev
 
     # resource-profile should be one of your `supported-resource-profiles` defined above
     resource-profile: natural

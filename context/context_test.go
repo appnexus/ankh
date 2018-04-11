@@ -4,6 +4,8 @@ import (
 	"io/ioutil"
 	"strings"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 )
 
 const minimalValidAnkhFileYAML string = `
@@ -14,19 +16,19 @@ charts:
     version: 0.0.0
 `
 
-const minimalValidAnkhConfigYAMLPath string = "testdata/testconfig.yaml"
+var log = logrus.New()
 
 func newValidAnkhConfig() AnkhConfig {
 	return AnkhConfig{
-		CurrentContextName:        "test",
-		SupportedEnvironments:     []string{"dev"},
-		SupportedResourceProfiles: []string{"constrained"},
+		CurrentContextName:          "test",
+		SupportedEnvironmentClasses: []string{"dev"},
+		SupportedResourceProfiles:   []string{"constrained"},
 		Contexts: map[string]Context{
 			"test": Context{
-				Environment:     "dev",
-				ResourceProfile: "constrained",
-				HelmRegistryURL: "http://localhost",
-				KubeContext:     "dev",
+				EnvironmentClass: "dev",
+				ResourceProfile:  "constrained",
+				HelmRegistryURL:  "http://localhost",
+				KubeContext:      "dev",
 			},
 		},
 	}
@@ -37,7 +39,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 	t.Run("valid AnkhConfig", func(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
 
 		if len(errs) > 0 {
 			t.Logf("got errors when trying to validate an AnkhConfig: %v", errs)
@@ -52,7 +54,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		secondContext.KubeContext = "secondkubecontext"
 		ankhConfig.Contexts["secondcontext"] = secondContext
 
-		errs := ankhConfig.ValidateAndInit("secondcontext")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "secondcontext")
 
 		if len(errs) > 0 {
 			t.Logf("got errors when trying to validate an AnkhConfig: %v", errs)
@@ -74,7 +76,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 		ankhConfig.CurrentContextName = ""
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -89,26 +91,26 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		}
 	})
 
-	t.Run("missing current context with configOverride", func(t *testing.T) {
+	t.Run("missing current context with explicit context", func(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 		ankhConfig.CurrentContextName = ""
 
-		errs := ankhConfig.ValidateAndInit("test")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "test")
 		if len(errs) > 0 {
 			t.Logf("was expecting no errors, but got these `errs`: %+v", errs)
 			t.Fail()
 		}
 	})
 
-	t.Run("missing supported-environments", func(t *testing.T) {
+	t.Run("missing supported-environment-classes", func(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
-		ankhConfig.SupportedEnvironments = []string{}
+		ankhConfig.SupportedEnvironmentClasses = []string{}
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
 
 		hasCorrectError := false
 		for _, err := range errs {
-			if strings.Contains(err.Error(), "Missing or empty `supported-environments`") {
+			if strings.Contains(err.Error(), "Missing or empty `supported-environment-classes`") {
 				hasCorrectError = true
 			}
 		}
@@ -123,7 +125,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 		ankhConfig.SupportedResourceProfiles = []string{}
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -142,7 +144,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 		ankhConfig.Contexts = map[string]Context{}
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -162,15 +164,15 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		// "copy" the struct and reassign it since we can't modify a map in place
 		context := ankhConfig.Contexts["test"]
-		context.Environment = "nope"
+		context.EnvironmentClass = "nope"
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
 
 		hasCorrectError := false
 		for _, err := range errs {
-			if strings.Contains(err.Error(), "Current context 'test' has environment 'nope': not found in `supported-environments` == [dev]") {
+			if strings.Contains(err.Error(), "Current context 'test' has environment class 'nope': not found in `supported-environment-classes` == [dev]") {
 				hasCorrectError = true
 			}
 		}
@@ -190,7 +192,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -214,7 +216,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -238,7 +240,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -258,15 +260,15 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		// "copy" the struct and reassign it since we can't modify a map in place
 		context := ankhConfig.Contexts["test"]
-		context.Environment = ""
+		context.EnvironmentClass = ""
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
 
 		hasCorrectError := false
 		for _, err := range errs {
-			if strings.Contains(err.Error(), "missing or empty `environment`") {
+			if strings.Contains(err.Error(), "missing or empty `environment-class`") {
 				hasCorrectError = true
 			}
 		}
@@ -286,7 +288,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -373,53 +375,4 @@ dependencies: []
 
 	})
 
-}
-
-func TestGetAnkhConfig(t *testing.T) {
-	t.Run("valid config", func(t *testing.T) {
-		tmpDir, _ := ioutil.TempDir("", "")
-		ctx := &ExecutionContext{
-			AnkhConfigPath: minimalValidAnkhConfigYAMLPath,
-			DataDir:        tmpDir,
-		}
-
-		_, err := GetAnkhConfig(ctx)
-		if err != nil {
-			t.Log(err)
-			t.Fail()
-		}
-	})
-
-	t.Run("missing config path", func(t *testing.T) {
-		tmpDir, _ := ioutil.TempDir("", "")
-		ctx := &ExecutionContext{
-			AnkhConfigPath: "/does/not/exist",
-			DataDir:        tmpDir,
-		}
-
-		_, err := GetAnkhConfig(ctx)
-		if err == nil {
-			t.Log("expected to find an error but didnt get one")
-			t.Fail()
-		}
-	})
-
-	t.Run("fail unmarshaling", func(t *testing.T) {
-		tmpDir, _ := ioutil.TempDir("", "")
-		tmpFile, _ := ioutil.TempFile("", "")
-
-		tmpFile.WriteString(`invalid: config`)
-		defer tmpFile.Close()
-
-		ctx := &ExecutionContext{
-			AnkhConfigPath: tmpFile.Name(),
-			DataDir:        tmpDir,
-		}
-
-		_, err := GetAnkhConfig(ctx)
-		if err == nil {
-			t.Log("expected to find an error but didnt get one")
-			t.Fail()
-		}
-	})
 }

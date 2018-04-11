@@ -3,8 +3,8 @@
 # clusters.
 current-context: minikube
 
-# supported-environment-classes define a list of your supported environment classes.
-# Used for validation of ankh files. It's best practice to keep this value in sync with
+# supported-environment-classes define a list of your supported environment classes. Used for
+# validation of ankh files. It's best practice to keep this value in sync with
 # the rest of your teams so there isn't drift.
 supported-environment-classes:
   - dev
