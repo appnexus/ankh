@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 
 	"github.com/appnexus/ankh/util"
@@ -46,6 +47,7 @@ type ExecutionContext struct {
 // Kubernetes cluster
 type Context struct {
 	KubeContext     string `yaml:"kube-context"`
+	KubeServer      string `yaml:"kube-server"`
 	Environment     string `yaml:"environment"`
 	ResourceProfile string `yaml:"resource-profile"`
 	Release         string `yaml:"release"`
@@ -64,13 +66,35 @@ type AnkhConfig struct {
 	Contexts                  map[string]Context `yaml:"contexts"`
 }
 
+type KubeCluster struct {
+	Cluster struct {
+		Server string `yaml:"server"`
+	}
+	Name string `yaml:"name"`
+}
+
+type KubeContext struct {
+	Context struct {
+		Cluster string `yaml:"cluster"`
+	}
+	Name string `yaml:"name"`
+}
+
+type KubeConfig struct {
+	ApiVersion     string        `yaml:"apiVersion"`
+	Kind           string        `yaml:"kind"`
+	Clusters       []KubeCluster `yaml:"clusters"`
+	Contexts       []KubeContext `yaml:"contexts"`
+	CurrentContext string        `yaml:"current-context"`
+}
+
 // ValidateAndInit ensures the AnkhConfig is internally sane and populates
 // special fields if necessary.
-func (ankhConfig *AnkhConfig) ValidateAndInit(contextOverride string) []error {
+func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext) []error {
 	errors := []error{}
 
-	if contextOverride != "" {
-		ankhConfig.CurrentContextName = contextOverride
+	if ctx.ContextOverride != "" {
+		ankhConfig.CurrentContextName = ctx.ContextOverride
 	}
 
 	if ankhConfig.CurrentContextName == "" {
@@ -101,8 +125,41 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(contextOverride string) []error {
 			errors = append(errors, fmt.Errorf("Current context '%s' has missing or empty `helm-registry-url`", ankhConfig.CurrentContextName))
 		}
 
-		if selectedContext.KubeContext == "" {
-			errors = append(errors, fmt.Errorf("Current context '%s' has missing or empty `kube-context`", ankhConfig.CurrentContextName))
+		if selectedContext.KubeContext == "" && selectedContext.KubeServer == "" {
+			errors = append(errors, fmt.Errorf("Current context '%s' has missing or empty `kube-context` or `kube-server`", ankhConfig.CurrentContextName))
+		} else if selectedContext.KubeServer != "" {
+			kubeCluster := KubeCluster{
+				Cluster: struct {
+					Server string `yaml:"server"`
+				}{Server: selectedContext.KubeServer},
+				Name: "_kcluster",
+			}
+			kubeContext := KubeContext{
+				Context: struct {
+					Cluster string `yaml:"cluster"`
+				}{Cluster: kubeCluster.Name},
+				Name: "_kctx",
+			}
+			kubeConfig := &KubeConfig{
+				ApiVersion:     "v1",
+				Kind:           "Config",
+				Clusters:       []KubeCluster{kubeCluster},
+				Contexts:       []KubeContext{kubeContext},
+				CurrentContext: kubeContext.Name,
+			}
+
+			kubeConfigPath := path.Join(ctx.DataDir, "kubeconfig.yaml")
+			kubeConfigBytes, err := yaml.Marshal(kubeConfig)
+			if err != nil {
+				return []error{err}
+			}
+
+			if err := ioutil.WriteFile(kubeConfigPath, kubeConfigBytes, 0644); err != nil {
+				return []error{err}
+			}
+
+			selectedContext.KubeContext = kubeContext.Name
+			ctx.KubeConfigPath = kubeConfigPath
 		}
 
 		if selectedContext.Environment == "" {
@@ -206,7 +263,7 @@ func GetAnkhConfig(ctx *ExecutionContext) (AnkhConfig, error) {
 		return ankhConfig, fmt.Errorf("Error loading ankh config '%s': %v", ctx.AnkhConfigPath, err)
 	}
 
-	errs := ankhConfig.ValidateAndInit(ctx.ContextOverride)
+	errs := ankhConfig.ValidateAndInit(ctx)
 	if len(errs) > 0 {
 		return ankhConfig, fmt.Errorf("Error(s) validating ankh config '%s':\n%s", ctx.AnkhConfigPath, util.MultiErrorFormat(errs))
 	}

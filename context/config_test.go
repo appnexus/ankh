@@ -37,7 +37,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 	t.Run("valid AnkhConfig", func(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{})
 
 		if len(errs) > 0 {
 			t.Logf("got errors when trying to validate an AnkhConfig: %v", errs)
@@ -52,7 +52,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		secondContext.KubeContext = "secondkubecontext"
 		ankhConfig.Contexts["secondcontext"] = secondContext
 
-		errs := ankhConfig.ValidateAndInit("secondcontext")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{ContextOverride: "secondcontext"})
 
 		if len(errs) > 0 {
 			t.Logf("got errors when trying to validate an AnkhConfig: %v", errs)
@@ -74,7 +74,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 		ankhConfig.CurrentContextName = ""
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{})
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -93,7 +93,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 		ankhConfig.CurrentContextName = ""
 
-		errs := ankhConfig.ValidateAndInit("test")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{ContextOverride: "test"})
 		if len(errs) > 0 {
 			t.Logf("was expecting no errors, but got these `errs`: %+v", errs)
 			t.Fail()
@@ -104,7 +104,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 		ankhConfig.SupportedEnvironments = []string{}
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{})
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -123,7 +123,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 		ankhConfig.SupportedResourceProfiles = []string{}
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{})
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -142,7 +142,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 		ankhConfig.Contexts = map[string]Context{}
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{})
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -166,7 +166,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{})
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -190,7 +190,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{})
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -214,7 +214,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{})
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -238,7 +238,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{})
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -262,7 +262,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{})
 
 		hasCorrectError := false
 		for _, err := range errs {
@@ -286,7 +286,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 
 		ankhConfig.Contexts["test"] = context
 
-		errs := ankhConfig.ValidateAndInit("")
+		errs := ankhConfig.ValidateAndInit(&ExecutionContext{})
 
 		hasCorrectError := false
 		for _, err := range errs {

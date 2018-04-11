@@ -115,7 +115,7 @@ var execContext = exec.Command
 
 func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.AnkhFile) (string, error) {
 	currentContext := ctx.AnkhConfig.CurrentContext
-	helmArgs := []string{"helm", "template", "--kube-context", currentContext.KubeContext}
+	helmArgs := []string{"helm", "template"}
 
 	if ankhFile.Namespace != "" {
 		helmArgs = append(helmArgs, []string{"--namespace", ankhFile.Namespace}...)
