@@ -57,7 +57,6 @@ type Context struct {
 type AnkhConfig struct {
 	SupportedEnvironments      []string           `yaml:"supported-environments"`
 	SupportedResourceProfiles  []string           `yaml:"supported-resource-profiles"`
-	SupportedImageRepositories []string           `yaml:"supported-image-repositories"`
 	CurrentContextName         string             `yaml:"current-context"`
 	CurrentContext             Context            `yaml:"-"` // private, filled in by init code. The `-` instructs the yaml lib to not look for this field
 	Contexts                   map[string]Context `yaml:"contexts"`

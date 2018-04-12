@@ -87,11 +87,11 @@ func LintObject(ctx *ankh.ExecutionContext, obj runtime.Object) []error {
 		if deployment.Spec.Template.ObjectMeta.Labels["release"] != release {
 			e := fmt.Errorf("Deployment with name '%v': object's spec.template.metadata.labels is missing a `release` "+
 				"label with the release name as a value (in this case, '%v'). Found these labels on spec.template.metadata: %+v",
-				deployment.Kind, deployment.ObjectMeta.Name, release, deployment.Spec.Template.ObjectMeta.Labels)
+				deployment.ObjectMeta.Name, release, deployment.Spec.Template.ObjectMeta.Labels)
 			errors = append(errors, e)
 		}
 		ctx.Logger.Debugf("Deployment with name '%v': object spec.template.metadata.labels exists, and the release "+
-			"label is %v", deployment.Kind, deployment.ObjectMeta.Name, deployment.Spec.Template.ObjectMeta.Labels["release"])
+			"label is %v", deployment.ObjectMeta.Name, deployment.Spec.Template.ObjectMeta.Labels["release"])
 
 	case *apiv1.Service:
 		service := obj.(*apiv1.Service)
@@ -133,26 +133,6 @@ func PedanticLintObject(ctx *ankh.ExecutionContext, obj runtime.Object) []error 
 
 		for _, c := range deployment.Spec.Template.Spec.Containers {
 
-			// Deployment images should only point to supported image repositories
-			validRepo := false
-			repos := ctx.AnkhConfig.SupportedImageRepositories
-			if len(repos) > 0 {
-				for _, repo := range repos {
-					if strings.HasPrefix(c.Image, repo) {
-						ctx.Logger.Debugf("[Pedantic] Container '%v' in deployment '%v' has image '%v' "+
-							"correctly pointing to '%v'.", c.Name, deployment.ObjectMeta.Name, c.Image, repo)
-						validRepo = true
-						break
-					}
-				}
-
-				if !validRepo {
-					e := fmt.Errorf("[Pedantic] Container '%v' in deployment '%v' has image '%v'. Deployment "+
-						"image must point to one of %v.", c.Name, deployment.ObjectMeta.Name, c.Image, repos)
-					errors = append(errors, e)
-				}
-			}
-
 			// Deployment should omit imagePullPolicy or have it set to IfNotPresent, as one should use immutable images in production.
 			if c.ImagePullPolicy != "" && c.ImagePullPolicy != apiv1.PullIfNotPresent {
 				e := fmt.Errorf("[Pedantic] Container '%v' in deployment '%v' has pull policy '%v'. "+
@@ -164,13 +144,13 @@ func PedanticLintObject(ctx *ankh.ExecutionContext, obj runtime.Object) []error 
 					"or set it to '%v'.", c.Name, deployment.Name, apiv1.PullIfNotPresent)
 			}
 
-			// Deployment should specify a readinessProbe
-			if c.ReadinessProbe == nil {
-				e := fmt.Errorf("[Pedantic] Container '%v' in deployment '%v' is missing a readinessProbe."+
+			// Deployment should specify a livenessProbe
+			if c.LivenessProbe == nil {
+				e := fmt.Errorf("[Pedantic] Container '%v' in deployment '%v' is missing a livenessProbe."+
 					c.Name, deployment.ObjectMeta.Name)
 				errors = append(errors, e)
 			} else {
-				ctx.Logger.Debugf("[Pedantic] Container '%v' in deployment '%v' specifies a readiness probe."+
+				ctx.Logger.Debugf("[Pedantic] Container '%v' in deployment '%v' specifies a liveness probe."+
 					c.Name, deployment.Name)
 			}
 
