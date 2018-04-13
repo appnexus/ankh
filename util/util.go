@@ -358,3 +358,15 @@ func CreateReducedYAMLFile(filename, key string) ([]byte, error) {
 
 	return outBytes, nil
 }
+
+func ArrayDedup(a []string) []string {
+	keys := []string{}
+	valueMap := make(map[string]struct{})
+	for _, s := range a {
+		valueMap[s] = struct{}{}
+	}
+	for k, _ := range valueMap {
+		keys = append(keys, k)
+	}
+	return keys
+}

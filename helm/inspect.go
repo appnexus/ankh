@@ -37,7 +37,7 @@ func getChartFileContent(ctx *ankh.ExecutionContext, path string, useContext boo
 func InspectValues(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ankh.Chart) (string, error) {
 	var result string
 
-	ctx.Logger.Debug("Inspecting values for chart %s", chart.Name)
+	ctx.Logger.Debugf("Inspecting values for chart %s", chart.Name)
 
 	result += "---\n# Chart: " + chart.Name
 	result += fmt.Sprintf("\n# Source: %s\n", ctx.AnkhFilePath)
@@ -52,7 +52,7 @@ func InspectValues(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ank
 	if ctx.UseContext {
 		values = Values{
 			DefaultValues:    chart.DefaultValues,
-			Values:           chart.Values[ctx.AnkhConfig.CurrentContext.Environment],
+			Values:           chart.Values[ctx.AnkhConfig.CurrentContext.EnvironmentClass],
 			ResourceProfiles: chart.ResourceProfiles[ctx.AnkhConfig.CurrentContext.ResourceProfile],
 		}
 	} else {
@@ -82,7 +82,7 @@ func InspectValues(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ank
 		result += string(bytes)
 	}
 
-	bytes, err = getChartFileContent(ctx, files.AnkhValuesPath, ctx.UseContext, ctx.AnkhConfig.CurrentContext.Environment)
+	bytes, err = getChartFileContent(ctx, files.AnkhValuesPath, ctx.UseContext, ctx.AnkhConfig.CurrentContext.EnvironmentClass)
 	if err != nil {
 		return "", err
 	}
@@ -106,13 +106,12 @@ func InspectChart(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ankh
 
 	ctx.Logger.Debugf("Inspecting chart.yaml for chart %s", chart.Name)
 
-	currentContext := ctx.AnkhConfig.CurrentContext
 	result += fmt.Sprintf("\n---\n# Chart: %s\n", chart.Name)
 	files, err := findChartFiles(ctx, ankhFile, chart)
 	if err != nil {
 		return "", err
 	}
-	helmArgs := []string{"helm", "inspect", "chart", "--kube-context", currentContext.KubeContext}
+	helmArgs := []string{"helm", "inspect", "chart"}
 
 	helmArgs = append(helmArgs, files.ChartDir)
 

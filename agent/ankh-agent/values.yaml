@@ -45,13 +45,13 @@ ssh:
   known_hosts: |
 
 ankhconfig: |
-  supported-environments: [ "dev", "production" ]
+  supported-environment-classes: [ "dev", "production" ]
   supported-resource-profiles: ["natural", "constrained" ]
   current-context: local
   contexts:
     local:
       kube-context: local
-      environment: dev
+      environment-class: dev
       resource-profile: constrained
       release: ""
       helm-registry-url: https://example.com

@@ -115,7 +115,7 @@ var execContext = exec.Command
 
 func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.AnkhFile) (string, error) {
 	currentContext := ctx.AnkhConfig.CurrentContext
-	helmArgs := []string{"helm", "template", "--kube-context", currentContext.KubeContext}
+	helmArgs := []string{"helm", "template"}
 
 	if ankhFile.Namespace != "" {
 		helmArgs = append(helmArgs, []string{"--namespace", ankhFile.Namespace}...)
@@ -138,7 +138,7 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 	// Load `values` from chart
 	_, valuesErr := os.Stat(files.AnkhValuesPath)
 	if valuesErr == nil {
-		if _, err := util.CreateReducedYAMLFile(files.AnkhValuesPath, currentContext.Environment); err != nil {
+		if _, err := util.CreateReducedYAMLFile(files.AnkhValuesPath, currentContext.EnvironmentClass); err != nil {
 			return "", fmt.Errorf("unable to process ankh-values.yaml file for chart '%s': %v", chart.Name, err)
 		}
 		helmArgs = append(helmArgs, "-f", files.AnkhValuesPath)
@@ -151,21 +151,6 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 			return "", fmt.Errorf("unable to process ankh-resource-profiles.yaml file for chart '%s': %v", chart.Name, err)
 		}
 		helmArgs = append(helmArgs, "-f", files.AnkhResourceProfilesPath)
-	}
-
-	// TODO: add validation for secrets
-	if chart.Secrets != nil {
-		secretsPath := filepath.Join(files.Dir, "secrets.yaml")
-		secretsBytes, err := yaml.Marshal(chart.Secrets[currentContext.Environment])
-		if err != nil {
-			return "", err
-		}
-
-		if err := ioutil.WriteFile(secretsPath, secretsBytes, 0644); err != nil {
-			return "", err
-		}
-
-		helmArgs = append(helmArgs, "-f", secretsPath)
 	}
 
 	// Load `default-values` from ankhFile
@@ -184,9 +169,9 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 	}
 
 	// Load `values` from ankhFile
-	if chart.Values != nil && chart.Values[currentContext.Environment] != nil {
+	if chart.Values != nil && chart.Values[currentContext.EnvironmentClass] != nil {
 		valuesPath := filepath.Join(files.Dir, "values.yaml")
-		valuesBytes, err := yaml.Marshal(chart.Values[currentContext.Environment])
+		valuesBytes, err := yaml.Marshal(chart.Values[currentContext.EnvironmentClass])
 		if err != nil {
 			return "", err
 		}

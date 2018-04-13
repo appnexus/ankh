@@ -68,15 +68,15 @@ Ankh makes it easy to observe and verify incremental changes. It can be used to 
 
 ### Contexts
 
-**Ankh** configs are driven by *contexts*, much like kubectl. When Ankh is invoked, it uses the *current-context* to decide which kubectl context, environment, and other common configurations to use.
+**Ankh** configs are driven by *contexts*, much like kubectl. When Ankh is invoked, it uses the *current-context* to decide which kubectl context, environment-class, and other common configurations to use.
 
 ```
 $ cat ~/.ankh/config
-current-context: kfc0-production
+current-context: minikube
 contexts:
   minikube-local:
     kube-context: minikube
-    environment: production
+    environment-class: production
     resource-profile: constrained
     helm-registry-url: https://helm-registry.myorganization.net/helm-repo/charts
     global:
@@ -130,17 +130,26 @@ An Ankh file tracks the target namespace and all of the charts you want to manag
 
 | Field         |Type| Description   |
 | ------------- |:---:|:-------------:| 
-| contexts      |map[string]`Context`| A mapping from context name to `Context` objects. Analogous, but not equivalent, to contexts in a kubeconfig.|
+| include       |[]string| A list of ankh config references to load and merge into this ankh config. Can be a local file, an http endpoint, or, experimentaly, a Kubneretes ConfigMap reference of the form `kubecontext://$context/$namespace/$object/$key`.|
+| environments  |map[string]`Environment`| A mapping from environment name to `Environment` objects. Helps organize Context objects as logical environments for the purpose of operating on many contexts at once.|
+| contexts      |map[string]`Context`| A mapping from context names to `Context` objects. Analogous, but not equivalent, to contexts in a kubeconfig.|
 | current-context      |string| The current context. This context will be used when Ankh is invoked. Must be a valid context, which is a key under `contexts`. | 
-| supported-environments|[]string| An array of supported environments. Any `environment` value in a `Context` must be included in this array.|
-| supported-resource-profiles|[]string| An array of supported resource profiles. Any `environment` value in a `Context` must be included in this array.|
+| supported-environments|[]string| Deprecated name for `supported-environment-classes`.|
+| supported-environment-classes|[]string| An array of supported environment classes. Any `environment-class` value in a `Context` must be included in this array.|
+| supported-resource-profiles|[]string| An array of supported resource profiles. Any `resource-profile` value in a `Context` must be included in this array.|
+
+#### `Environment`
+| Field         |Type| Description   |
+| ------------- |:---:|:-------------:| 
+|contexts|[]string| A list of contexts to that belong to this Environment. These must be valid context names present under `contexts`.|
 
 #### `Context`
 | Field         |Type| Description   |
 | ------------- |:---:|:-------------:| 
-| contexts      |map[string]Context| A mapping from context name to `Context` objects. Analogous, but not equivalent, to contexts in a kubeconfig.|
 |kube-context|string|The kube context to use. This must be a valid context name present in your kube config (tyipcally ~/.kube/config or $KUBECONFIG)|
-|environment|string|The environment to use. Must be a valid environment in `supported-environments`|
+|kube-server|string|The kube server to use. This must be a valid Kubernetes API server. Similar to the `server` field in kubectl's `cluster` object. This can be used in place of `kube-context`.)|
+|environment|string|Deprecated name for `environment-class`. Not to be confused with `environments` (sets of contexts) present the AnkhConfig object.|
+|environment-class|string|The environment class to use. Must be a valid environment class in `supported-environment-classes`|
 |resource-profile|string|The resource profile to use. Must be a valid resource profile in `supported-resource-profiles`|
 |release|string|The release name to pass to Helm via --release|
 |helm-registry-url|string|The URL to the Helm chart repo to use|
@@ -151,7 +160,7 @@ An Ankh file tracks the target namespace and all of the charts you want to manag
 | Field         |Type| Description   |
 | ------------- |:---:|:-------------:| 
 | ingress       |map[string]string|Map from chart name to ingress host name. The ingress host name is exposed to helm charts as the yaml key `ingress.host`|
-| ***           |RawYaml|All other keys are provided as raw yaml, each key prefixed with `global.` (eg: `global.somekey` for `somekey` under `Global`)
+| _             |RawYaml|All other keys are provided as raw yaml, each key prefixed with `global.` (eg: `global.somekey` for `somekey` under `Global`)
 
 #### `AnkhFile`
 | Field         |Type| Description   |
@@ -171,7 +180,6 @@ An Ankh file tracks the target namespace and all of the charts you want to manag
 | ------------- |:---:|:-------------:|
 | name          |string|The chart name. May be the name of a chart in a Helm registry, or the name of a subdirectory (with a valid Chart layout - see Helm documentation on this) under `charts` from the directory where Ankh is run.|
 | version       |string|Optional. The chart version, if pulling from a Helm registry.|
-| default-values|RawYaml|Optional. Values to use for all environments and resource profiles.|
+| default-values|RawYaml|Optional. Values to use for all environment classes and resource profiles.|
 | values        |map[string]RawYaml|Optional. Values to use, by environment.|
 | resource-profiles|map[string]RawYaml|Optional. Values to use, by resource profile.|
-| secrets       |map[string]RawYaml|Optional. Values to use, by environment. Secrets are the same as values, but a different name is used here as a helpful visual indicator that these are sensitive values.

@@ -2,6 +2,12 @@
 
 
 [[projects]]
+  name = "github.com/imdario/mergo"
+  packages = ["."]
+  revision = "9d5f1277e9a8ed20c3684bda8fde67c05628518c"
+  version = "v0.3.4"
+
+[[projects]]
   name = "github.com/jawher/mow.cli"
   packages = ["."]
   revision = "0e80ee9f63156ea1954dc2375c33a1c7e752c25c"
@@ -40,6 +46,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "41d2422f49f006cebc3d85407a183007f58840f2cc03ef9f8d64103edfa44bd6"
+  inputs-digest = "a871643c0d0e71d075ac282d80df4f7225c26256dc77ced980034b0e13592fd4"
   solver-name = "gps-cdcl"
   solver-version = 1
