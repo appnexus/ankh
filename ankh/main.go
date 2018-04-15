@@ -61,7 +61,7 @@ func filterOutput(ctx *ankh.ExecutionContext, helmOutput string) string {
 		}
 	}
 
-	return strings.Join(filtered, "---")
+	return "---" + strings.Join(filtered, "---")
 }
 
 func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) {
