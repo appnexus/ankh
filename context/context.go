@@ -3,6 +3,7 @@ package ankh
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path"
 	"path/filepath"
 
@@ -48,7 +49,7 @@ type ExecutionContext struct {
 type Context struct {
 	KubeContext      string                 `yaml:"kube-context,omitempty"`
 	KubeServer       string                 `yaml:"kube-server,omitempty"`
-	Environment      string                 `yaml:"environment"` // deprecated in favor of `environment-class`
+	Environment      string                 `yaml:"environment"`                 // deprecated in favor of `environment-class`
 	EnvironmentClass string                 `yaml:"environment-class,omitempty"` // omitempty until we remove `environment`
 	ResourceProfile  string                 `yaml:"resource-profile"`
 	Release          string                 `yaml:"release,omitempty"`
@@ -67,7 +68,7 @@ type Environment struct {
 type AnkhConfig struct {
 	Include                     []string               `yaml:"include,omitempty"`
 	Environments                map[string]Environment `yaml:"environments,omitempty"`
-	SupportedEnvironments       []string               `yaml:"supported-environments"` // deprecated in favor of `supported-environment-classes`
+	SupportedEnvironments       []string               `yaml:"supported-environments"`                  // deprecated in favor of `supported-environment-classes`
 	SupportedEnvironmentClasses []string               `yaml:"supported-environment-classes,omitempty"` // omitempty until we remove `supported-environments`
 	SupportedResourceProfiles   []string               `yaml:"supported-resource-profiles"`
 	CurrentContextName          string                 `yaml:"current-context"`
@@ -197,6 +198,7 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context str
 }
 
 type Chart struct {
+	Path    string
 	Name    string
 	Version string
 	// DefaultValues are values that apply regardless of environment class or resource profile
@@ -263,4 +265,59 @@ func ParseAnkhFile(filename string) (AnkhFile, error) {
 	}
 
 	return config, nil
+}
+
+func GetAnkhFile(ctx *ExecutionContext) (AnkhFile, error) {
+	if ctx.Chart == "" {
+		ctx.Logger.Infof("Reading Ankh file %v", ctx.AnkhFilePath)
+		ankhFile, err := ParseAnkhFile(ctx.AnkhFilePath)
+		if err == nil {
+			ctx.Logger.Debugf("- OK: %v", ctx.AnkhFilePath)
+		}
+		return ankhFile, err
+	}
+
+	// We have a chart argument, which makes things more complicated.
+	return getAnkhFileForChart(ctx, ctx.Chart)
+}
+
+func getAnkhFileForChart(ctx *ExecutionContext, singleChart string) (AnkhFile, error) {
+	if _, err := os.Stat(ctx.AnkhFilePath); err == nil {
+		ctx.Logger.Infof("Reading Ankh file %v", ctx.AnkhFilePath)
+		ankhFile, err := ParseAnkhFile(ctx.AnkhFilePath)
+		if err != nil {
+			return ankhFile, err
+		}
+		ctx.Logger.Debugf("- OK: %v", ctx.AnkhFilePath)
+
+		// If we find that our chart arg matches a chart in the array,
+		// then that's the one and only chart we need to operate on.
+		// Replace the charts array with that singleton, and return.
+		for _, chart := range ankhFile.Charts {
+			if singleChart == chart.Name {
+				ctx.Logger.Debugf("Truncating Charts array to the singleton %v", singleChart)
+				ankhFile.Charts = []Chart{chart}
+				return ankhFile, nil
+			}
+		}
+		ctx.Logger.Debugf("Did not find chart argument %v in the `charts` array", singleChart)
+	}
+
+	// The only way to succeed now is to use singleChart as a path to a local chart directory.
+	ctx.Logger.Infof("Using chart directory %v", singleChart)
+	helmChart, err := util.ReadChartDirectory(singleChart)
+	if err != nil {
+		return AnkhFile{}, fmt.Errorf("Could not use %v as a chart directory: %v", singleChart, err)
+	}
+
+	// We were able to read singleChart as a helm directory.
+	// We now know that our one and only chart is the on we just parsed, so return that.
+	ankhFile := AnkhFile{
+		// TODO: Set namespace based on a command line arg.
+		Charts: []Chart{
+			Chart{Path: singleChart, Name: helmChart.Name},
+		},
+	}
+	ctx.Logger.Debugf("Returning ankhFile %+v", ankhFile)
+	return ankhFile, nil
 }

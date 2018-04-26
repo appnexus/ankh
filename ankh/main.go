@@ -105,12 +105,7 @@ func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) {
 }
 
 func execute(ctx *ankh.ExecutionContext) {
-	log.Infof("Reading Ankh file from: %v", ctx.AnkhFilePath)
-
-	rootAnkhFile, err := ankh.ParseAnkhFile(ctx.AnkhFilePath)
-	if err == nil {
-		log.Debugf("- OK: %v", ctx.AnkhFilePath)
-	}
+	rootAnkhFile, err := ankh.GetAnkhFile(ctx)
 	check(err)
 
 	contexts := []string{}
