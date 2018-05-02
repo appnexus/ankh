@@ -2,7 +2,7 @@
 
 Another Kubernetes Helper for shipping code.
 
-<img src="ankh.png" width="250" height="250">
+<img src="ankh.png" width="175" height="175">
 
 ## Dependencies
 Ankh uses kubectl and helm under the hood, make sure you install them.
