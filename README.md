@@ -182,5 +182,5 @@ An Ankh file tracks the target namespace and all of the charts you want to manag
 | name          |string|The chart name. May be the name of a chart in a Helm registry, or the name of a subdirectory (with a valid Chart layout - see Helm documentation on this) under `charts` from the directory where Ankh is run.|
 | version       |string|Optional. The chart version, if pulling from a Helm registry.|
 | default-values|RawYaml|Optional. Values to use for all environment classes and resource profiles.|
-| values        |map[string]RawYaml|Optional. Values to use, by environment.|
+| values        |map[string]RawYaml|Optional. Values to use, by environment class.|
 | resource-profiles|map[string]RawYaml|Optional. Values to use, by resource profile.|
