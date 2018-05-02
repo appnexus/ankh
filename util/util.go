@@ -370,3 +370,24 @@ func ArrayDedup(a []string) []string {
 	}
 	return keys
 }
+
+type HelmChart struct {
+	Name string
+}
+
+func ReadChartDirectory(chartDir string) (*HelmChart, error) {
+	chartYamlPath := filepath.Join(chartDir, "Chart.yaml")
+	chartYaml, err := ioutil.ReadFile(chartYamlPath)
+	if err != nil {
+		return nil, err
+	}
+	helmChart := HelmChart{}
+	err = yaml.Unmarshal(chartYaml, &helmChart)
+	if err != nil {
+		return nil, err
+	}
+	if helmChart.Name == "" {
+		return nil, fmt.Errorf("Did not find any `name` in %v", chartYamlPath)
+	}
+	return &helmChart, nil
+}

@@ -36,7 +36,12 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, char
 	name := chart.Name
 	version := chart.Version
 
-	dirPath := filepath.Join(filepath.Dir(ankhFile.Path), "charts", name)
+	dirPath := chart.Path
+	if dirPath == "" {
+		// No explicit path set, so try the "charts" subdirectory.
+		dirPath = filepath.Join(filepath.Dir(ankhFile.Path), "charts", name)
+	}
+	ctx.Logger.Debugf("Using directory %v for chart %v", dirPath, name)
 	_, dirErr := os.Stat(dirPath)
 
 	files := ankh.ChartFiles{}
@@ -126,7 +131,7 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 	}
 
 	for key, val := range ctx.HelmSetValues {
-		helmArgs = append(helmArgs, "--set", "global."+key+"="+val)
+		helmArgs = append(helmArgs, "--set", key+"="+val)
 	}
 
 	files, err := findChartFiles(ctx, ankhFile, chart)
@@ -261,28 +266,13 @@ func Template(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) (string, error
 	if len(ankhFile.Charts) > 0 {
 		ctx.Logger.Debugf("templating charts")
 
-		if ctx.Chart == "" {
-			for _, chart := range ankhFile.Charts {
-				ctx.Logger.Debugf("templating chart '%s'", chart.Name)
-				chartOutput, err := templateChart(ctx, chart, ankhFile)
-				if err != nil {
-					return finalOutput, err
-				}
-				finalOutput += chartOutput
+		for _, chart := range ankhFile.Charts {
+			ctx.Logger.Debugf("templating chart '%s'", chart.Name)
+			chartOutput, err := templateChart(ctx, chart, ankhFile)
+			if err != nil {
+				return finalOutput, err
 			}
-		} else {
-			for _, chart := range ankhFile.Charts {
-				if chart.Name == ctx.Chart {
-					ctx.Logger.Debugf("templating chart '%s'", chart.Name)
-
-					chartOutput, err := templateChart(ctx, chart, ankhFile)
-					if err != nil {
-						return finalOutput, err
-					}
-					return chartOutput, nil
-				}
-			}
-			ctx.Logger.Fatalf("Chart %s was specified with `--chart` but does not exist in the charts array", ctx.Chart)
+			finalOutput += chartOutput
 		}
 	} else {
 		ctx.Logger.Infof(
