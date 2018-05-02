@@ -2,6 +2,8 @@
 
 Another Kubernetes Helper for shipping code.
 
+<img src="ankh.png" width="250" height="250">
+
 ## Dependencies
 Ankh uses kubectl and helm under the hood, make sure you install them.
 Kubectl: https://kubernetes.io/docs/tasks/tools/install-kubectl/
