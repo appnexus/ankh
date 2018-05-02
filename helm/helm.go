@@ -131,7 +131,6 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 	}
 
 	for key, val := range ctx.HelmSetValues {
-		//helmArgs = append(helmArgs, "--set", "global."+key+"="+val)
 		helmArgs = append(helmArgs, "--set", key+"="+val)
 	}
 

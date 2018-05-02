@@ -23,8 +23,13 @@ const (
 
 // Captures all of the context required to execute a single iteration of Ankh
 type ExecutionContext struct {
-	AnkhConfig          AnkhConfig
-	AnkhFilePath, Chart string
+	AnkhConfig AnkhConfig
+
+	AnkhFilePath string
+	// Overrides:
+	// Chart may be a single chart in the charts array, or a local chart path
+	// Namespace may override a value present in the AnkhFile
+	Chart, Namespace string
 
 	Mode Mode
 
@@ -268,6 +273,27 @@ func ParseAnkhFile(filename string) (AnkhFile, error) {
 }
 
 func GetAnkhFile(ctx *ExecutionContext) (AnkhFile, error) {
+	ankhFile, err := getAnkhFileInternal(ctx)
+	if err != nil {
+		return AnkhFile{}, err
+	}
+
+	if ctx.Namespace != "" {
+		if ankhFile.Namespace != "" {
+			ctx.Logger.Warningf("Overriding namespace to \"%v\". Originally found namespace \"%v\" in Ankh file",
+				ctx.Namespace, ankhFile.Namespace)
+		} else {
+			ctx.Logger.Debugf("Using namespace \"%v\" with no previous namespace specified", ctx.Namespace)
+		}
+		ankhFile.Namespace = ctx.Namespace
+	} else {
+		ctx.Logger.Debugf("No namespace specified on the command line nor in an ankh file.")
+	}
+
+	return ankhFile, nil
+}
+
+func getAnkhFileInternal(ctx *ExecutionContext) (AnkhFile, error) {
 	if ctx.Chart == "" {
 		ctx.Logger.Infof("Reading Ankh file %v", ctx.AnkhFilePath)
 		ankhFile, err := ParseAnkhFile(ctx.AnkhFilePath)

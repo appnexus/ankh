@@ -295,7 +295,7 @@ func switchContext(ctx *ankh.ExecutionContext, ankhConfig *ankh.AnkhConfig, cont
 
 func main() {
 	app := cli.App("ankh", "Another Kubernetes Helper")
-	app.Spec = "[-v] [--ankhconfig] [--kubeconfig] [--datadir] [--context] [--environment] [--set...]"
+	app.Spec = "[--verbose] [--ankhconfig] [--kubeconfig] [--datadir] [--context] [--environment] [--namespace] [--set...]"
 
 	var (
 		verbose    = app.BoolOpt("v verbose", false, "Verbose debug mode")
@@ -318,9 +318,14 @@ func main() {
 			EnvVar: "ANKHCONTEXT",
 		})
 		environment = app.String(cli.StringOpt{
-			Name:  "environment",
+			Name:  "e environment",
 			Value: "",
 			Desc:  "The environment to use. Must provide this, or an individual context via --context",
+		})
+		namespace = app.String(cli.StringOpt{
+			Name:  "n namespace",
+			Value: "",
+			Desc:  "The namespace to use with kubectl. Optional. Overrides any namespace provided in an ankh file. Commonly used with --chart without any ankh.yaml to operate over a single, local chart directory",
 		})
 		datadir = app.String(cli.StringOpt{
 			Name:   "datadir",
@@ -330,7 +335,7 @@ func main() {
 		})
 		helmSet = app.Strings(cli.StringsOpt{
 			Name:  "set",
-			Desc:  "Global variables passed to helm with helm --set, will override variables set in ankhconfig global",
+			Desc:  "Variables passed through to helm via --set",
 			Value: []string{},
 		})
 	)
@@ -369,6 +374,7 @@ func main() {
 			KubeConfigPath:    *kubeconfig,
 			ContextOverride:   *context,
 			Environment:       *environment,
+			Namespace:         *namespace,
 			DataDir:           path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
 			Logger:            log,
 			HelmSetValues:     helmVars,
