@@ -1,8 +1,7 @@
 # Ankh [![Build Status](https://travis-ci.org/appnexus/ankh.svg?branch=master)](https://travis-ci.org/appnexus/ankh)
 
-Another Kubernetes Helper for shipping code.
-
 <img src="ankh.png" width="175" height="175">
+Another Kubernetes Helper for shipping code.
 
 ## Dependencies
 Ankh uses kubectl and helm under the hood, make sure you install them.
