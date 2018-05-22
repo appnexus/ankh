@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"bytes"
 
 	"github.com/appnexus/ankh/context"
 	"github.com/appnexus/ankh/util"
@@ -233,12 +234,16 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 	if ctx.Mode == ankh.Explain {
 		return explain(helmCmd.Args), nil
 	}
+	var stdout, stderr bytes.Buffer
+	helmCmd.Stdout = &stdout
+	helmCmd.Stderr = &stderr
 
-	helmOutput, err := helmCmd.CombinedOutput()
+	err = helmCmd.Run()
+	var helmOutput, helmError = string(stdout.Bytes()), string(stderr.Bytes())
 	if err != nil {
 		outputMsg := ""
-		if len(helmOutput) > 0 {
-			outputMsg = fmt.Sprintf(" -- the helm process had the following output on stdout/stderr:\n%s", helmOutput)
+		if len(helmError) > 0 {
+			outputMsg = fmt.Sprintf(" -- the helm process had the following output on stderr:\n%s", helmError)
 		}
 		return "", fmt.Errorf("error running the helm command: %v%v", err, outputMsg)
 	}
