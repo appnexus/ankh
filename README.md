@@ -100,7 +100,7 @@ ankh config use-context my-context
 
 You can also specify the context to use via a command line flag:
 ```
-ankh apply --context my-context
+ankh --context my-context apply
 ```
 
 The config/context API design was taken straight from kubectl, for a familiar feel.
@@ -120,7 +120,7 @@ environments:
 When you invoke `ankh apply` with the `--environment` flag, it will do an `ankh apply` to each of the contexts defined in the environment in the order listed. E.g.
 
 ```
-ankh apply --environment staging
+ankh --environment staging apply
 ```
 
 ### Ankh files
@@ -128,7 +128,7 @@ ankh apply --environment staging
 Once your ankh config contains the set of contexts and you've selected one via *use-context*, the primary source of input to ankh will be an Ankh file, typically named ankh.yaml
 
 ```
-$ cat ankh.yaml | head -n15
+$ cat ~/.ankh/config | head -n15
 namespace: utils
 
 charts:
@@ -151,7 +151,7 @@ An Ankh file tracks the target namespace and all of the charts you want to manag
 You may include other yaml config files into your ankh config via the `include` property. This is useful if you need to keep multiple ankh configs in sync, perhaps across multiple developers on a team. E.g.
 
 ```
-$ cat ankh.yaml
+$ cat ~/.ankh/config
 
 include:
 - https://some-config-server.net/production.yaml
