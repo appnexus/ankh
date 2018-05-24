@@ -161,6 +161,8 @@ include:
 ...
 ```
 
+Note: you may only `use-context` on contexts defined inside your ankh config, not any contexts from `include`. Just use `--context` or `--environment` for those.
+
 ## YAML schemas
 
 #### `AnkhConfig`
