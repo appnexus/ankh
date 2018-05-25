@@ -105,6 +105,21 @@ ankh --context my-context apply
 
 The config/context API design was taken straight from kubectl, for a familiar feel.
 
+You may include other yaml config files into your ankh config via the `include` property. This is useful if you need to keep multiple ankh configs in sync, perhaps across multiple developers on a team. E.g.
+
+```
+$ cat ~/.ankh/config
+
+include:
+- https://some-config-server.net/production.yaml
+- https://some-config-server.net/staging.yaml
+- https://some-config-server.net/development.yaml
+
+...
+```
+
+Note: you may only `use-context` on contexts defined inside your ankh config, not any contexts from `include`. Just use `--context` or `--environment` for those.
+
 ### Environments
 Environments are a list of context names. Using an environment is good for when you have multiple contexts to `apply` to as part of one atomic action. These must be valid context names present under `contexts`. A good example of this would be multiple geo-distributed clusters that you want to deploy to as part of a "staging" environment:
 
@@ -128,7 +143,7 @@ ankh --environment staging apply
 Once your ankh config contains the set of contexts and you've selected one via *use-context*, the primary source of input to ankh will be an Ankh file, typically named ankh.yaml
 
 ```
-$ cat ~/.ankh/config | head -n15
+$ cat ankh.yaml | head -n15
 namespace: utils
 
 charts:
@@ -147,21 +162,6 @@ charts:
 ```
 
 An Ankh file tracks the target namespace and all of the charts you want to manage.
-
-You may include other yaml config files into your ankh config via the `include` property. This is useful if you need to keep multiple ankh configs in sync, perhaps across multiple developers on a team. E.g.
-
-```
-$ cat ~/.ankh/config
-
-include:
-- https://some-config-server.net/production.yaml
-- https://some-config-server.net/staging.yaml
-- https://some-config-server.net/development.yaml
-
-...
-```
-
-Note: you may only `use-context` on contexts defined inside your ankh config, not any contexts from `include`. Just use `--context` or `--environment` for those.
 
 ## YAML schemas
 
