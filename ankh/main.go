@@ -263,6 +263,7 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile ankh.AnkhFile) {
 func checkContext(ankhConfig *ankh.AnkhConfig, context string) {
 	_, ok := ankhConfig.Contexts[context]
 	if !ok {
+		log.Warn("`current-context` will be removed in the next major version of ankh. It does not support values that come from `include`. Use the `--context` flag instead.")
 		log.Errorf("Context '%v' not found in `contexts`", context)
 		log.Info("The following contexts are available:")
 		keys := []string{}

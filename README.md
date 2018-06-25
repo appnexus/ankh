@@ -5,8 +5,9 @@ Another Kubernetes Helper for shipping code.
 
 ## Dependencies
 Ankh uses kubectl and helm under the hood, make sure you install them.
-Kubectl: https://kubernetes.io/docs/tasks/tools/install-kubectl/
-Helm (version 2.7 or newer): https://github.com/kubernetes/helm
+
+- Kubectl: https://kubernetes.io/docs/tasks/tools/install-kubectl/
+- Helm (version 2.7 or newer): https://github.com/kubernetes/helm
 
 ## Build and Installation
 
@@ -50,7 +51,7 @@ charts:
         foo: 'very prod'
       dev:
         foo: 'not so prod'
-        bar: false       
+        bar: false
 ```
 
 Simplicity, transparency and composability are the primary design goals of Ankh.
@@ -70,6 +71,8 @@ Ankh makes it easy to observe and verify incremental changes. It can be used to 
 ### Contexts
 
 **Ankh** configs are driven by *contexts*, much like kubectl. When Ankh is invoked, it uses the *current-context* to decide which kubectl context, environment-class, and other common configurations to use.
+
+**Note**: `current-context` will be removed in the next major version of Ankh. Use the `--context` flag on individual commands instead if you need to target a single context.
 
 ```
 $ cat ~/.ankh/config
@@ -129,58 +132,58 @@ An Ankh file tracks the target namespace and all of the charts you want to manag
 
 #### `AnkhConfig`
 
-| Field         |Type| Description   |
-| ------------- |:---:|:-------------:| 
-| include       |[]string| A list of ankh config references to load and merge into this ankh config. Can be a local file, an http endpoint, or, experimentaly, a Kubneretes ConfigMap reference of the form `kubecontext://$context/$namespace/$object/$key`.|
-| environments  |map[string]`Environment`| A mapping from environment name to `Environment` objects. Helps organize Context objects as logical environments for the purpose of operating on many contexts at once.|
-| contexts      |map[string]`Context`| A mapping from context names to `Context` objects. Analogous, but not equivalent, to contexts in a kubeconfig.|
-| current-context      |string| The current context. This context will be used when Ankh is invoked. Must be a valid context, which is a key under `contexts`. | 
-| supported-environments|[]string| Deprecated name for `supported-environment-classes`.|
-| supported-environment-classes|[]string| An array of supported environment classes. Any `environment-class` value in a `Context` must be included in this array.|
-| supported-resource-profiles|[]string| An array of supported resource profiles. Any `resource-profile` value in a `Context` must be included in this array.|
+| Field                         | Type                     | Description                                                                                                                                                                                                                        |
+| -------------                 | :---:                    | :-------------:                                                                                                                                                                                                                    |
+| include                       | []string                 | A list of ankh config references to load and merge into this ankh config. Can be a local file, an http endpoint, or, experimentaly, a Kubneretes ConfigMap reference of the form `kubecontext://$context/$namespace/$object/$key`. |
+| environments                  | map[string]`Environment` | A mapping from environment name to `Environment` objects. Helps organize Context objects as logical environments for the purpose of operating on many contexts at once.                                                            |
+| contexts                      | map[string]`Context`     | A mapping from context names to `Context` objects. Analogous, but not equivalent, to contexts in a kubeconfig.                                                                                                                     |
+| current-context               | string                   | The current context. This context will be used when Ankh is invoked. Must be a valid context, which is a key under `contexts`. **Note**: will be removed in next major.                                                            |
+| supported-environments        | []string                 | Deprecated name for `supported-environment-classes`.                                                                                                                                                                               |
+| supported-environment-classes | []string                 | An array of supported environment classes. Any `environment-class` value in a `Context` must be included in this array.                                                                                                            |
+| supported-resource-profiles   | []string                 | An array of supported resource profiles. Any `resource-profile` value in a `Context` must be included in this array.                                                                                                               |
 
 #### `Environment`
-| Field         |Type| Description   |
-| ------------- |:---:|:-------------:| 
-|contexts|[]string| A list of contexts to that belong to this Environment. These must be valid context names present under `contexts`.|
+| Field         | Type     | Description                                                                                                        |
+| ------------- | :---:    | :-------------:                                                                                                    |
+| contexts      | []string | A list of contexts to that belong to this Environment. These must be valid context names present under `contexts`. |
 
 #### `Context`
-| Field         |Type| Description   |
-| ------------- |:---:|:-------------:| 
-|kube-context|string|The kube context to use. This must be a valid context name present in your kube config (tyipcally ~/.kube/config or $KUBECONFIG)|
-|kube-server|string|The kube server to use. This must be a valid Kubernetes API server. Similar to the `server` field in kubectl's `cluster` object. This can be used in place of `kube-context`.)|
-|environment|string|Deprecated name for `environment-class`. Not to be confused with `environments` (sets of contexts) present the AnkhConfig object.|
-|environment-class|string|The environment class to use. Must be a valid environment class in `supported-environment-classes`|
-|resource-profile|string|The resource profile to use. Must be a valid resource profile in `supported-resource-profiles`|
-|release|string|The release name to pass to Helm via --release|
-|helm-registry-url|string|The URL to the Helm chart repo to use|
-|cluster-admin|bool|If true, then `admin-dependencies` are run.|
-|global|`Global`|global configuration available to all charts|
+| Field             | Type     | Description                                                                                                                                                                    |
+| -------------     | :---:    | :-------------:                                                                                                                                                                |
+| kube-context      | string   | The kube context to use. This must be a valid context name present in your kube config (tyipcally ~/.kube/config or $KUBECONFIG)                                               |
+| kube-server       | string   | The kube server to use. This must be a valid Kubernetes API server. Similar to the `server` field in kubectl's `cluster` object. This can be used in place of `kube-context`.) |
+| environment       | string   | Deprecated name for `environment-class`. Not to be confused with `environments` (sets of contexts) present the AnkhConfig object.                                              |
+| environment-class | string   | The environment class to use. Must be a valid environment class in `supported-environment-classes`                                                                             |
+| resource-profile  | string   | The resource profile to use. Must be a valid resource profile in `supported-resource-profiles`                                                                                 |
+| release           | string   | The release name to pass to Helm via --release                                                                                                                                 |
+| helm-registry-url | string   | The URL to the Helm chart repo to use                                                                                                                                          |
+| cluster-admin     | bool     | If true, then `admin-dependencies` are run.                                                                                                                                    |
+| global            | `Global` | global configuration available to all charts                                                                                                                                   |
 
 #### `Global`
-| Field         |Type| Description   |
-| ------------- |:---:|:-------------:| 
-| ingress       |map[string]string|Map from chart name to ingress host name. The ingress host name is exposed to helm charts as the yaml key `ingress.host`|
-| _             |RawYaml|All other keys are provided as raw yaml, each key prefixed with `global.` (eg: `global.somekey` for `somekey` under `Global`)
+| Field         | Type              | Description                                                                                                                   |
+| ------------- | :---:             | :-------------:                                                                                                               |
+| ingress       | map[string]string | Map from chart name to ingress host name. The ingress host name is exposed to helm charts as the yaml key `ingress.host`      |
+| _             | RawYaml           | All other keys are provided as raw yaml, each key prefixed with `global.` (eg: `global.somekey` for `somekey` under `Global`)
 
 #### `AnkhFile`
-| Field         |Type| Description   |
-| ------------- |:---:|:-------------:| 
-| namespace     |string|The namespace to use when running `helm` and `kubectl`|
-| bootstrap     |`Script`|Optional. A bootstrap script to run before applying any charts.|
-| admin-dependencies|[]string|Optional. Path to dependent directories, each containing an ankh.yaml that should be run, in order. These dependencies are only satisified when `cluster-admin` is true in the current `Context`, and they are always run before regular `dependencies`|
-| dependencies     |[]string|Optional. Path to dependent directories, each containing an ankh.yaml that should be run, in order.|
+| Field              | Type     | Description                                                                                                                                                                                                                                             |
+| -------------      | :---:    | :-------------:                                                                                                                                                                                                                                         |
+| namespace          | string   | The namespace to use when running `helm` and `kubectl`                                                                                                                                                                                                  |
+| bootstrap          | `Script` | Optional. A bootstrap script to run before applying any charts.                                                                                                                                                                                         |
+| admin-dependencies | []string | Optional. Path to dependent directories, each containing an ankh.yaml that should be run, in order. These dependencies are only satisified when `cluster-admin` is true in the current `Context`, and they are always run before regular `dependencies` |
+| dependencies       | []string | Optional. Path to dependent directories, each containing an ankh.yaml that should be run, in order.                                                                                                                                                     |
 
 #### `Script`
-| Field         |Type| Description   |
-| ------------- |:---:|:-------------:| 
-| path          |string|The path to an executable script. Two env vars are exported: `ANKH_KUBE_CONTEXT` is the `kube-context` from the current `Context`. `ANKH_CONFIG_GLOBAL` is the `Global` config section from the current `Context` provided as yaml|
+| Field         | Type   | Description                                                                                                                                                                                                                        |
+| ------------- | :---:  | :-------------:                                                                                                                                                                                                                    |
+| path          | string | The path to an executable script. Two env vars are exported: `ANKH_KUBE_CONTEXT` is the `kube-context` from the current `Context`. `ANKH_CONFIG_GLOBAL` is the `Global` config section from the current `Context` provided as yaml |
 
 #### `Chart`
-| Field         |Type| Description   |
-| ------------- |:---:|:-------------:|
-| name          |string|The chart name. May be the name of a chart in a Helm registry, or the name of a subdirectory (with a valid Chart layout - see Helm documentation on this) under `charts` from the directory where Ankh is run.|
-| version       |string|Optional. The chart version, if pulling from a Helm registry.|
-| default-values|RawYaml|Optional. Values to use for all environment classes and resource profiles.|
-| values        |map[string]RawYaml|Optional. Values to use, by environment class.|
-| resource-profiles|map[string]RawYaml|Optional. Values to use, by resource profile.|
+| Field             | Type               | Description                                                                                                                                                                                                    |
+| -------------     | :---:              | :-------------:                                                                                                                                                                                                |
+| name              | string             | The chart name. May be the name of a chart in a Helm registry, or the name of a subdirectory (with a valid Chart layout - see Helm documentation on this) under `charts` from the directory where Ankh is run. |
+| version           | string             | Optional. The chart version, if pulling from a Helm registry.                                                                                                                                                  |
+| default-values    | RawYaml            | Optional. Values to use for all environment classes and resource profiles.                                                                                                                                     |
+| values            | map[string]RawYaml | Optional. Values to use, by environment class.                                                                                                                                                                 |
+| resource-profiles | map[string]RawYaml | Optional. Values to use, by resource profile.                                                                                                                                                                  |
