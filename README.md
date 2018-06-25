@@ -98,10 +98,48 @@ ankh config get-contexts
 ...and switch to one via use-context
 
 ```
-ankh config use-context
+ankh config use-context my-context
+```
+
+You can also specify the context to use via a command line flag:
+```
+ankh --context my-context apply
 ```
 
 The config/context API design was taken straight from kubectl, for a familiar feel.
+
+You may include other yaml config files into your ankh config via the `include` property. This is useful if you need to keep multiple ankh configs in sync, perhaps across multiple developers on a team. E.g.
+
+```
+$ cat ~/.ankh/config
+
+include:
+- https://some-config-server.net/production.yaml
+- https://some-config-server.net/staging.yaml
+- https://some-config-server.net/development.yaml
+
+...
+```
+
+Note: you may only `use-context` on contexts defined inside your ankh config, not any contexts from `include`. Just use `--context` or `--environment` for those.
+
+### Environments
+Environments are a list of context names. Using an environment is good for when you have multiple contexts to `apply` to as part of one atomic action. These must be valid context names present under `contexts`. A good example of this would be multiple geo-distributed clusters that you want to deploy to as part of a "staging" environment:
+
+```
+environments:
+  staging:
+    contexts:
+    - nym-staging
+    - ams-staging
+    - lax-staging
+```
+
+When you invoke `ankh apply` with the `--environment` flag, it will do an `ankh apply` to each of the contexts defined in the environment in the order listed. E.g.
+
+```
+ankh --environment staging apply
+```
 
 ### Ankh files
 
@@ -134,7 +172,7 @@ An Ankh file tracks the target namespace and all of the charts you want to manag
 
 | Field                         | Type                     | Description                                                                                                                                                                                                                        |
 | -------------                 | :---:                    | :-------------:                                                                                                                                                                                                                    |
-| include                       | []string                 | A list of ankh config references to load and merge into this ankh config. Can be a local file, an http endpoint, or, experimentaly, a Kubneretes ConfigMap reference of the form `kubecontext://$context/$namespace/$object/$key`. |
+| include                       | []string                 | A list of ankh config references to load and merge into this ankh config. Can be a local file, an http endpoint, or, experimentaly, a Kubernetes ConfigMap reference of the form `kubecontext://$context/$namespace/$object/$key`. |
 | environments                  | map[string]`Environment` | A mapping from environment name to `Environment` objects. Helps organize Context objects as logical environments for the purpose of operating on many contexts at once.                                                            |
 | contexts                      | map[string]`Context`     | A mapping from context names to `Context` objects. Analogous, but not equivalent, to contexts in a kubeconfig.                                                                                                                     |
 | current-context               | string                   | The current context. This context will be used when Ankh is invoked. Must be a valid context, which is a key under `contexts`. **Note**: will be removed in next major.                                                            |
