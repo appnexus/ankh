@@ -20,7 +20,7 @@ type ConfigMap struct {
 func GetAnkhConfig(ctx *ankh.ExecutionContext, configPath string) (ankh.AnkhConfig, error) {
 	ankhConfig := ankh.AnkhConfig{}
 
-	u, err := url.Parse(configPath);
+	u, err := url.Parse(configPath)
 	if err != nil {
 		return ankhConfig, fmt.Errorf("Could not parse configPath '%v' as a URL: %v", configPath, err)
 	}
@@ -73,7 +73,7 @@ func GetAnkhConfig(ctx *ankh.ExecutionContext, configPath string) (ankh.AnkhConf
 		body, err = ioutil.ReadFile(configPath)
 	}
 	if err != nil {
-		return ankhConfig, fmt.Errorf("Unable to read ankh config '%s': %v", configPath, err)
+		return ankhConfig, fmt.Errorf("Unable to read ankh config '%s', consider using `ankh config init`: %v", configPath, err)
 	}
 
 	if err := os.MkdirAll(ctx.DataDir, 0755); err != nil {

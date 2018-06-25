@@ -426,7 +426,7 @@ func main() {
 		if ctx.ContextOverride != "" {
 			mergedAnkhConfig.CurrentContextName = ctx.ContextOverride
 		}
-		if ctx.Environment == "" {
+		if ctx.Environment == "" && !ctx.IgnoreConfigError {
 			log.Debugf("Switching to context %v", mergedAnkhConfig.CurrentContextName)
 			switchContext(ctx, &mergedAnkhConfig, mergedAnkhConfig.CurrentContextName)
 		}
@@ -702,6 +702,7 @@ func main() {
 
 	app.Command("version", "Show version info", func(cmd *cli.Cmd) {
 		ctx.WarnOnConfigError = true
+		ctx.IgnoreConfigError = true
 
 		cmd.Action = func() {
 			ctx.Logger.Infof("Ankh version info:")
