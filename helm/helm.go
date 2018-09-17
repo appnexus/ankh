@@ -272,7 +272,13 @@ func Template(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) (string, error
 		ctx.Logger.Debugf("templating charts")
 
 		for _, chart := range ankhFile.Charts {
-			ctx.Logger.Debugf("templating chart '%s'", chart.Name)
+			extraString := ""
+			if chart.Version != "" {
+				extraString = fmt.Sprintf(" using version \"%v\"", chart.Version)
+			} else if chart.Path != "" {
+				extraString = fmt.Sprintf(" using path \"%v\"", chart.Path)
+			}
+			ctx.Logger.Infof("Templating chart \"%s\"%s", chart.Name, extraString)
 			chartOutput, err := templateChart(ctx, chart, ankhFile)
 			if err != nil {
 				return finalOutput, err

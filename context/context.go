@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/appnexus/ankh/util"
 	"github.com/sirupsen/logrus"
@@ -310,6 +311,8 @@ func getAnkhFileInternal(ctx *ExecutionContext) (AnkhFile, error) {
 }
 
 func getAnkhFileForChart(ctx *ExecutionContext, singleChart string) (AnkhFile, error) {
+	versionOverride := ""
+
 	if _, err := os.Stat(ctx.AnkhFilePath); err == nil {
 		ctx.Logger.Infof("Reading Ankh file %v", ctx.AnkhFilePath)
 		ankhFile, err := ParseAnkhFile(ctx.AnkhFilePath)
@@ -318,17 +321,44 @@ func getAnkhFileForChart(ctx *ExecutionContext, singleChart string) (AnkhFile, e
 		}
 		ctx.Logger.Debugf("- OK: %v", ctx.AnkhFilePath)
 
+		// The single chart argument may have a version override in the format `name:version`
+		// Extract that now if possible.
+		tokens := strings.Split(singleChart, ":")
+		if len(tokens) > 2 {
+			ctx.Logger.Fatalf("Invalid chart '%v'. Too many `:` characters found. Chart must either be a name with no `:`, or in the combined `name:version` format.")
+		}
+		if len(tokens) == 2 {
+			singleChart = tokens[0]
+			versionOverride = tokens[1]
+			ctx.Logger.Debugf("Searching for chart named %v, using version override %v", singleChart, versionOverride)
+		}
+
 		// If we find that our chart arg matches a chart in the array,
 		// then that's the one and only chart we need to operate on.
 		// Replace the charts array with that singleton, and return.
 		for _, chart := range ankhFile.Charts {
 			if singleChart == chart.Name {
 				ctx.Logger.Debugf("Truncating Charts array to the singleton %v", singleChart)
-				ankhFile.Charts = []Chart{chart}
+				if versionOverride != "" {
+					ctx.Logger.Infof("Using chart version %v and overriding any existing `path` config", versionOverride)
+					newChart := chart
+					newChart.Path = ""
+					newChart.Version = versionOverride
+					ankhFile.Charts = []Chart{newChart}
+				} else {
+					ankhFile.Charts = []Chart{chart}
+				}
 				return ankhFile, nil
 			}
 		}
-		ctx.Logger.Debugf("Did not find chart argument %v in the `charts` array", singleChart)
+
+		// Charts in the form name:version should never attempt to be resolved using a local path.
+		complaint := fmt.Sprintf("Did not find chart argument %v in the `charts` array", singleChart)
+		if versionOverride != "" {
+			ctx.Logger.Fatalf(complaint)
+		} else {
+			ctx.Logger.Debugf(complaint)
+		}
 	}
 
 	// The only way to succeed now is to use singleChart as a path to a local chart directory.
