@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/appnexus/ankh/util"
 	"github.com/sirupsen/logrus"
@@ -16,6 +16,7 @@ type Mode string
 
 const (
 	Apply    Mode = "apply"
+	Diff     Mode = "diff"
 	Explain  Mode = "explain"
 	Lint     Mode = "lint"
 	Template Mode = "template"
@@ -33,14 +34,15 @@ type ExecutionContext struct {
 
 	Mode Mode
 
-	Verbose, DryRun, WarnOnConfigError, UseContext, IgnoreConfigError bool
+	Verbose, DryRun, WarnOnConfigError, UseContext, IgnoreContextAndEnv, IgnoreConfigErrors bool
 
-	AnkhConfigPath  string
-	KubeConfigPath  string
-	ContextOverride string
-	Environment     string
-	DataDir         string
-	HelmSetValues   map[string]string
+	AnkhConfigPath string
+	KubeConfigPath string
+	Context        string
+	Release        string
+	Environment    string
+	DataDir        string
+	HelmSetValues  map[string]string
 
 	Filters []string
 
@@ -52,6 +54,7 @@ type ExecutionContext struct {
 // Context is a struct that represents a context for applying files to a
 // Kubernetes cluster
 type Context struct {
+	Source           string                 `yaml:"-"` // private field. specifies which config file declared this.
 	KubeContext      string                 `yaml:"kube-context,omitempty"`
 	KubeServer       string                 `yaml:"kube-server,omitempty"`
 	Environment      string                 `yaml:"environment"`                 // deprecated in favor of `environment-class`
@@ -65,20 +68,22 @@ type Context struct {
 
 // An Environment is a collection of contexts over which operations should be applied
 type Environment struct {
+	Source   string   `yaml:"-"` // private field. specifies which config file declared this.
 	Contexts []string `yaml:"contexts"`
 }
 
 // AnkhConfig defines the shape of the ~/.ankh/config file used for global
 // configuration options
 type AnkhConfig struct {
-	Include                     []string               `yaml:"include,omitempty"`
-	Environments                map[string]Environment `yaml:"environments,omitempty"`
-	SupportedEnvironments       []string               `yaml:"supported-environments"`                  // deprecated in favor of `supported-environment-classes`
-	SupportedEnvironmentClasses []string               `yaml:"supported-environment-classes,omitempty"` // omitempty until we remove `supported-environments`
-	SupportedResourceProfiles   []string               `yaml:"supported-resource-profiles"`
-	CurrentContextName          string                 `yaml:"current-context"`
-	CurrentContext              Context                `yaml:"-"` // private, filled in by init code. The `-` instructs the yaml lib to not look for this field
-	Contexts                    map[string]Context     `yaml:"contexts"`
+	Include                           []string               `yaml:"include,omitempty"`
+	Environments                      map[string]Environment `yaml:"environments,omitempty"`
+	SupportedEnvironmentsUnused       []string               `yaml:"supported-environments"`                  // deprecated in favor of `supported-environment-classes`
+	SupportedEnvironmentClassesUnused []string               `yaml:"supported-environment-classes,omitempty"` // omitempty until we remove `supported-environments`
+	SupportedResourceProfilesUnused   []string               `yaml:"supported-resource-profiles"`
+	CurrentContextNameUnused          string                 `yaml:"current-context"` // transitionary: this should never be user-supplied
+	CurrentContextName                string                 `yaml:"-"`               // transitionary: this should never be user-supplied
+	CurrentContext                    Context                `yaml:"-"`               // private, filled in by init code. The `-` instructs the yaml lib to not look for this field
+	Contexts                          map[string]Context     `yaml:"contexts"`
 }
 
 type KubeCluster struct {
@@ -96,11 +101,12 @@ type KubeContext struct {
 }
 
 type KubeConfig struct {
-	ApiVersion     string        `yaml:"apiVersion"`
-	Kind           string        `yaml:"kind"`
-	Clusters       []KubeCluster `yaml:"clusters"`
-	Contexts       []KubeContext `yaml:"contexts"`
-	CurrentContext string        `yaml:"current-context"`
+	ApiVersion           string        `yaml:"apiVersion"`
+	Kind                 string        `yaml:"kind"`
+	Clusters             []KubeCluster `yaml:"clusters"`
+	Contexts             []KubeContext `yaml:"contexts"`
+	CurrentContextUnused string        `yaml:"current-context"` // transitionary: this should never be user-supplied
+	CurrentContext       string        `yaml:"-"`               // transitionary: this should never be user-supplied
 }
 
 // ValidateAndInit ensures the AnkhConfig is internally sane and populates
@@ -116,20 +122,6 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context str
 		errors = append(errors, fmt.Errorf("Missing or empty `current-context`"))
 	}
 
-	// SupportedEnvironments is deprecated, but we still use it if no SupportedEnvironmentClasses are present.
-	if ankhConfig.SupportedEnvironments != nil {
-		ctx.Logger.Warnf("Config contains field `supported-environments`, which has been deprecated in favor of `supported-environment-classes`")
-		ankhConfig.SupportedEnvironmentClasses = append(ankhConfig.SupportedEnvironmentClasses, ankhConfig.SupportedEnvironments...)
-	}
-
-	if ankhConfig.SupportedEnvironmentClasses == nil || len(ankhConfig.SupportedEnvironmentClasses) == 0 {
-		errors = append(errors, fmt.Errorf("Missing or empty `supported-environment-classes`"))
-	}
-
-	if ankhConfig.SupportedResourceProfiles == nil || len(ankhConfig.SupportedResourceProfiles) == 0 {
-		errors = append(errors, fmt.Errorf("Missing or empty `supported-resource-profiles`"))
-	}
-
 	selectedContext, contextExists := ankhConfig.Contexts[ankhConfig.CurrentContextName]
 	if contextExists == false {
 		errors = append(errors, fmt.Errorf("Context '%s' not found in `contexts`", ankhConfig.CurrentContextName))
@@ -140,53 +132,12 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context str
 			selectedContext.EnvironmentClass = selectedContext.Environment
 		}
 
-		if util.Contains(ankhConfig.SupportedEnvironmentClasses, selectedContext.EnvironmentClass) == false {
-			errors = append(errors, fmt.Errorf("Current context '%s' has environment class '%s': not found in `supported-environment-classes` == %v", ankhConfig.CurrentContextName, selectedContext.EnvironmentClass, ankhConfig.SupportedEnvironmentClasses))
-		}
-
-		if util.Contains(ankhConfig.SupportedResourceProfiles, selectedContext.ResourceProfile) == false {
-			errors = append(errors, fmt.Errorf("Current context '%s' has resource profile '%s': not found in `supported-resource-profiles` == %v", ankhConfig.CurrentContextName, selectedContext.ResourceProfile, ankhConfig.SupportedResourceProfiles))
-		}
-
 		if selectedContext.HelmRegistryURL == "" {
 			errors = append(errors, fmt.Errorf("Current context '%s' has missing or empty `helm-registry-url`", ankhConfig.CurrentContextName))
 		}
 
 		if selectedContext.KubeContext == "" && selectedContext.KubeServer == "" {
 			errors = append(errors, fmt.Errorf("Current context '%s' has missing or empty `kube-context` or `kube-server`", ankhConfig.CurrentContextName))
-		} else if selectedContext.KubeServer != "" {
-			kubeCluster := KubeCluster{
-				Cluster: struct {
-					Server string `yaml:"server"`
-				}{Server: selectedContext.KubeServer},
-				Name: "_kcluster",
-			}
-			kubeContext := KubeContext{
-				Context: struct {
-					Cluster string `yaml:"cluster"`
-				}{Cluster: kubeCluster.Name},
-				Name: "_kctx",
-			}
-			kubeConfig := &KubeConfig{
-				ApiVersion:     "v1",
-				Kind:           "Config",
-				Clusters:       []KubeCluster{kubeCluster},
-				Contexts:       []KubeContext{kubeContext},
-				CurrentContext: kubeContext.Name,
-			}
-
-			kubeConfigPath := path.Join(ctx.DataDir, "kubeconfig.yaml")
-			kubeConfigBytes, err := yaml.Marshal(kubeConfig)
-			if err != nil {
-				return []error{err}
-			}
-
-			if err := ioutil.WriteFile(kubeConfigPath, kubeConfigBytes, 0644); err != nil {
-				return []error{err}
-			}
-
-			selectedContext.KubeContext = kubeContext.Name
-			ctx.KubeConfigPath = kubeConfigPath
 		}
 
 		if selectedContext.EnvironmentClass == "" {
@@ -199,6 +150,14 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context str
 	}
 
 	ankhConfig.CurrentContext = selectedContext
+	if ctx.Release != "" {
+		if ankhConfig.CurrentContext.Release != "" {
+			ctx.Logger.Warnf("Overriding existing release \"%v\" to release argument \"%v\" from command line for context \"%v\"", ankhConfig.CurrentContext.Release, ctx.Release, ankhConfig.CurrentContextName)
+		} else {
+			ctx.Logger.Infof("Using release argument \"%v\" from command line for context \"%v\".", ctx.Release, ankhConfig.CurrentContextName)
+		}
+		ankhConfig.CurrentContext.Release = ctx.Release
+	}
 	return errors
 }
 
@@ -206,10 +165,12 @@ type Chart struct {
 	Path    string
 	Name    string
 	Version string
-	// DefaultValues are values that apply regardless of environment class or resource profile
-	DefaultValues    map[string]interface{} `yaml:"default-values"`
-	Values           map[string]interface{}
-	ResourceProfiles map[string]interface{} `yaml:"resource-profiles"`
+	// DefaultValues are values that apply regardless of environment class or resource profile.
+	DefaultValues map[string]interface{} `yaml:"default-values"`
+	// Values, by environment-class, resource-profile, or release. MapSlice preserves map ordering so we can regex search from top to bottom.
+	Values           yaml.MapSlice
+	ResourceProfiles yaml.MapSlice `yaml:"resource-profiles"`
+	Releases         yaml.MapSlice
 }
 
 type ChartFiles struct {
@@ -219,6 +180,7 @@ type ChartFiles struct {
 	ValuesPath               string
 	AnkhValuesPath           string
 	AnkhResourceProfilesPath string
+	AnkhReleasesPath         string
 }
 
 // AnkhFile defines the shape of the `ankh.yaml` file which is used to define
@@ -260,7 +222,7 @@ func ParseAnkhFile(filename string) (AnkhFile, error) {
 
 	err = yaml.UnmarshalStrict(ankhYaml, &config)
 	if err != nil {
-		return config, fmt.Errorf("error loading ankh file '%v': %v\nAll Ankh yamls are parsed strictly. Please refer to README.md for the correct schema of an Ankh file", filename, err)
+		return config, fmt.Errorf("Error loading Ankh file '%v': %v\nAll Ankh yamls are parsed strictly. Please refer to README.md for the correct schema of an Ankh file", filename, err)
 	}
 
 	// Add the absolute path of the config to the struct
@@ -286,8 +248,10 @@ func GetAnkhFile(ctx *ExecutionContext) (AnkhFile, error) {
 			ctx.Logger.Debugf("Using namespace \"%v\" with no previous namespace specified", ctx.Namespace)
 		}
 		ankhFile.Namespace = ctx.Namespace
+	} else if ankhFile.Namespace != "" {
+		ctx.Logger.Debugf("No namespace specified on the command line, using namespace \"%s\" in Ankh file.", ankhFile.Namespace)
 	} else {
-		ctx.Logger.Debugf("No namespace specified on the command line nor in an ankh file.")
+		ctx.Logger.Debugf("No namespace specified on the command line nor in an Ankh file.")
 	}
 
 	return ankhFile, nil
@@ -308,25 +272,64 @@ func getAnkhFileInternal(ctx *ExecutionContext) (AnkhFile, error) {
 }
 
 func getAnkhFileForChart(ctx *ExecutionContext, singleChart string) (AnkhFile, error) {
+	versionOverride := ""
+
+	var err error
+	var ankhFile AnkhFile
 	if _, err := os.Stat(ctx.AnkhFilePath); err == nil {
 		ctx.Logger.Infof("Reading Ankh file %v", ctx.AnkhFilePath)
-		ankhFile, err := ParseAnkhFile(ctx.AnkhFilePath)
+		ankhFile, err = ParseAnkhFile(ctx.AnkhFilePath)
 		if err != nil {
 			return ankhFile, err
 		}
 		ctx.Logger.Debugf("- OK: %v", ctx.AnkhFilePath)
+	}
 
-		// If we find that our chart arg matches a chart in the array,
-		// then that's the one and only chart we need to operate on.
-		// Replace the charts array with that singleton, and return.
-		for _, chart := range ankhFile.Charts {
-			if singleChart == chart.Name {
-				ctx.Logger.Debugf("Truncating Charts array to the singleton %v", singleChart)
-				ankhFile.Charts = []Chart{chart}
-				return ankhFile, nil
+	// The single chart argument may have a version override in the format `name:version`
+	// Extract that now if possible.
+	tokens := strings.Split(singleChart, "@")
+	if len(tokens) > 2 {
+		ctx.Logger.Fatalf("Invalid chart '%v'. Too many `@` characters found. Chart must either be a name with no `@`, or in the combined `name@version` format.")
+	}
+	if len(tokens) == 2 {
+		singleChart = tokens[0]
+		versionOverride = tokens[1]
+		if len(ankhFile.Charts) > 0 {
+			ctx.Logger.Debugf("Searching for chart named %v in ankh file, using version override %v", singleChart, versionOverride)
+		} else {
+			ctx.Logger.Debugf("No charts in ankh file. Using single chart %v at version %v", singleChart, versionOverride)
+			ankhFile.Charts = []Chart{
+				Chart{Name: singleChart, Version: versionOverride},
 			}
+			return ankhFile, nil
 		}
-		ctx.Logger.Debugf("Did not find chart argument %v in the `charts` array", singleChart)
+	}
+
+	// If we find that our chart arg matches a chart in the array,
+	// then that's the one and only chart we need to operate on.
+	// Replace the charts array with that singleton, and return.
+	for _, chart := range ankhFile.Charts {
+		if singleChart == chart.Name {
+			ctx.Logger.Debugf("Truncating Charts array to the singleton %v", singleChart)
+			if versionOverride != "" {
+				ctx.Logger.Infof("Using chart version %v and overriding any existing `path` config", versionOverride)
+				newChart := chart
+				newChart.Path = ""
+				newChart.Version = versionOverride
+				ankhFile.Charts = []Chart{newChart}
+			} else {
+				ankhFile.Charts = []Chart{chart}
+			}
+			return ankhFile, nil
+		}
+	}
+
+	// Charts in the form name@version should never attempt to be resolved using a local path.
+	complaint := fmt.Sprintf("Did not find chart argument %v in the `charts` array", singleChart)
+	if versionOverride != "" {
+		ctx.Logger.Fatalf(complaint)
+	} else {
+		ctx.Logger.Debugf(complaint)
 	}
 
 	// The only way to succeed now is to use singleChart as a path to a local chart directory.
@@ -338,7 +341,7 @@ func getAnkhFileForChart(ctx *ExecutionContext, singleChart string) (AnkhFile, e
 
 	// We were able to read singleChart as a helm directory.
 	// We now know that our one and only chart is the on we just parsed, so return that.
-	ankhFile := AnkhFile{
+	ankhFile = AnkhFile{
 		// TODO: Set namespace based on a command line arg.
 		Charts: []Chart{
 			Chart{Path: singleChart, Name: helmChart.Name},

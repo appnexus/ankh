@@ -21,8 +21,6 @@ var log = logrus.New()
 func newValidAnkhConfig() AnkhConfig {
 	return AnkhConfig{
 		CurrentContextName:          "test",
-		SupportedEnvironmentClasses: []string{"dev"},
-		SupportedResourceProfiles:   []string{"constrained"},
 		Contexts: map[string]Context{
 			"test": Context{
 				EnvironmentClass: "dev",
@@ -102,45 +100,7 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		}
 	})
 
-	t.Run("missing supported-environment-classes", func(t *testing.T) {
-		ankhConfig := newValidAnkhConfig()
-		ankhConfig.SupportedEnvironmentClasses = []string{}
-
-		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
-
-		hasCorrectError := false
-		for _, err := range errs {
-			if strings.Contains(err.Error(), "Missing or empty `supported-environment-classes`") {
-				hasCorrectError = true
-			}
-		}
-
-		if !hasCorrectError {
-			t.Logf("was expecting to find a specific error in `errs`: %v", errs)
-			t.Fail()
-		}
-	})
-
-	t.Run("missing supported-resource-profiles", func(t *testing.T) {
-		ankhConfig := newValidAnkhConfig()
-		ankhConfig.SupportedResourceProfiles = []string{}
-
-		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
-
-		hasCorrectError := false
-		for _, err := range errs {
-			if strings.Contains(err.Error(), "Missing or empty `supported-resource-profiles`") {
-				hasCorrectError = true
-			}
-		}
-
-		if !hasCorrectError {
-			t.Logf("was expecting to find a specific error in `errs`: %v", errs)
-			t.Fail()
-		}
-	})
-
-	t.Run("cant select a context", func(t *testing.T) {
+	t.Run("can't select a context", func(t *testing.T) {
 		ankhConfig := newValidAnkhConfig()
 		ankhConfig.Contexts = map[string]Context{}
 
@@ -149,54 +109,6 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		hasCorrectError := false
 		for _, err := range errs {
 			if strings.Contains(err.Error(), "Context 'test' not found in `contexts`") {
-				hasCorrectError = true
-			}
-		}
-
-		if !hasCorrectError {
-			t.Logf("was expecting to find a specific error in `errs`: %v", errs)
-			t.Fail()
-		}
-	})
-
-	t.Run("bad environment in selected context", func(t *testing.T) {
-		ankhConfig := newValidAnkhConfig()
-
-		// "copy" the struct and reassign it since we can't modify a map in place
-		context := ankhConfig.Contexts["test"]
-		context.EnvironmentClass = "nope"
-
-		ankhConfig.Contexts["test"] = context
-
-		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
-
-		hasCorrectError := false
-		for _, err := range errs {
-			if strings.Contains(err.Error(), "Current context 'test' has environment class 'nope': not found in `supported-environment-classes` == [dev]") {
-				hasCorrectError = true
-			}
-		}
-
-		if !hasCorrectError {
-			t.Logf("was expecting to find a specific error in `errs`: %v", errs)
-			t.Fail()
-		}
-	})
-
-	t.Run("bad resource-profile in selected context", func(t *testing.T) {
-		ankhConfig := newValidAnkhConfig()
-
-		// "copy" the struct and reassign it since we can't modify a map in place
-		context := ankhConfig.Contexts["test"]
-		context.ResourceProfile = "nope"
-
-		ankhConfig.Contexts["test"] = context
-
-		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
-
-		hasCorrectError := false
-		for _, err := range errs {
-			if strings.Contains(err.Error(), "Current context 'test' has resource profile 'nope': not found in `supported-resource-profiles` == [constrained]") {
 				hasCorrectError = true
 			}
 		}

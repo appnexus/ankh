@@ -23,35 +23,6 @@ func Version() (string, error) {
 	return string(kubectlOutput), nil
 }
 
-func GetYaml(ctx *ankh.ExecutionContext, kind string, context string, namespace string, name string) (string, error) {
-	kubectlArgs := []string{
-		"kubectl", "get", kind, name,
-		"-o", "yaml",
-		"--context", context,
-		"--namespace", namespace,
-	}
-
-	if ctx.KubeConfigPath != "" {
-		kubectlArgs = append(kubectlArgs, []string{"--kubeconfig", ctx.KubeConfigPath}...)
-	}
-
-	kubectlCmd := exec.Command(kubectlArgs[0], kubectlArgs[1:]...)
-
-	if ctx.Verbose {
-		ctx.Logger.Infof("running kubectl command: %v", kubectlArgs)
-	}
-
-	kubectlOutput, err := kubectlCmd.CombinedOutput()
-	if err != nil {
-		outputMsg := ""
-		if len(kubectlOutput) > 0 {
-			outputMsg = fmt.Sprintf(" -- the kubectl process had the following output on stdout/stderr:\n%s", kubectlOutput)
-		}
-		return "", fmt.Errorf("%v%v", err, outputMsg)
-	}
-	return string(kubectlOutput), nil
-}
-
 func Execute(ctx *ankh.ExecutionContext, input string, ankhFile ankh.AnkhFile,
 	cmd func(name string, arg ...string) *exec.Cmd) (string, error) {
 
@@ -59,17 +30,27 @@ func Execute(ctx *ankh.ExecutionContext, input string, ankhFile ankh.AnkhFile,
 		cmd = exec.Command
 	}
 
-	kubectlArgs := []string{
-		"kubectl", "apply",
-		"--context", ctx.AnkhConfig.CurrentContext.KubeContext,
+	kubectlArgs := []string{"kubectl"}
+	if ctx.Mode == ankh.Diff {
+		kubectlArgs = append(kubectlArgs, []string{"alpha", "diff", "LAST", "LOCAL"}...)
+	} else {
+		kubectlArgs = append(kubectlArgs, []string{"apply"}...)
+	}
+
+	if ctx.AnkhConfig.CurrentContext.KubeServer != "" {
+		kubectlArgs = append(kubectlArgs, []string{"--server", ctx.AnkhConfig.CurrentContext.KubeServer}...)
+	} else {
+		kubectlArgs = append(kubectlArgs, []string{"--context", ctx.AnkhConfig.CurrentContext.KubeContext}...)
 	}
 
 	if ankhFile.Namespace != "" {
 		kubectlArgs = append(kubectlArgs, []string{"--namespace", ankhFile.Namespace}...)
 	}
 
-	if ctx.KubeConfigPath != "" {
-		kubectlArgs = append(kubectlArgs, []string{"--kubeconfig", ctx.KubeConfigPath}...)
+	if ctx.AnkhConfig.CurrentContext.KubeServer == "" {
+		if ctx.KubeConfigPath != "" {
+			kubectlArgs = append(kubectlArgs, []string{"--kubeconfig", ctx.KubeConfigPath}...)
+		}
 	}
 
 	if ctx.DryRun {

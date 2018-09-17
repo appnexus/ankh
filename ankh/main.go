@@ -33,6 +33,28 @@ var AnkhBuildVersion string = "DEVELOPMENT"
 
 var log = logrus.New()
 
+func printEnvironments(ankhConfig *ankh.AnkhConfig) {
+	keys := []string{}
+	for k, _ := range ankhConfig.Environments {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, name := range keys {
+		log.Infof("* %v", name)
+	}
+}
+
+func printContexts(ankhConfig *ankh.AnkhConfig) {
+	keys := []string{}
+	for k, _ := range ankhConfig.Contexts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, name := range keys {
+		log.Infof("* %v", name)
+	}
+}
+
 func filterOutput(ctx *ankh.ExecutionContext, helmOutput string) string {
 	ctx.Logger.Debugf("Filtering with inclusive list `%v`", ctx.Filters)
 
@@ -65,16 +87,18 @@ func filterOutput(ctx *ankh.ExecutionContext, helmOutput string) string {
 }
 
 func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) {
-	verb := ""
+	action := ""
 	switch ctx.Mode {
 	case ankh.Apply:
-		verb = "Applying"
+		action = "Applying chart"
+	case ankh.Diff:
+		action = "Diffing objects from chart"
 	case ankh.Explain:
-		verb = "Explaining"
+		action = "Explaining"
 	case ankh.Template:
-		verb = "Templating"
+		action = "Templating"
 	case ankh.Lint:
-		verb = "Linting"
+		action = "Linting"
 	}
 
 	releaseLog := ""
@@ -97,7 +121,7 @@ func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) {
 		contextLog = fmt.Sprintf(" to kube-server \"%v\"", ctx.AnkhConfig.CurrentContext.KubeServer)
 	}
 
-	ctx.Logger.Infof("%v%v%v%v with environment class \"%v\" and resource profile \"%v\"%v", verb,
+	ctx.Logger.Infof("%v%v%v%v with environment class \"%v\" and resource profile \"%v\"%v", action,
 		releaseLog, dryLog, contextLog,
 		ctx.AnkhConfig.CurrentContext.EnvironmentClass,
 		ctx.AnkhConfig.CurrentContext.ResourceProfile,
@@ -114,14 +138,7 @@ func execute(ctx *ankh.ExecutionContext) {
 		if !ok {
 			log.Errorf("Environment '%v' not found in `environments`", ctx.Environment)
 			log.Info("The following environments are available:")
-			keys := []string{}
-			for k, _ := range ctx.AnkhConfig.Environments {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, name := range keys {
-				log.Infof("- %v", name)
-			}
+			printEnvironments(&ctx.AnkhConfig)
 			os.Exit(1)
 		}
 
@@ -137,7 +154,7 @@ func execute(ctx *ankh.ExecutionContext) {
 	} else {
 		if ctx.AnkhConfig.CurrentContextName == "" {
 			// Not sure if this is possible actually
-			log.Fatalf("No CurrentContextName found. Must provide an explicit --context or --environment")
+			log.Fatalf("No CurrentContextName found. Must provide an explicit `--context` or `--environment`")
 		}
 		executeContext(ctx, rootAnkhFile)
 	}
@@ -187,10 +204,14 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile ankh.AnkhFile) {
 			helmOutput = filterOutput(ctx, helmOutput)
 		}
 
+		printOutput := ctx.Verbose
 		switch ctx.Mode {
-		case ankh.Apply:
+		case ankh.Diff:
+			printOutput = true
 			fallthrough
 		case ankh.Explain:
+			fallthrough
+		case ankh.Apply:
 			if ctx.KubectlVersion == "" {
 				ver, err := kubectl.Version()
 				if err != nil {
@@ -201,13 +222,16 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile ankh.AnkhFile) {
 			}
 
 			kubectlOutput, err := kubectl.Execute(ctx, helmOutput, ankhFile, nil)
+			if err != nil && ctx.Mode == ankh.Diff {
+				ctx.Logger.Warnf("The `diff` feature entered alpha in kubectl v1.9.0, and seems to work best at version v1.12.1. Your results may vary. Current kubectl version string is `%s`", ctx.KubectlVersion)
+			}
 			check(err)
 
 			if ctx.Mode == ankh.Explain {
 				// Sweet string badnesss.
 				helmOutput = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(helmOutput), "&& \\"))
 				fmt.Println(fmt.Sprintf("(%s) | \\\n%s", helmOutput, kubectlOutput))
-			} else if ctx.Verbose {
+			} else if printOutput {
 				fmt.Println(kubectlOutput)
 			}
 		case ankh.Template:
@@ -264,15 +288,16 @@ func checkContext(ankhConfig *ankh.AnkhConfig, context string) {
 	_, ok := ankhConfig.Contexts[context]
 	if !ok {
 		log.Warn("`current-context` will be removed in the next major version of ankh. It does not support values that come from `include`. Use the `--context` flag instead.")
-		log.Errorf("Context '%v' not found in `contexts`", context)
-		log.Info("The following contexts are available:")
-		keys := []string{}
-		for k, _ := range ankhConfig.Contexts {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, name := range keys {
-			log.Infof("- %v", name)
+		if context == "" {
+			log.Errorf("No context or environment provided.")
+			log.Info("The following contexts are available:")
+			printContexts(ankhConfig)
+			log.Info("The following environments are available:")
+			printEnvironments(ankhConfig)
+		} else {
+			log.Errorf("Context '%v' not found in `contexts`", context)
+			log.Info("The following contexts are available:")
+			printContexts(ankhConfig)
 		}
 		os.Exit(1)
 	}
@@ -282,25 +307,20 @@ func switchContext(ctx *ankh.ExecutionContext, ankhConfig *ankh.AnkhConfig, cont
 	checkContext(ankhConfig, context)
 
 	errs := ankhConfig.ValidateAndInit(ctx, context)
-	if len(errs) > 0 {
-		if ctx.WarnOnConfigError {
-			for _, s := range errs {
-				log.Warnf("%v", s)
-			}
-		} else if !ctx.IgnoreConfigError {
-			// The config validation errors are not recoverable.
-			log.Fatalf("%v", util.MultiErrorFormat(errs))
-		}
+	if len(errs) > 0 && !ctx.IgnoreContextAndEnv {
+		// The config validation errors are not recoverable.
+		log.Fatalf("%v", util.MultiErrorFormat(errs))
 	}
 }
 
 func main() {
 	app := cli.App("ankh", "Another Kubernetes Helper")
-	app.Spec = "[--verbose] [--ankhconfig] [--kubeconfig] [--datadir] [--context] [--environment] [--namespace] [--set...]"
+	app.Spec = "[--verbose] [--ignore-config-errors] [--ankhconfig] [--kubeconfig] [--datadir] [--release] [--context] [--environment] [--namespace] [--set...]"
 
 	var (
-		verbose    = app.BoolOpt("v verbose", false, "Verbose debug mode")
-		ankhconfig = app.String(cli.StringOpt{
+		verbose            = app.BoolOpt("v verbose", false, "Verbose debug mode")
+		ignoreConfigErrors = app.BoolOpt("ignore-config-errors", false, "Ignore certain configuration errors that have defined, but potentially dangerous behavior.")
+		ankhconfig         = app.String(cli.StringOpt{
 			Name:   "ankhconfig",
 			Value:  path.Join(os.Getenv("HOME"), ".ankh", "config"),
 			Desc:   "The ankh config to use. ANKHCONFIG may be set to include a list of ankh configs to merge. Similar behavior to kubectl's KUBECONFIG.",
@@ -312,16 +332,23 @@ func main() {
 			Desc:   "The kube config to use when invoking kubectl",
 			EnvVar: "KUBECONFIG",
 		})
+		release = app.String(cli.StringOpt{
+			Name:   "r release",
+			Value:  "",
+			Desc:   "The release to use. Must provide this, or have a release already present in the target context",
+			EnvVar: "ANKHRELEASE",
+		})
 		context = app.String(cli.StringOpt{
-			Name:   "context",
+			Name:   "c context",
 			Value:  "",
 			Desc:   "The context to use. Must provide this, or a whole environment via --environment",
 			EnvVar: "ANKHCONTEXT",
 		})
 		environment = app.String(cli.StringOpt{
-			Name:  "e environment",
-			Value: "",
-			Desc:  "The environment to use. Must provide this, or an individual context via --context",
+			Name:   "e environment",
+			Value:  "",
+			Desc:   "The environment to use. Must provide this, or an individual context via `--context`",
+			EnvVar: "ANKHENVIRONMENT",
 		})
 		namespace = app.String(cli.StringOpt{
 			Name:  "n namespace",
@@ -366,21 +393,22 @@ func main() {
 		}
 
 		if *context != "" && *environment != "" {
-			log.Fatalf("Must not provide both --context and --environment, because an environment maps to one or more contexts.")
+			log.Fatalf("Must not provide both `--context` and `--environment`, because an environment maps to one or more contexts.")
 		}
 
 		ctx = &ankh.ExecutionContext{
-			Verbose:           *verbose,
-			AnkhConfigPath:    *ankhconfig,
-			KubeConfigPath:    *kubeconfig,
-			ContextOverride:   *context,
-			Environment:       *environment,
-			Namespace:         *namespace,
-			DataDir:           path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
-			Logger:            log,
-			HelmSetValues:     helmVars,
-			WarnOnConfigError: ctx.WarnOnConfigError,
-			IgnoreConfigError: ctx.IgnoreConfigError,
+			Verbose:             *verbose,
+			AnkhConfigPath:      *ankhconfig,
+			KubeConfigPath:      *kubeconfig,
+			Context:             *context,
+			Release:             *release,
+			Environment:         *environment,
+			Namespace:           *namespace,
+			DataDir:             path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
+			Logger:              log,
+			HelmSetValues:       helmVars,
+			IgnoreContextAndEnv: ctx.IgnoreContextAndEnv,
+			IgnoreConfigErrors:  ctx.IgnoreConfigErrors || *ignoreConfigErrors,
 		}
 
 		log.Debugf("Using KubeConfigPath %v (KUBECONFIG = '%v')", ctx.KubeConfigPath, os.Getenv("KUBECONFIG"))
@@ -402,13 +430,35 @@ func main() {
 
 			ankhConfig, err := config.GetAnkhConfig(ctx, configPath)
 			if err != nil {
-				if ctx.WarnOnConfigError {
-					for _, s := range strings.Split(err.Error(), "\n") {
-						log.Warnf("%v: %v", configPath, s)
-					}
-				} else if !ctx.IgnoreConfigError {
+				if !ctx.IgnoreContextAndEnv {
 					// The config validation errors are not recoverable.
 					check(err)
+				} else {
+					log.Warnf("%v", err)
+				}
+			}
+
+			// Warn on context and environment conflict, since this case is almost certainly unintentional.
+			for name, _ := range ankhConfig.Contexts {
+				if context, ok := mergedAnkhConfig.Contexts[name]; ok {
+					complaint := fmt.Sprintf("Context `%v` already defined from config source `%v`, would have been overriden by config source `%v`.",
+						name, context.Source, configPath)
+					if !ctx.IgnoreConfigErrors {
+						log.Fatalf(complaint + " Rerun with `ankh --ignore-config-errors ...` to ignore this error and use the merged configuration anyway.")
+					} else {
+						log.Warnf(complaint)
+					}
+				}
+			}
+			for name, _ := range ankhConfig.Environments {
+				if environment, ok := mergedAnkhConfig.Environments[name]; ok {
+					complaint := fmt.Sprintf("Environment `%v` already defined from config source `%v`, would have been overriden by config source `%v`.",
+						name, environment.Source, configPath)
+					if !ctx.IgnoreConfigErrors {
+						log.Fatalf(complaint + " Rerun with `ankh --ignore-config-errors ...` to ignore this error and use the merged configuration anyway.")
+					} else {
+						log.Warnf(complaint)
+					}
 				}
 			}
 
@@ -420,14 +470,13 @@ func main() {
 			parsedConfigs[configPath] = true
 		}
 
+		// Don't accidentally wind up in an include cycle.
 		mergedAnkhConfig.Include = util.ArrayDedup(mergedAnkhConfig.Include)
-		mergedAnkhConfig.SupportedEnvironmentClasses = util.ArrayDedup(mergedAnkhConfig.SupportedEnvironmentClasses)
-		mergedAnkhConfig.SupportedResourceProfiles = util.ArrayDedup(mergedAnkhConfig.SupportedResourceProfiles)
 
-		if ctx.ContextOverride != "" {
-			mergedAnkhConfig.CurrentContextName = ctx.ContextOverride
+		if ctx.Context != "" {
+			mergedAnkhConfig.CurrentContextName = ctx.Context
 		}
-		if ctx.Environment == "" && !ctx.IgnoreConfigError {
+		if ctx.Environment == "" && !ctx.IgnoreContextAndEnv {
 			log.Debugf("Switching to context %v", mergedAnkhConfig.CurrentContextName)
 			switchContext(ctx, &mergedAnkhConfig, mergedAnkhConfig.CurrentContextName)
 		}
@@ -463,6 +512,29 @@ func main() {
 			ctx.DryRun = *dryRun
 			ctx.Chart = *chart
 			ctx.Mode = ankh.Apply
+			filters := []string{}
+			for _, filter := range *filter {
+				filters = append(filters, string(filter))
+			}
+			ctx.Filters = filters
+
+			execute(ctx)
+			os.Exit(0)
+		}
+	})
+
+	app.Command("diff", "Diff objects in a templated ankh file against those currently in a Kubernetes cluster", func(cmd *cli.Cmd) {
+		cmd.Spec = "[-f] [--chart] [--filter...]"
+
+		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
+		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action.")
+
+		cmd.Action = func() {
+			ctx.AnkhFilePath = *ankhFilePath
+			ctx.DryRun = false
+			ctx.Chart = *chart
+			ctx.Mode = ankh.Diff
 			filters := []string{}
 			for _, filter := range *filter {
 				filters = append(filters, string(filter))
@@ -523,8 +595,8 @@ func main() {
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		chart := cmd.StringOpt("chart", "", "Limits the inspect command to only the specified chart")
 
-		cmd.Command("values", "For each chart, display contents of values.yaml, "+
-			"ankh-values.yaml, and ankh-resource-profiles.yaml", func(cmd *cli.Cmd) {
+		cmd.Command("values", "Display the contents of values.yaml, "+
+			"ankh-values.yaml, ankh-resource-profiles.yaml, and ankh-releases.yaml", func(cmd *cli.Cmd) {
 			cmd.Spec += " [--use-context]"
 			useContext := cmd.BoolOpt("use-context", false, "Select values by current context")
 
@@ -533,14 +605,14 @@ func main() {
 				ctx.UseContext = *useContext
 				ctx.Chart = *chart
 				if ctx.Environment != "" {
-					log.Fatalf("Must not provide --environment to inspect, because inspect operates on charts using a single context.")
+					log.Fatalf("Must not provide `--environment` to inspect, because inspect operates on charts using a single context.")
 				}
 				inspect(ctx, helm.InspectValues)
 				os.Exit(0)
 			}
 		})
 
-		cmd.Command("chart", "For each chart, display contents of the Charts.yaml file",
+		cmd.Command("chart", "Display the contents of the Chart.yaml file",
 			func(cmd *cli.Cmd) {
 				cmd.Action = func() {
 					ctx.AnkhFilePath = *ankhFilePath
@@ -550,7 +622,7 @@ func main() {
 				}
 			})
 
-		cmd.Command("templates", "For each chart, display contents of each raw template file",
+		cmd.Command("templates", "Display the contents of each template file",
 			func(cmd *cli.Cmd) {
 				cmd.Action = func() {
 					ctx.AnkhFilePath = *ankhFilePath
@@ -562,29 +634,11 @@ func main() {
 	})
 
 	app.Command("config", "Manage ankh configuration", func(cmd *cli.Cmd) {
-		ctx.WarnOnConfigError = true
+		ctx.IgnoreContextAndEnv = true
+		ctx.IgnoreConfigErrors = true
 
 		cmd.Command("init", "Initialize ankh configuration", func(cmd *cli.Cmd) {
-			// Sloppy
-			ctx.WarnOnConfigError = false
-			ctx.IgnoreConfigError = true
-
 			cmd.Action = func() {
-				if len(ctx.AnkhConfig.SupportedEnvironmentClasses) == 0 {
-					ctx.AnkhConfig.SupportedEnvironmentClasses = []string{"dev"}
-					ctx.Logger.Infof("Initializing `supported-environment-classes`: %v", ctx.AnkhConfig.SupportedEnvironmentClasses)
-				}
-
-				if len(ctx.AnkhConfig.SupportedResourceProfiles) == 0 {
-					ctx.AnkhConfig.SupportedResourceProfiles = []string{"constrained"}
-					ctx.Logger.Infof("Initializing `supported-resource-profiles`: %v", ctx.AnkhConfig.SupportedResourceProfiles)
-				}
-
-				if ctx.AnkhConfig.CurrentContextName == "" {
-					ctx.AnkhConfig.CurrentContextName = "minikube"
-					ctx.Logger.Infof("Initializing `current-context`: %v", ctx.AnkhConfig.CurrentContextName)
-				}
-
 				if len(ctx.AnkhConfig.Contexts) == 0 {
 					ctx.AnkhConfig.Contexts = map[string]ankh.Context{
 						"minikube": {
@@ -618,46 +672,10 @@ func main() {
 			}
 		})
 
-		cmd.Command("use-context", "Switch to a context", func(cmd *cli.Cmd) {
-			cmd.Spec = "CONTEXT"
-
-			arg := cmd.StringArg("CONTEXT", "", "")
-
-			cmd.Action = func() {
-				if *arg == "" {
-					log.Error("Missing CONTEXT")
-					os.Exit(1)
-				}
-
-				context := *arg
-
-				// Read + modify + write the local config only.
-				// We do not want to serialize anything included from a remote config.
-				body, err := ioutil.ReadFile(ctx.AnkhConfigPath)
-				check(err)
-
-				ankhConfig := ankh.AnkhConfig{}
-				err = yaml.UnmarshalStrict(body, &ankhConfig)
-				check(err)
-
-				checkContext(&ankhConfig, context)
-				ankhConfig.CurrentContextName = context
-
-				out, err := yaml.Marshal(ankhConfig)
-				check(err)
-
-				err = ioutil.WriteFile(ctx.AnkhConfigPath, out, 0644)
-				check(err)
-
-				fmt.Printf("Switched to context \"%v\".\n", context)
-				os.Exit(0)
-			}
-		})
-
 		cmd.Command("get-contexts", "Get available contexts", func(cmd *cli.Cmd) {
 			cmd.Action = func() {
 				w := tabwriter.NewWriter(os.Stdout, 0, 8, 8, ' ', 0)
-				fmt.Fprintf(w, "NAME\tRELEASE\tENVIRONMENT-CLASS\tRESOURCE-PROFILE\n")
+				fmt.Fprintf(w, "NAME\tRELEASE\tENVIRONMENT-CLASS\tRESOURCE-PROFILE\tKUBE-CONTEXT/SERVER\tSOURCE\n")
 				keys := []string{}
 				for k, _ := range ctx.AnkhConfig.Contexts {
 					keys = append(keys, k)
@@ -665,7 +683,11 @@ func main() {
 				sort.Strings(keys)
 				for _, name := range keys {
 					ctx, _ := ctx.AnkhConfig.Contexts[name]
-					fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", name, ctx.Release, ctx.EnvironmentClass, ctx.ResourceProfile)
+					target := ctx.KubeContext
+					if target == "" {
+						target = ctx.KubeServer
+					}
+					fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\n", name, ctx.Release, ctx.EnvironmentClass, ctx.ResourceProfile, target, ctx.Source)
 				}
 				w.Flush()
 				os.Exit(0)
@@ -683,27 +705,17 @@ func main() {
 				sort.Strings(keys)
 				for _, name := range keys {
 					env, _ := ctx.AnkhConfig.Environments[name]
-					fmt.Fprintf(w, "%v\t%v\n", name, strings.Join(env.Contexts, ","))
+					fmt.Fprintf(w, "%v\t%v\t%v\n", name, strings.Join(env.Contexts, ","), env.Source)
 				}
 				w.Flush()
-				os.Exit(0)
-			}
-		})
-
-		cmd.Command("current-context", "Get the current context", func(cmd *cli.Cmd) {
-			cmd.Action = func() {
-				if ctx.Environment != "" {
-					log.Fatalf("Must not provide --environment to current-context, because an environment maps to one or more contexts.")
-				}
-				fmt.Println(ctx.AnkhConfig.CurrentContextName)
 				os.Exit(0)
 			}
 		})
 	})
 
 	app.Command("version", "Show version info", func(cmd *cli.Cmd) {
-		ctx.WarnOnConfigError = true
-		ctx.IgnoreConfigError = true
+		ctx.IgnoreContextAndEnv = true
+		ctx.IgnoreConfigErrors = true
 
 		cmd.Action = func() {
 			ctx.Logger.Infof("Ankh version info:")
@@ -728,9 +740,8 @@ func main() {
 
 func inspect(ctx *ankh.ExecutionContext,
 	cb func(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ankh.Chart) (string, error)) {
-	var result string
 
-	ankhFile, err := ankh.ParseAnkhFile(ctx.AnkhFilePath)
+	ankhFile, err := ankh.GetAnkhFile(ctx)
 	check(err)
 
 	if len(ankhFile.Charts) < 1 {
@@ -740,23 +751,16 @@ func inspect(ctx *ankh.ExecutionContext,
 		return
 	}
 
-	ctx.Logger.Debug("Inspecting charts")
+	usingContextLog := ""
+	if ctx.UseContext {
+		usingContextLog = fmt.Sprintf(" using context \"%v\"", ctx.AnkhConfig.CurrentContextName)
+	}
 	for _, chart := range ankhFile.Charts {
-		if ctx.Chart != "" && chart.Name != ctx.Chart {
-			continue
-		}
-
+		ctx.Logger.Infof("Inspecting chart \"%v\"%v", chart.Name, usingContextLog)
 		output, err := cb(ctx, ankhFile, chart)
 		check(err)
-		result += output
+		fmt.Println(output)
 	}
-
-	if result == "" {
-		ctx.Logger.Fatalf("Chart %s was specified with `--chart` but does not exist in the charts array", ctx.Chart)
-		return
-	}
-
-	fmt.Println(result)
 }
 
 func check(err error) {

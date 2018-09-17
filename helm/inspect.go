@@ -16,7 +16,7 @@ func getChartFileContent(ctx *ankh.ExecutionContext, path string, useContext boo
 	bytes, err := ioutil.ReadFile(fmt.Sprintf("%s", path))
 	if err == nil {
 		if useContext {
-			bytes, err = util.CreateReducedYAMLFile(path, key)
+			bytes, err = util.CreateReducedYAMLFile(path, key, true)
 			if err != nil {
 				return result, err
 			}
@@ -43,23 +43,39 @@ func InspectValues(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ank
 	result += fmt.Sprintf("\n# Source: %s\n", ctx.AnkhFilePath)
 
 	type Values struct {
-		DefaultValues    map[string]interface{} `yaml:"default_values"`
+		DefaultValues    map[string]interface{} `yaml:"default-values"`
 		Values           interface{}
-		ResourceProfiles interface{} `yaml:"resource_profiles"`
+		ResourceProfiles interface{} `yaml:"resource-profiles"`
+		Releases         interface{}
 	}
 
 	values := Values{}
 	if ctx.UseContext {
+		var err error
+		v, err := util.MapSliceRegexMatch(chart.Values, ctx.AnkhConfig.CurrentContext.EnvironmentClass)
+		if err != nil {
+			return "", err
+		}
+		rp, err := util.MapSliceRegexMatch(chart.ResourceProfiles, ctx.AnkhConfig.CurrentContext.ResourceProfile)
+		if err != nil {
+			return "", err
+		}
+		r, err := util.MapSliceRegexMatch(chart.Releases, ctx.AnkhConfig.CurrentContext.Release)
+		if err != nil {
+			return "", err
+		}
 		values = Values{
 			DefaultValues:    chart.DefaultValues,
-			Values:           chart.Values[ctx.AnkhConfig.CurrentContext.EnvironmentClass],
-			ResourceProfiles: chart.ResourceProfiles[ctx.AnkhConfig.CurrentContext.ResourceProfile],
+			Values:           v,
+			ResourceProfiles: rp,
+			Releases:         r,
 		}
 	} else {
 		values = Values{
 			DefaultValues:    chart.DefaultValues,
 			Values:           chart.Values,
 			ResourceProfiles: chart.ResourceProfiles,
+			Releases:         chart.Releases,
 		}
 	}
 
@@ -74,7 +90,7 @@ func InspectValues(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ank
 		return "", err
 	}
 
-	bytes, err := getChartFileContent(ctx, files.AnkhResourceProfilesPath, ctx.UseContext, ctx.AnkhConfig.CurrentContext.ResourceProfile)
+	bytes, err := getChartFileContent(ctx, files.AnkhValuesPath, ctx.UseContext, ctx.AnkhConfig.CurrentContext.EnvironmentClass)
 	if err != nil {
 		return "", err
 	}
@@ -82,7 +98,15 @@ func InspectValues(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ank
 		result += string(bytes)
 	}
 
-	bytes, err = getChartFileContent(ctx, files.AnkhValuesPath, ctx.UseContext, ctx.AnkhConfig.CurrentContext.EnvironmentClass)
+	bytes, err = getChartFileContent(ctx, files.AnkhResourceProfilesPath, ctx.UseContext, ctx.AnkhConfig.CurrentContext.ResourceProfile)
+	if err != nil {
+		return "", err
+	}
+	if len(bytes) > 0 {
+		result += string(bytes)
+	}
+
+	bytes, err = getChartFileContent(ctx, files.AnkhReleasesPath, ctx.UseContext, ctx.AnkhConfig.CurrentContext.Release)
 	if err != nil {
 		return "", err
 	}
