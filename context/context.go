@@ -33,14 +33,14 @@ type ExecutionContext struct {
 
 	Mode Mode
 
-	Verbose, DryRun, WarnOnConfigError, UseContext, IgnoreConfigError bool
+	Verbose, DryRun, WarnOnConfigError, UseContext, IgnoreContextAndEnv bool
 
-	AnkhConfigPath  string
-	KubeConfigPath  string
-	ContextOverride string
-	Environment     string
-	DataDir         string
-	HelmSetValues   map[string]string
+	AnkhConfigPath string
+	KubeConfigPath string
+	Context        string
+	Environment    string
+	DataDir        string
+	HelmSetValues  map[string]string
 
 	Filters []string
 
@@ -76,8 +76,9 @@ type AnkhConfig struct {
 	SupportedEnvironments       []string               `yaml:"supported-environments"`                  // deprecated in favor of `supported-environment-classes`
 	SupportedEnvironmentClasses []string               `yaml:"supported-environment-classes,omitempty"` // omitempty until we remove `supported-environments`
 	SupportedResourceProfiles   []string               `yaml:"supported-resource-profiles"`
-	CurrentContextName          string                 `yaml:"current-context"`
-	CurrentContext              Context                `yaml:"-"` // private, filled in by init code. The `-` instructs the yaml lib to not look for this field
+	CurrentContextNameUnused    string                 `yaml:"current-context"` // transitionary: this should never be user-supplied
+	CurrentContextName          string                 `yaml:"-"`               // transitionary: this should never be user-supplied
+	CurrentContext              Context                `yaml:"-"`               // private, filled in by init code. The `-` instructs the yaml lib to not look for this field
 	Contexts                    map[string]Context     `yaml:"contexts"`
 }
 
@@ -96,11 +97,12 @@ type KubeContext struct {
 }
 
 type KubeConfig struct {
-	ApiVersion     string        `yaml:"apiVersion"`
-	Kind           string        `yaml:"kind"`
-	Clusters       []KubeCluster `yaml:"clusters"`
-	Contexts       []KubeContext `yaml:"contexts"`
-	CurrentContext string        `yaml:"current-context"`
+	ApiVersion           string        `yaml:"apiVersion"`
+	Kind                 string        `yaml:"kind"`
+	Clusters             []KubeCluster `yaml:"clusters"`
+	Contexts             []KubeContext `yaml:"contexts"`
+	CurrentContextUnused string        `yaml:"current-context"` // transitionary: this should never be user-supplied
+	CurrentContext       string        `yaml:"-"`               // transitionary: this should never be user-supplied
 }
 
 // ValidateAndInit ensures the AnkhConfig is internally sane and populates
