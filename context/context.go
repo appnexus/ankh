@@ -213,6 +213,7 @@ type Chart struct {
 	DefaultValues    map[string]interface{} `yaml:"default-values"`
 	Values           map[string]interface{}
 	ResourceProfiles map[string]interface{} `yaml:"resource-profiles"`
+	Releases         map[string]interface{}
 }
 
 type ChartFiles struct {
@@ -222,6 +223,7 @@ type ChartFiles struct {
 	ValuesPath               string
 	AnkhValuesPath           string
 	AnkhResourceProfilesPath string
+	AnkhReleasesPath         string
 }
 
 // AnkhFile defines the shape of the `ankh.yaml` file which is used to define

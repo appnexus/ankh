@@ -166,6 +166,17 @@ charts:
 
 An Ankh file tracks the target namespace and all of the charts you want to manage.
 
+### Ankh yaml in Charts
+
+Ankh supports reading from three special files in a chart, in the following order of precedence:
+
+* ankh-values.yaml
+* ankh-resource-profiles.yaml
+* ankh-releases.yaml
+
+These files should be structured the the same way they would be if they were present as keys, less `ankh-`, in an Ankh file.
+See YAML schemas below for more on `values`, `resource-profiles`, and `releases`.
+
 ## YAML schemas
 
 #### `AnkhConfig`
@@ -225,3 +236,4 @@ An Ankh file tracks the target namespace and all of the charts you want to manag
 | default-values    | RawYaml            | Optional. Values to use for all environment classes and resource profiles.                                                                                                                                     |
 | values            | map[string]RawYaml | Optional. Values to use, by environment class.                                                                                                                                                                 |
 | resource-profiles | map[string]RawYaml | Optional. Values to use, by resource profile.                                                                                                                                                                  |
+| releases          | map[string]RawYaml | Optional. Values to use, by release.                                                                                                                                                                  |

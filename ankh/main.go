@@ -528,7 +528,7 @@ func main() {
 		chart := cmd.StringOpt("chart", "", "Limits the inspect command to only the specified chart")
 
 		cmd.Command("values", "For each chart, display contents of values.yaml, "+
-			"ankh-values.yaml, and ankh-resource-profiles.yaml", func(cmd *cli.Cmd) {
+			"ankh-values.yaml, ankh-resource-profiles.yaml, and ankh-releases.yaml", func(cmd *cli.Cmd) {
 			cmd.Spec += " [--use-context]"
 			useContext := cmd.BoolOpt("use-context", false, "Select values by current context")
 
