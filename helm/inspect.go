@@ -90,7 +90,7 @@ func InspectValues(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ank
 		result += string(bytes)
 	}
 
-	bytes, err = getChartFileContent(ctx, files.AnkhReleasesPath, ctx.UseContext, ctx.AnkhConfig.CurrentContext.EnvironmentClass)
+	bytes, err = getChartFileContent(ctx, files.AnkhReleasesPath, ctx.UseContext, ctx.AnkhConfig.CurrentContext.Release)
 	if err != nil {
 		return "", err
 	}
