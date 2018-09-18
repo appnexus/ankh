@@ -1,6 +1,7 @@
 package helm
 
 import (
+	"bytes"
 	"crypto/tls"
 	"fmt"
 	"gopkg.in/yaml.v2"
@@ -11,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"bytes"
 
 	"github.com/appnexus/ankh/context"
 	"github.com/appnexus/ankh/util"
@@ -111,6 +111,7 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, char
 		ValuesPath:               filepath.Join(chartDir, "values.yaml"),
 		AnkhValuesPath:           filepath.Join(chartDir, "ankh-values.yaml"),
 		AnkhResourceProfilesPath: filepath.Join(chartDir, "ankh-resource-profiles.yaml"),
+		AnkhReleasesPath:         filepath.Join(chartDir, "ankh-releases.yaml"),
 	}
 
 	return files, nil
@@ -150,13 +151,22 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		helmArgs = append(helmArgs, "-f", files.AnkhValuesPath)
 	}
 
-	// Load `profiles` from chart
+	// Load `resource-profiles` from chart
 	_, resourceProfilesError := os.Stat(files.AnkhResourceProfilesPath)
 	if resourceProfilesError == nil {
 		if _, err := util.CreateReducedYAMLFile(files.AnkhResourceProfilesPath, currentContext.ResourceProfile); err != nil {
 			return "", fmt.Errorf("unable to process ankh-resource-profiles.yaml file for chart '%s': %v", chart.Name, err)
 		}
 		helmArgs = append(helmArgs, "-f", files.AnkhResourceProfilesPath)
+	}
+
+	// Load `releases` from chart
+	_, releasesError := os.Stat(files.AnkhReleasesPath)
+	if releasesError == nil {
+		if _, err := util.CreateReducedYAMLFile(files.AnkhReleasesPath, currentContext.Release); err != nil {
+			return "", fmt.Errorf("unable to process ankh-releases.yaml file for chart '%s': %v", chart.Name, err)
+		}
+		helmArgs = append(helmArgs, "-f", files.AnkhReleasesPath)
 	}
 
 	// Load `default-values` from ankhFile
@@ -203,6 +213,22 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		}
 
 		helmArgs = append(helmArgs, "-f", resourceProfilesPath)
+	}
+
+	// Load `releases` from ankhFile
+	if chart.Releases != nil && chart.Releases[currentContext.Release] != nil {
+		releasesPath := filepath.Join(files.Dir, "releases.yaml")
+		releasesBytes, err := yaml.Marshal(chart.Releases[currentContext.Release])
+
+		if err != nil {
+			return "", err
+		}
+
+		if err := ioutil.WriteFile(releasesPath, releasesBytes, 0644); err != nil {
+			return "", err
+		}
+
+		helmArgs = append(helmArgs, "-f", releasesPath)
 	}
 
 	// Check if Global contains anything and append them
@@ -272,7 +298,13 @@ func Template(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) (string, error
 		ctx.Logger.Debugf("templating charts")
 
 		for _, chart := range ankhFile.Charts {
-			ctx.Logger.Debugf("templating chart '%s'", chart.Name)
+			extraString := ""
+			if chart.Version != "" {
+				extraString = fmt.Sprintf(" using version \"%v\"", chart.Version)
+			} else if chart.Path != "" {
+				extraString = fmt.Sprintf(" using path \"%v\"", chart.Path)
+			}
+			ctx.Logger.Infof("Templating chart \"%s\"%s", chart.Name, extraString)
 			chartOutput, err := templateChart(ctx, chart, ankhFile)
 			if err != nil {
 				return finalOutput, err

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/appnexus/ankh/util"
 	"github.com/sirupsen/logrus"
@@ -33,14 +34,14 @@ type ExecutionContext struct {
 
 	Mode Mode
 
-	Verbose, DryRun, WarnOnConfigError, UseContext, IgnoreConfigError bool
+	Verbose, DryRun, WarnOnConfigError, UseContext, IgnoreContextAndEnv bool
 
-	AnkhConfigPath  string
-	KubeConfigPath  string
-	ContextOverride string
-	Environment     string
-	DataDir         string
-	HelmSetValues   map[string]string
+	AnkhConfigPath string
+	KubeConfigPath string
+	Context        string
+	Environment    string
+	DataDir        string
+	HelmSetValues  map[string]string
 
 	Filters []string
 
@@ -76,8 +77,9 @@ type AnkhConfig struct {
 	SupportedEnvironments       []string               `yaml:"supported-environments"`                  // deprecated in favor of `supported-environment-classes`
 	SupportedEnvironmentClasses []string               `yaml:"supported-environment-classes,omitempty"` // omitempty until we remove `supported-environments`
 	SupportedResourceProfiles   []string               `yaml:"supported-resource-profiles"`
-	CurrentContextName          string                 `yaml:"current-context"`
-	CurrentContext              Context                `yaml:"-"` // private, filled in by init code. The `-` instructs the yaml lib to not look for this field
+	CurrentContextNameUnused    string                 `yaml:"current-context"` // transitionary: this should never be user-supplied
+	CurrentContextName          string                 `yaml:"-"`               // transitionary: this should never be user-supplied
+	CurrentContext              Context                `yaml:"-"`               // private, filled in by init code. The `-` instructs the yaml lib to not look for this field
 	Contexts                    map[string]Context     `yaml:"contexts"`
 }
 
@@ -96,11 +98,12 @@ type KubeContext struct {
 }
 
 type KubeConfig struct {
-	ApiVersion     string        `yaml:"apiVersion"`
-	Kind           string        `yaml:"kind"`
-	Clusters       []KubeCluster `yaml:"clusters"`
-	Contexts       []KubeContext `yaml:"contexts"`
-	CurrentContext string        `yaml:"current-context"`
+	ApiVersion           string        `yaml:"apiVersion"`
+	Kind                 string        `yaml:"kind"`
+	Clusters             []KubeCluster `yaml:"clusters"`
+	Contexts             []KubeContext `yaml:"contexts"`
+	CurrentContextUnused string        `yaml:"current-context"` // transitionary: this should never be user-supplied
+	CurrentContext       string        `yaml:"-"`               // transitionary: this should never be user-supplied
 }
 
 // ValidateAndInit ensures the AnkhConfig is internally sane and populates
@@ -210,6 +213,7 @@ type Chart struct {
 	DefaultValues    map[string]interface{} `yaml:"default-values"`
 	Values           map[string]interface{}
 	ResourceProfiles map[string]interface{} `yaml:"resource-profiles"`
+	Releases         map[string]interface{}
 }
 
 type ChartFiles struct {
@@ -219,6 +223,7 @@ type ChartFiles struct {
 	ValuesPath               string
 	AnkhValuesPath           string
 	AnkhResourceProfilesPath string
+	AnkhReleasesPath         string
 }
 
 // AnkhFile defines the shape of the `ankh.yaml` file which is used to define
@@ -308,6 +313,8 @@ func getAnkhFileInternal(ctx *ExecutionContext) (AnkhFile, error) {
 }
 
 func getAnkhFileForChart(ctx *ExecutionContext, singleChart string) (AnkhFile, error) {
+	versionOverride := ""
+
 	if _, err := os.Stat(ctx.AnkhFilePath); err == nil {
 		ctx.Logger.Infof("Reading Ankh file %v", ctx.AnkhFilePath)
 		ankhFile, err := ParseAnkhFile(ctx.AnkhFilePath)
@@ -316,17 +323,44 @@ func getAnkhFileForChart(ctx *ExecutionContext, singleChart string) (AnkhFile, e
 		}
 		ctx.Logger.Debugf("- OK: %v", ctx.AnkhFilePath)
 
+		// The single chart argument may have a version override in the format `name:version`
+		// Extract that now if possible.
+		tokens := strings.Split(singleChart, ":")
+		if len(tokens) > 2 {
+			ctx.Logger.Fatalf("Invalid chart '%v'. Too many `:` characters found. Chart must either be a name with no `:`, or in the combined `name:version` format.")
+		}
+		if len(tokens) == 2 {
+			singleChart = tokens[0]
+			versionOverride = tokens[1]
+			ctx.Logger.Debugf("Searching for chart named %v, using version override %v", singleChart, versionOverride)
+		}
+
 		// If we find that our chart arg matches a chart in the array,
 		// then that's the one and only chart we need to operate on.
 		// Replace the charts array with that singleton, and return.
 		for _, chart := range ankhFile.Charts {
 			if singleChart == chart.Name {
 				ctx.Logger.Debugf("Truncating Charts array to the singleton %v", singleChart)
-				ankhFile.Charts = []Chart{chart}
+				if versionOverride != "" {
+					ctx.Logger.Infof("Using chart version %v and overriding any existing `path` config", versionOverride)
+					newChart := chart
+					newChart.Path = ""
+					newChart.Version = versionOverride
+					ankhFile.Charts = []Chart{newChart}
+				} else {
+					ankhFile.Charts = []Chart{chart}
+				}
 				return ankhFile, nil
 			}
 		}
-		ctx.Logger.Debugf("Did not find chart argument %v in the `charts` array", singleChart)
+
+		// Charts in the form name:version should never attempt to be resolved using a local path.
+		complaint := fmt.Sprintf("Did not find chart argument %v in the `charts` array", singleChart)
+		if versionOverride != "" {
+			ctx.Logger.Fatalf(complaint)
+		} else {
+			ctx.Logger.Debugf(complaint)
+		}
 	}
 
 	// The only way to succeed now is to use singleChart as a path to a local chart directory.

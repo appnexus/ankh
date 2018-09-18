@@ -17,7 +17,7 @@ const CHART_NAME = "test_chart"
 const ANKH_FILE_PATH = "/path/to/ankh.yaml"
 const TEST_DIR = "/tmp/ankh"
 const ANKH_VALUES = "ankh-values.yaml"
-const RESOURCE_PROFILES = "ankh-resource-profiles.yaml"
+const RELEASES = "ankh-releases.yaml"
 const VALUES = "values.yaml"
 
 func newCtx() *ankh.ExecutionContext {
@@ -67,6 +67,7 @@ func findFilesMock(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ank
 	return ankh.ChartFiles{
 		AnkhValuesPath:           TEST_DIR + "/" + ANKH_VALUES,
 		AnkhResourceProfilesPath: TEST_DIR + "/" + RESOURCE_PROFILES,
+		AnkhReleasesPath:         TEST_DIR + "/" + RELEASES,
 		ValuesPath:               TEST_DIR + "/" + VALUES,
 		ChartDir:                 TEST_DIR,
 	}, nil

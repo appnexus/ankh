@@ -33,6 +33,28 @@ var AnkhBuildVersion string = "DEVELOPMENT"
 
 var log = logrus.New()
 
+func printEnvironments(ankhConfig *ankh.AnkhConfig) {
+	keys := []string{}
+	for k, _ := range ankhConfig.Environments {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, name := range keys {
+		log.Infof("* %v", name)
+	}
+}
+
+func printContexts(ankhConfig *ankh.AnkhConfig) {
+	keys := []string{}
+	for k, _ := range ankhConfig.Contexts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, name := range keys {
+		log.Infof("* %v", name)
+	}
+}
+
 func filterOutput(ctx *ankh.ExecutionContext, helmOutput string) string {
 	ctx.Logger.Debugf("Filtering with inclusive list `%v`", ctx.Filters)
 
@@ -114,14 +136,7 @@ func execute(ctx *ankh.ExecutionContext) {
 		if !ok {
 			log.Errorf("Environment '%v' not found in `environments`", ctx.Environment)
 			log.Info("The following environments are available:")
-			keys := []string{}
-			for k, _ := range ctx.AnkhConfig.Environments {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, name := range keys {
-				log.Infof("- %v", name)
-			}
+			printEnvironments(&ctx.AnkhConfig)
 			os.Exit(1)
 		}
 
@@ -137,7 +152,7 @@ func execute(ctx *ankh.ExecutionContext) {
 	} else {
 		if ctx.AnkhConfig.CurrentContextName == "" {
 			// Not sure if this is possible actually
-			log.Fatalf("No CurrentContextName found. Must provide an explicit --context or --environment")
+			log.Fatalf("No CurrentContextName found. Must provide an explicit `--context` or `--environment`")
 		}
 		executeContext(ctx, rootAnkhFile)
 	}
@@ -264,15 +279,16 @@ func checkContext(ankhConfig *ankh.AnkhConfig, context string) {
 	_, ok := ankhConfig.Contexts[context]
 	if !ok {
 		log.Warn("`current-context` will be removed in the next major version of ankh. It does not support values that come from `include`. Use the `--context` flag instead.")
-		log.Errorf("Context '%v' not found in `contexts`", context)
-		log.Info("The following contexts are available:")
-		keys := []string{}
-		for k, _ := range ankhConfig.Contexts {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, name := range keys {
-			log.Infof("- %v", name)
+		if context == "" {
+			log.Errorf("No context or environment provided.")
+			log.Info("The following contexts are available:")
+			printContexts(ankhConfig)
+			log.Info("The following environments are available:")
+			printEnvironments(ankhConfig)
+		} else {
+			log.Errorf("Context '%v' not found in `contexts`", context)
+			log.Info("The following contexts are available:")
+			printContexts(ankhConfig)
 		}
 		os.Exit(1)
 	}
@@ -282,15 +298,9 @@ func switchContext(ctx *ankh.ExecutionContext, ankhConfig *ankh.AnkhConfig, cont
 	checkContext(ankhConfig, context)
 
 	errs := ankhConfig.ValidateAndInit(ctx, context)
-	if len(errs) > 0 {
-		if ctx.WarnOnConfigError {
-			for _, s := range errs {
-				log.Warnf("%v", s)
-			}
-		} else if !ctx.IgnoreConfigError {
-			// The config validation errors are not recoverable.
-			log.Fatalf("%v", util.MultiErrorFormat(errs))
-		}
+	if len(errs) > 0 && !ctx.IgnoreContextAndEnv {
+		// The config validation errors are not recoverable.
+		log.Fatalf("%v", util.MultiErrorFormat(errs))
 	}
 }
 
@@ -313,15 +323,16 @@ func main() {
 			EnvVar: "KUBECONFIG",
 		})
 		context = app.String(cli.StringOpt{
-			Name:   "context",
+			Name:   "c context",
 			Value:  "",
 			Desc:   "The context to use. Must provide this, or a whole environment via --environment",
 			EnvVar: "ANKHCONTEXT",
 		})
 		environment = app.String(cli.StringOpt{
-			Name:  "e environment",
-			Value: "",
-			Desc:  "The environment to use. Must provide this, or an individual context via --context",
+			Name:   "e environment",
+			Value:  "",
+			Desc:   "The environment to use. Must provide this, or an individual context via `--context`",
+			EnvVar: "ANKHENVIRONMENT",
 		})
 		namespace = app.String(cli.StringOpt{
 			Name:  "n namespace",
@@ -366,21 +377,20 @@ func main() {
 		}
 
 		if *context != "" && *environment != "" {
-			log.Fatalf("Must not provide both --context and --environment, because an environment maps to one or more contexts.")
+			log.Fatalf("Must not provide both `--context` and `--environment`, because an environment maps to one or more contexts.")
 		}
 
 		ctx = &ankh.ExecutionContext{
-			Verbose:           *verbose,
-			AnkhConfigPath:    *ankhconfig,
-			KubeConfigPath:    *kubeconfig,
-			ContextOverride:   *context,
-			Environment:       *environment,
-			Namespace:         *namespace,
-			DataDir:           path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
-			Logger:            log,
-			HelmSetValues:     helmVars,
-			WarnOnConfigError: ctx.WarnOnConfigError,
-			IgnoreConfigError: ctx.IgnoreConfigError,
+			Verbose:             *verbose,
+			AnkhConfigPath:      *ankhconfig,
+			KubeConfigPath:      *kubeconfig,
+			Context:             *context,
+			Environment:         *environment,
+			Namespace:           *namespace,
+			DataDir:             path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
+			Logger:              log,
+			HelmSetValues:       helmVars,
+			IgnoreContextAndEnv: ctx.IgnoreContextAndEnv,
 		}
 
 		log.Debugf("Using KubeConfigPath %v (KUBECONFIG = '%v')", ctx.KubeConfigPath, os.Getenv("KUBECONFIG"))
@@ -401,15 +411,9 @@ func main() {
 			log.Debugf("Using config from path %v", configPath)
 
 			ankhConfig, err := config.GetAnkhConfig(ctx, configPath)
-			if err != nil {
-				if ctx.WarnOnConfigError {
-					for _, s := range strings.Split(err.Error(), "\n") {
-						log.Warnf("%v: %v", configPath, s)
-					}
-				} else if !ctx.IgnoreConfigError {
-					// The config validation errors are not recoverable.
-					check(err)
-				}
+			if err != nil && !ctx.IgnoreContextAndEnv {
+				// The config validation errors are not recoverable.
+				check(err)
 			}
 
 			// Merge it in. We'll need to dedup arrays later.
@@ -424,10 +428,10 @@ func main() {
 		mergedAnkhConfig.SupportedEnvironmentClasses = util.ArrayDedup(mergedAnkhConfig.SupportedEnvironmentClasses)
 		mergedAnkhConfig.SupportedResourceProfiles = util.ArrayDedup(mergedAnkhConfig.SupportedResourceProfiles)
 
-		if ctx.ContextOverride != "" {
-			mergedAnkhConfig.CurrentContextName = ctx.ContextOverride
+		if ctx.Context != "" {
+			mergedAnkhConfig.CurrentContextName = ctx.Context
 		}
-		if ctx.Environment == "" && !ctx.IgnoreConfigError {
+		if ctx.Environment == "" && !ctx.IgnoreContextAndEnv {
 			log.Debugf("Switching to context %v", mergedAnkhConfig.CurrentContextName)
 			switchContext(ctx, &mergedAnkhConfig, mergedAnkhConfig.CurrentContextName)
 		}
@@ -524,7 +528,7 @@ func main() {
 		chart := cmd.StringOpt("chart", "", "Limits the inspect command to only the specified chart")
 
 		cmd.Command("values", "For each chart, display contents of values.yaml, "+
-			"ankh-values.yaml, and ankh-resource-profiles.yaml", func(cmd *cli.Cmd) {
+			"ankh-values.yaml, ankh-resource-profiles.yaml, and ankh-releases.yaml", func(cmd *cli.Cmd) {
 			cmd.Spec += " [--use-context]"
 			useContext := cmd.BoolOpt("use-context", false, "Select values by current context")
 
@@ -533,7 +537,7 @@ func main() {
 				ctx.UseContext = *useContext
 				ctx.Chart = *chart
 				if ctx.Environment != "" {
-					log.Fatalf("Must not provide --environment to inspect, because inspect operates on charts using a single context.")
+					log.Fatalf("Must not provide `--environment` to inspect, because inspect operates on charts using a single context.")
 				}
 				inspect(ctx, helm.InspectValues)
 				os.Exit(0)
@@ -562,13 +566,9 @@ func main() {
 	})
 
 	app.Command("config", "Manage ankh configuration", func(cmd *cli.Cmd) {
-		ctx.WarnOnConfigError = true
+		ctx.IgnoreContextAndEnv = true
 
 		cmd.Command("init", "Initialize ankh configuration", func(cmd *cli.Cmd) {
-			// Sloppy
-			ctx.WarnOnConfigError = false
-			ctx.IgnoreConfigError = true
-
 			cmd.Action = func() {
 				if len(ctx.AnkhConfig.SupportedEnvironmentClasses) == 0 {
 					ctx.AnkhConfig.SupportedEnvironmentClasses = []string{"dev"}
@@ -578,11 +578,6 @@ func main() {
 				if len(ctx.AnkhConfig.SupportedResourceProfiles) == 0 {
 					ctx.AnkhConfig.SupportedResourceProfiles = []string{"constrained"}
 					ctx.Logger.Infof("Initializing `supported-resource-profiles`: %v", ctx.AnkhConfig.SupportedResourceProfiles)
-				}
-
-				if ctx.AnkhConfig.CurrentContextName == "" {
-					ctx.AnkhConfig.CurrentContextName = "minikube"
-					ctx.Logger.Infof("Initializing `current-context`: %v", ctx.AnkhConfig.CurrentContextName)
 				}
 
 				if len(ctx.AnkhConfig.Contexts) == 0 {
@@ -614,42 +609,6 @@ func main() {
 				check(err)
 
 				fmt.Print(string(out))
-				os.Exit(0)
-			}
-		})
-
-		cmd.Command("use-context", "Switch to a context", func(cmd *cli.Cmd) {
-			cmd.Spec = "CONTEXT"
-
-			arg := cmd.StringArg("CONTEXT", "", "")
-
-			cmd.Action = func() {
-				if *arg == "" {
-					log.Error("Missing CONTEXT")
-					os.Exit(1)
-				}
-
-				context := *arg
-
-				// Read + modify + write the local config only.
-				// We do not want to serialize anything included from a remote config.
-				body, err := ioutil.ReadFile(ctx.AnkhConfigPath)
-				check(err)
-
-				ankhConfig := ankh.AnkhConfig{}
-				err = yaml.UnmarshalStrict(body, &ankhConfig)
-				check(err)
-
-				checkContext(&ankhConfig, context)
-				ankhConfig.CurrentContextName = context
-
-				out, err := yaml.Marshal(ankhConfig)
-				check(err)
-
-				err = ioutil.WriteFile(ctx.AnkhConfigPath, out, 0644)
-				check(err)
-
-				fmt.Printf("Switched to context \"%v\".\n", context)
 				os.Exit(0)
 			}
 		})
@@ -689,21 +648,10 @@ func main() {
 				os.Exit(0)
 			}
 		})
-
-		cmd.Command("current-context", "Get the current context", func(cmd *cli.Cmd) {
-			cmd.Action = func() {
-				if ctx.Environment != "" {
-					log.Fatalf("Must not provide --environment to current-context, because an environment maps to one or more contexts.")
-				}
-				fmt.Println(ctx.AnkhConfig.CurrentContextName)
-				os.Exit(0)
-			}
-		})
 	})
 
 	app.Command("version", "Show version info", func(cmd *cli.Cmd) {
-		ctx.WarnOnConfigError = true
-		ctx.IgnoreConfigError = true
+		ctx.IgnoreContextAndEnv = true
 
 		cmd.Action = func() {
 			ctx.Logger.Infof("Ankh version info:")

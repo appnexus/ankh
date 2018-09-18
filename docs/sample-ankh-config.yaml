@@ -1,8 +1,3 @@
-# current-context defines which context you currently have "selected". It's
-# common for this value to change frequently as you move around to different
-# clusters.
-current-context: minikube
-
 # supported-environment-classes define a list of your supported environment classes.
 # Used for validation of ankh files. It's best practice to keep this value in sync with
 # the rest of your teams so there isn't drift.
