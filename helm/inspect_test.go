@@ -3,6 +3,7 @@ package helm
 import (
 	"fmt"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -18,6 +19,7 @@ const ANKH_FILE_PATH = "/path/to/ankh.yaml"
 const TEST_DIR = "/tmp/ankh"
 const ANKH_VALUES = "ankh-values.yaml"
 const RESOURCE_PROFILES = "ankh-resource-profiles.yaml"
+const RELEASES = "ankh-releases.yaml"
 const VALUES = "values.yaml"
 
 func newCtx() *ankh.ExecutionContext {
@@ -28,11 +30,10 @@ func newCtx() *ankh.ExecutionContext {
 			CurrentContext: ankh.Context{
 				EnvironmentClass: "dev",
 				ResourceProfile:  "constrained",
+				Release:          "staging",
 				HelmRegistryURL:  "http://localhost",
 				KubeContext:      "dev",
 			},
-			SupportedEnvironmentClasses: []string{"dev"},
-			SupportedResourceProfiles:   []string{"constrained"},
 		},
 	}
 }
@@ -43,18 +44,35 @@ func newChart() ankh.Chart {
 		DefaultValues: map[string]interface{}{
 			"default_key": "default_value",
 		},
-		Values: map[string]interface{}{
-			"prod": map[string]interface{}{
-				"host": "test.adnxs.net",
+		Values: []yaml.MapItem{
+			yaml.MapItem{
+				Key:   "production",
+				Value: map[string]interface{}{"log_level": 3},
 			},
-			"dev": map[string]interface{}{
-				"host": "test.devnxs.net"},
+			yaml.MapItem{
+				Key:   "dev",
+				Value: map[string]interface{}{"log_level": 10},
+			},
 		},
-		ResourceProfiles: map[string]interface{}{
-			"natural": map[string]interface{}{
-				"cpu": 0.3},
-			"constrained": map[string]interface{}{
-				"cpu": 0.1},
+		ResourceProfiles: []yaml.MapItem{
+			yaml.MapItem{
+				Key:   "natural",
+				Value: map[string]interface{}{"cpu": 0.3},
+			},
+			yaml.MapItem{
+				Key:   "constrained",
+				Value: map[string]interface{}{"cpu": 0.1},
+			},
+		},
+		Releases: []yaml.MapItem{
+			yaml.MapItem{
+				Key:   "production",
+				Value: map[string]interface{}{"host": "test.external.com"},
+			},
+			yaml.MapItem{
+				Key:   "staging",
+				Value: map[string]interface{}{"host": "test.internal.net"},
+			},
 		},
 	}
 }
@@ -67,6 +85,7 @@ func findFilesMock(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ank
 	return ankh.ChartFiles{
 		AnkhValuesPath:           TEST_DIR + "/" + ANKH_VALUES,
 		AnkhResourceProfilesPath: TEST_DIR + "/" + RESOURCE_PROFILES,
+		AnkhReleasesPath:         TEST_DIR + "/" + RELEASES,
 		ValuesPath:               TEST_DIR + "/" + VALUES,
 		ChartDir:                 TEST_DIR,
 	}, nil
@@ -115,6 +134,7 @@ func TestInspectValues(t *testing.T) {
 		}
 
 		out, err := InspectValues(ctx, ankhFile, chart)
+		fmt.Println(out)
 		out = strings.TrimSpace(out)
 		if err != nil {
 			t.Error(err.Error())

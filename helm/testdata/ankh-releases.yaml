@@ -1,0 +1,4 @@
+production:
+  host: test.external.com
+staging:
+  host: test.internal.net

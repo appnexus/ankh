@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -316,8 +317,28 @@ func LineDiff(expected, found string) string {
 	return out
 }
 
-func CreateReducedYAMLFile(filename, key string) ([]byte, error) {
-	in := make(map[string]interface{})
+func MapSliceRegexMatch(mapSlice yaml.MapSlice, key string) (interface{}, error) {
+	for _, item := range mapSlice {
+		regex, ok := item.Key.(string)
+		if !ok {
+			return nil, fmt.Errorf("Could not parse key as string: %v", item.Key)
+		}
+		matched, err := regexp.MatchString(regex, key)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to evaluate regex %v over key %v: %v", key, regex, err)
+		}
+
+		if !matched {
+			continue
+		}
+
+		return item.Value, nil
+	}
+	return nil, nil
+}
+
+func CreateReducedYAMLFile(filename, key string, required bool) ([]byte, error) {
+	in := yaml.MapSlice{}
 	var result []byte
 	inBytes, err := ioutil.ReadFile(filename)
 	if err != nil {
@@ -328,23 +349,16 @@ func CreateReducedYAMLFile(filename, key string) ([]byte, error) {
 		return result, err
 	}
 
-	out := make(map[interface{}]interface{})
-
-	if in[key] == nil {
-		return result, fmt.Errorf("missing `%s` key", key)
+	out, err := MapSliceRegexMatch(in, key)
+	if err != nil {
+		return result, err
 	}
-
-	switch t := in[key].(type) {
-	case map[interface{}]interface{}:
-		for k, v := range t {
-			// TODO: using `.(string)` here could cause a panic in cases where the
-			// key isn't a string, which is pretty uncommon
-
-			// TODO: validate
-			out[k.(string)] = v
+	if out == nil {
+		if required {
+			return result, fmt.Errorf("missing `%s` key", key)
+		} else {
+			return result, nil
 		}
-	default:
-		out[key] = in[key]
 	}
 
 	outBytes, err := yaml.Marshal(&out)
