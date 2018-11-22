@@ -8,12 +8,15 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/manifoldco/promptui"
 	"github.com/sirupsen/logrus"
+	"github.com/coreos/go-semver/semver"
 )
 
 type CustomFormatter struct {
@@ -114,8 +117,9 @@ func Untar(dst string, r io.Reader) error {
 			}
 
 		// if it's a file create it
-		// TODO: why doesn't this line up with tar.TypeReg?
-		case 0:
+		case tar.TypeRegA:
+			fallthrough
+		case tar.TypeReg:
 			dir := filepath.Dir(target)
 			// sometimes we have to mkdir -p the directories to contain the files we extract
 			if _, err := os.Stat(dir); err != nil {
@@ -404,4 +408,132 @@ func ReadChartDirectory(chartDir string) (*HelmChart, error) {
 		return nil, fmt.Errorf("Did not find any `name` in %v", chartYamlPath)
 	}
 	return &helmChart, nil
+}
+
+func compareTokens(t1, t2 string) int {
+	// split on most things are are not a numeric. this will
+	// allow us to mostly compare by parsed numbers, and
+	// still fall back to string comparison when this isn't possible.
+	seps := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ~!@#$%^&*()_+-={}[]<>?/"
+	t1parts := strings.FieldsFunc(t1, func(r rune) bool {
+		return strings.Contains(seps, string(r))
+	})
+	t2parts := strings.FieldsFunc(t2, func(r rune) bool {
+		return strings.Contains(seps, string(r))
+	})
+	for i := 0; i < len(t1parts); i++ {
+		if i > len(t2parts)-1 {
+			// t2 has fewer parts than t1, so t1 is not less than
+			return 1
+		}
+		x, e1 := strconv.ParseInt(t1parts[i], 10, 0)
+		y, e2 := strconv.ParseInt(t2parts[i], 10, 0)
+		if e1 != nil || e2 != nil {
+			// fall back to string compare if there's
+			// any unexpected character
+			return strings.Compare(t1, t2)
+		} else if x < y {
+			return -1
+		} else if x > y {
+			return 1
+		}
+	}
+
+	return len(t1parts) - len(t2parts)
+}
+
+// Loosely fits the best-effot semver sort implemented by `sort -V`
+func FuzzySemVerCompare(s1, s2 string) bool {
+	s1parts := strings.Split(s1, ".")
+	s2parts := strings.Split(s2, ".")
+
+	for i := 0; i < len(s1parts); i++ {
+		if i > len(s2parts)-1 {
+			// s2 has fewer parts than s1, so s1 is not less than
+			return false
+		}
+		c := compareTokens(s1parts[i], s2parts[i])
+		if c != 0 {
+			return c <= 0
+		}
+	}
+
+	return len(s1parts) <= len(s2parts)
+}
+
+func PromptForUsername() (string, error) {
+	current_user, err := user.Current()
+	if err != nil {
+		return "", err
+	}
+
+	user_prompt := promptui.Prompt{
+		Label:   "Username:",
+		Default: current_user.Username,
+	}
+	username, err := user_prompt.Run()
+	if err != nil {
+		return "", err
+	}
+	return strings.Trim(username, " "), nil
+}
+
+func PromptForPassword() (string, error) {
+	passwordPrompt := promptui.Prompt{
+		Label: "Password:",
+		Mask:  '*',
+	}
+	password, err := passwordPrompt.Run()
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(password), nil
+}
+
+func PromptForInput(defaultValue string, label string) (string, error) {
+	prompt := promptui.Prompt{
+		Label:   label,
+		Default: defaultValue,
+	}
+
+	input, err := prompt.Run()
+	if err != nil {
+		return "", err
+	}
+	return input, nil
+}
+
+func PromptForSelection(choices []string, label string) (string, error) {
+	prompt := promptui.Select{
+		Label: label,
+		Items: choices,
+		Size: 10,
+	}
+
+	_, choice, err := prompt.Run()
+	if err != nil {
+		return "", err
+	}
+	return choice, nil
+}
+
+func SemverBump(version string, semVerType string) (string, error) {
+	v, err := semver.NewVersion(version)
+	if err != nil {
+		return "", err
+	}
+
+	switch strings.ToLower(semVerType) {
+	case "major":
+		v.BumpMajor()
+	case "minor":
+		v.BumpMinor()
+	case "patch":
+		v.BumpPatch()
+	default:
+		return "", fmt.Errorf("Unsupported semantic version type '%v'. Must be one of 'major', 'minor', or 'patch'", semVerType)
+	}
+
+	return v.String(), nil
 }

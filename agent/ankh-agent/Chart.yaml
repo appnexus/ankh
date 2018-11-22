@@ -1,4 +1,0 @@
-apiVersion: v1
-description: An application that will watch a git repo and execute changes against the current cluster
-name: ankh-agent
-version: 0.1.0

@@ -9,7 +9,6 @@ import (
 )
 
 const minimalValidAnkhFileYAML string = `
-admin-dependencies: []
 dependencies: []
 charts:
   - name: foo
@@ -109,30 +108,6 @@ func TestAnkhConfigValidateAndInit(t *testing.T) {
 		hasCorrectError := false
 		for _, err := range errs {
 			if strings.Contains(err.Error(), "Context 'test' not found in `contexts`") {
-				hasCorrectError = true
-			}
-		}
-
-		if !hasCorrectError {
-			t.Logf("was expecting to find a specific error in `errs`: %v", errs)
-			t.Fail()
-		}
-	})
-
-	t.Run("missing helm registry url in selected context", func(t *testing.T) {
-		ankhConfig := newValidAnkhConfig()
-
-		// "copy" the struct and reassign it since we can't modify a map in place
-		context := ankhConfig.Contexts["test"]
-		context.HelmRegistryURL = ""
-
-		ankhConfig.Contexts["test"] = context
-
-		errs := ankhConfig.ValidateAndInit(&ExecutionContext{Logger: log}, "")
-
-		hasCorrectError := false
-		for _, err := range errs {
-			if strings.Contains(err.Error(), "Current context 'test' has missing or empty `helm-registry-url`") {
 				hasCorrectError = true
 			}
 		}

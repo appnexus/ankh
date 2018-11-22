@@ -1,14 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/exec"
+	"os/signal"
 	"path"
-	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -19,11 +18,11 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
 
-	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v2"
 
 	"github.com/appnexus/ankh/config"
 	"github.com/appnexus/ankh/context"
+	"github.com/appnexus/ankh/docker"
 	"github.com/appnexus/ankh/helm"
 	"github.com/appnexus/ankh/kubectl"
 	"github.com/appnexus/ankh/util"
@@ -32,6 +31,29 @@ import (
 var AnkhBuildVersion string = "DEVELOPMENT"
 
 var log = logrus.New()
+
+func setLogLevel(ctx *ankh.ExecutionContext, level logrus.Level) {
+	if ctx.Quiet {
+		log.Level = logrus.ErrorLevel
+	} else if ctx.Verbose {
+		log.Level = logrus.DebugLevel
+	} else {
+		log.Level = level
+	}
+}
+
+func signalHandler(ctx *ankh.ExecutionContext, sigs chan os.Signal) {
+	process, _ := os.FindProcess(os.Getpid())
+	for {
+		sig := <-sigs
+		if !ctx.CatchSignals {
+			// This appears to work, but still doesn't seem totally right.
+			signal.Stop(sigs)
+			process.Signal(sig)
+			signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+		}
+	}
+}
 
 func printEnvironments(ankhConfig *ankh.AnkhConfig) {
 	keys := []string{}
@@ -53,6 +75,129 @@ func printContexts(ankhConfig *ankh.AnkhConfig) {
 	for _, name := range keys {
 		log.Infof("* %v", name)
 	}
+}
+
+func promptForChartVersionsAndTagValues(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error {
+	// Prompt for chart versions if any are missing
+	for i := 0; i < len(ankhFile.Charts); i++ {
+		chart := &ankhFile.Charts[i]
+
+		// Ensure that we have a namespace before we prompt for versions.
+		// If namespace is set on the command line, we'll use that as an
+		// override later during executeChartsOnNamespace, so don't check
+		// for anything here.
+		if ctx.Namespace == nil {
+			if ankhFile.Namespace != nil && chart.Namespace == nil {
+				ctx.Logger.Infof("Using namespace \"%v\" from Ankh file "+
+					"for chart \"%v\" which has no explicit namespace set",
+					*ankhFile.Namespace, chart.Name)
+				chart.Namespace = ankhFile.Namespace
+			}
+			if chart.Namespace == nil {
+				ctx.Logger.Fatalf("Namespace is required for chart \"%v\". "+
+					"Provide a namespace either on the command line using `-n/--namespace`, "+
+					"using `namespace:` in an Ankh file where this chart is defined (eg: ankh.yaml), "+
+					"or on the chart entry in the `charts` array in an Ankh file.",
+				chart.Name)
+			}
+		}
+
+		if chart.Version == "" {
+			versions, err := helm.ListVersions(ctx, chart.Name, true)
+			if err != nil {
+				return err
+			}
+
+			ctx.Logger.Infof("Found chart \"%v\" without a version", chart.Name)
+			selectedVersion, err := util.PromptForSelection(strings.Split(strings.Trim(versions, "\n "), "\n"),
+				fmt.Sprintf("Select a version for chart '%v'", chart.Name))
+			if err != nil {
+				return err
+			}
+
+			chart.Version = selectedVersion
+			ctx.Logger.Infof("Using %v@%v based on selection", chart.Name, chart.Version)
+		}
+
+		tagValueName := ctx.AnkhConfig.Helm.TagValueName
+		if chart.TagValueName != "" {
+			tagValueName = chart.TagValueName
+		}
+
+		// Do nothing if tagValueName is not configured - the user does not want this behavior.
+		if tagValueName == "" {
+			continue
+		}
+
+		// Treat any existing --set tagValueName=$tag argument as authoritative
+		for k, v := range ctx.HelmSetValues {
+			if k == tagValueName {
+				ctx.Logger.Infof("Using tag value \"%v=%s\" based on --set argument", tagValueName, v)
+				chart.Tag = v
+				break
+			}
+		}
+
+		// For certain operations, we can assume a safe `unset` value for tagValueName
+		// for the sole purpose of templating the Helm chart. The value won't be used
+		// meaningfully (like it would be with apply), so we choose this method instead
+		// of prompting the user for a value that isn't meaningful.
+		switch ctx.Mode {
+		case ankh.Rollback:
+			fallthrough
+		case ankh.Get:
+			fallthrough
+		case ankh.Pods:
+			fallthrough
+		case ankh.Exec:
+			fallthrough
+		case ankh.Logs:
+			_, ok := ctx.HelmSetValues[tagValueName]
+			if !ok {
+				// It's unset, so set it for the purpose of this execution
+				tag := "__ankh_tag_value_unset___"
+				ctx.Logger.Debugf("Setting configured tagValueName %v=%v for a safe operation",
+					tagValueName, tag)
+				chart.Tag = tag
+			}
+		}
+
+		// If we stil don't have a chart.Tag value, prompt.
+		if chart.Tag == "" {
+			// It's common for the primary image to be named after the chart, so that's our best guess
+			// as a default suggestion.
+			defaultValue := chart.Name
+
+			image, err := util.PromptForInput(defaultValue,
+				fmt.Sprintf("No tag specified for chart '%v'. Provide the name of an image to select tags for => ", chart.Name))
+			check(err)
+
+			output, err := docker.ListTags(ctx, image, true)
+			check(err)
+
+			trimmedOutput := strings.Trim(output, "\n ")
+			if trimmedOutput != "" {
+				tags := strings.Split(trimmedOutput, "\n")
+				tag, err := util.PromptForSelection(tags, fmt.Sprintf("Select a value for '%v'", tagValueName))
+				check(err)
+
+				ctx.Logger.Infof("Using tag %v=%s based on selection", tagValueName, tag)
+				chart.Tag = tag
+			} else {
+				complaint := fmt.Sprintf("Could not determine a tag value, and we check for this because `tagValueName` is configured to be `%v`."+
+					"You may want to try passing a tag value explicitly using `ankh --set %v=... `, or simply ignore "+
+					"this error entirely using `ankh --ignore-config-errors ...` (not recommended)",
+					tagValueName, tagValueName)
+				if ctx.IgnoreConfigErrors {
+					ctx.Logger.Warnf("%v", complaint)
+				} else {
+					ctx.Logger.Fatalf("%v", complaint)
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func filterOutput(ctx *ankh.ExecutionContext, helmOutput string) string {
@@ -91,14 +236,24 @@ func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) {
 	switch ctx.Mode {
 	case ankh.Apply:
 		action = "Applying chart"
+	case ankh.Rollback:
+		action = "Rolling back Deployment/StatefulSet from chart"
 	case ankh.Diff:
 		action = "Diffing objects from chart"
+	case ankh.Exec:
+		action = "Exec'ing on pods from chart"
 	case ankh.Explain:
 		action = "Explaining"
+	case ankh.Get:
+		action = "Getting objects from chart"
+	case ankh.Pods:
+		action = "Getting pods for Deployment/StatefulSet from chart"
 	case ankh.Template:
 		action = "Templating"
 	case ankh.Lint:
 		action = "Linting"
+	case ankh.Logs:
+		action = "Getting logs for pods from chart"
 	}
 
 	releaseLog := ""
@@ -111,25 +266,22 @@ func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) {
 		dryLog = " (dry run)"
 	}
 
-	namespaceLog := ""
-	if ankhFile.Namespace != "" {
-		namespaceLog = fmt.Sprintf(" to namespace \"%s\"", ankhFile.Namespace)
-	}
-
 	contextLog := fmt.Sprintf(" using kube-context \"%v\"", ctx.AnkhConfig.CurrentContext.KubeContext)
 	if ctx.AnkhConfig.CurrentContext.KubeServer != "" {
 		contextLog = fmt.Sprintf(" to kube-server \"%v\"", ctx.AnkhConfig.CurrentContext.KubeServer)
 	}
 
-	ctx.Logger.Infof("%v%v%v%v with environment class \"%v\" and resource profile \"%v\"%v", action,
+	ctx.Logger.Infof("%v%v%v%v with environment class \"%v\" and resource profile \"%v\"", action,
 		releaseLog, dryLog, contextLog,
 		ctx.AnkhConfig.CurrentContext.EnvironmentClass,
-		ctx.AnkhConfig.CurrentContext.ResourceProfile,
-		namespaceLog)
+		ctx.AnkhConfig.CurrentContext.ResourceProfile)
 }
 
 func execute(ctx *ankh.ExecutionContext) {
 	rootAnkhFile, err := ankh.GetAnkhFile(ctx)
+	check(err)
+
+	err = promptForChartVersionsAndTagValues(ctx, &rootAnkhFile)
 	check(err)
 
 	contexts := []string{}
@@ -165,27 +317,11 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile ankh.AnkhFile) {
 	dependencies := []string{}
 	if ctx.Chart == "" {
 		dependencies = rootAnkhFile.Dependencies
-		if ctx.AnkhConfig.CurrentContext.ClusterAdmin && len(rootAnkhFile.AdminDependencies) > 0 {
-			log.Infof("Found admin dependencies, processing those first...")
-			dependencies = append(rootAnkhFile.AdminDependencies, dependencies...)
-		}
 	} else {
 		log.Debugf("Skipping dependencies since we are operating only on chart %v", ctx.Chart)
 	}
 
 	executeAnkhFile := func(ankhFile ankh.AnkhFile) {
-		switch ctx.Mode {
-		case ankh.Apply:
-			fallthrough
-		case ankh.Explain:
-			// run the bootstrap scripts, if they exist
-			bootstrapScripts := ankhFile.Bootstrap.Scripts
-			if len(bootstrapScripts) > 0 {
-				log.Info("Bootstrapping...")
-				runScripts(ctx, bootstrapScripts)
-			}
-		}
-
 		logExecuteAnkhFile(ctx, ankhFile)
 
 		if ctx.HelmVersion == "" {
@@ -197,99 +333,139 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile ankh.AnkhFile) {
 			ctx.Logger.Debug("Using helm version: ", strings.TrimSpace(ver))
 		}
 
-		helmOutput, err := helm.Template(ctx, ankhFile)
-		check(err)
-
-		if len(ctx.Filters) > 0 {
-			helmOutput = filterOutput(ctx, helmOutput)
-		}
-
-		printOutput := ctx.Verbose
-		switch ctx.Mode {
-		case ankh.Diff:
-			printOutput = true
-			fallthrough
-		case ankh.Explain:
-			fallthrough
-		case ankh.Apply:
-			if ctx.KubectlVersion == "" {
-				ver, err := kubectl.Version()
-				if err != nil {
-					ctx.Logger.Fatalf("Failed to get kubectl version info: %v", err)
-				}
-				ctx.KubectlVersion = ver
-				ctx.Logger.Debug("Using kubectl version: ", strings.TrimSpace(ver))
-			}
-
-			kubectlOutput, err := kubectl.Execute(ctx, helmOutput, ankhFile, nil)
-			if err != nil && ctx.Mode == ankh.Diff {
-				ctx.Logger.Warnf("The `diff` feature entered alpha in kubectl v1.9.0, and seems to work best at version v1.12.1. Your results may vary. Current kubectl version string is `%s`", ctx.KubectlVersion)
-			}
+		executeChartsOnNamespace := func(charts []ankh.Chart, namespace string) {
+			helmOutput, err := helm.Template(ctx, charts, namespace)
 			check(err)
 
-			if ctx.Mode == ankh.Explain {
-				// Sweet string badnesss.
-				helmOutput = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(helmOutput), "&& \\"))
-				fmt.Println(fmt.Sprintf("(%s) | \\\n%s", helmOutput, kubectlOutput))
-			} else if printOutput {
-				fmt.Println(kubectlOutput)
-			}
-		case ankh.Template:
-			fmt.Println(helmOutput)
-		case ankh.Lint:
-			errors := helm.Lint(ctx, helmOutput, ankhFile)
-			if len(errors) > 0 {
-				for _, err := range errors {
-					ctx.Logger.Warningf("%v", err)
-				}
-				log.Fatalf("Lint found %d errors.", len(errors))
+			if len(ctx.Filters) > 0 {
+				helmOutput = filterOutput(ctx, helmOutput)
 			}
 
-			ctx.Logger.Infof("No issues.")
+			switch ctx.Mode {
+			case ankh.Diff:
+				fallthrough
+			case ankh.Rollback:
+				fallthrough
+			case ankh.Get:
+				fallthrough
+			case ankh.Pods:
+				fallthrough
+			case ankh.Exec:
+				fallthrough
+			case ankh.Explain:
+				fallthrough
+			case ankh.Logs:
+				fallthrough
+			case ankh.Apply:
+				if ctx.KubectlVersion == "" {
+					ver, err := kubectl.Version()
+					if err != nil {
+						ctx.Logger.Fatalf("Failed to get kubectl version info: %v", err)
+					}
+					ctx.KubectlVersion = ver
+					ctx.Logger.Debug("Using kubectl version: ", strings.TrimSpace(ver))
+				}
+
+				kubectlOutput, err := kubectl.Execute(ctx, helmOutput, namespace, nil)
+				if err != nil && ctx.Mode == ankh.Diff {
+					ctx.Logger.Warnf("The `diff` feature entered alpha in kubectl v1.9.0, and seems to work best at version v1.12.1. "+
+						"Your results may vary. Current kubectl version string is `%s`", ctx.KubectlVersion)
+				}
+				check(err)
+
+				if ctx.Mode == ankh.Explain {
+					// Sweet string badnesss.
+					helmOutput = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(helmOutput), "&& \\"))
+					fmt.Println(fmt.Sprintf("(%s) | \\\n%s", helmOutput, kubectlOutput))
+				} else {
+					if kubectlOutput != "" {
+						fmt.Println(kubectlOutput)
+					}
+				}
+			case ankh.Template:
+				fmt.Println(helmOutput)
+			case ankh.Lint:
+				errors := helm.Lint(ctx, helmOutput, ankhFile)
+				if len(errors) > 0 {
+					for _, err := range errors {
+						ctx.Logger.Warningf("%v", err)
+					}
+					log.Fatalf("Lint found %d errors.", len(errors))
+				}
+
+				ctx.Logger.Infof("No issues.")
+			}
+		}
+
+		logChartsExecute := func(charts []ankh.Chart, namespace string, extra string) {
+			plural := "s"
+			n := len(charts)
+			if n == 1 {
+				plural = ""
+			}
+			names := []string{}
+			for _, chart := range charts {
+				names = append(names, chart.Name)
+			}
+			ctx.Logger.Infof("Using %vnamespace \"%v\" for %v chart%v [ %v ]",
+				extra, namespace, n, plural, strings.Join(names, ", "))
+		}
+
+		if ctx.Namespace != nil {
+			// Namespace overridden on the command line, so use that one for everything.
+			namespace := *ctx.Namespace
+			logChartsExecute(ankhFile.Charts, namespace, "command-line override ")
+			executeChartsOnNamespace(ankhFile.Charts, namespace)
+		} else {
+			// Gather charts by namespace, and execute them in sets.
+			chartSets := make(map[string][]ankh.Chart)
+			for _, chart := range ankhFile.Charts {
+				namespace := *chart.Namespace
+				chartSets[namespace] = append(chartSets[namespace], chart)
+			}
+
+			// Sort the namespaces. We don't guarantee this behavior, but it's more sane than
+			// letting the namespace ordering depend on unorderd golang maps.
+			allNamespaces := []string{}
+			for namespace, _ := range chartSets {
+				allNamespaces = append(allNamespaces, namespace)
+			}
+			sort.Strings(allNamespaces)
+			for _, namespace := range allNamespaces {
+				charts := chartSets[namespace]
+				logChartsExecute(charts, namespace, "")
+				executeChartsOnNamespace(charts, namespace)
+			}
 		}
 	}
 
 	for _, dep := range dependencies {
 		log.Infof("Satisfying dependency: %v", dep)
 
-		prev, err := os.Getwd()
-		check(err)
-
-		err = os.Chdir(dep)
-		check(err)
-
-		wd, _ := os.Getwd()
-		ctx.Logger.Debugf("Running from directory %v", wd)
-
-		// Should this be configurable?
-		path := "ankh.yaml"
-
-		ctx.Logger.Debugf("Gathering local configuration...")
-		ankhFile, err := ankh.ParseAnkhFile(path)
+		ankhFilePath := dep
+		ankhFile, err := ankh.ParseAnkhFile(ankhFilePath)
 		if err == nil {
-			ctx.Logger.Debugf("- OK: %v", path)
+			ctx.Logger.Debugf("- OK: %v", ankhFilePath)
 		}
 		check(err)
 
 		executeAnkhFile(ankhFile)
 
-		err = os.Chdir(prev)
-		check(err)
+		log.Infof("Finished satisfying dependency: %v", dep)
 	}
 
 	if len(rootAnkhFile.Charts) > 0 {
 		executeAnkhFile(rootAnkhFile)
 	} else if len(dependencies) == 0 {
-		ctx.Logger.Warningf("No charts nor dependencies specified in ankh file %s, nothing to do", ctx.AnkhFilePath)
+		ctx.Logger.Warningf("No charts nor dependencies specified in Ankh file %s, nothing to do", ctx.AnkhFilePath)
 	}
 }
 
 func checkContext(ankhConfig *ankh.AnkhConfig, context string) {
 	_, ok := ankhConfig.Contexts[context]
 	if !ok {
-		log.Warn("`current-context` will be removed in the next major version of ankh. It does not support values that come from `include`. Use the `--context` flag instead.")
 		if context == "" {
-			log.Errorf("No context or environment provided.")
+			log.Errorf("No context or environment provided. Provide one using -c/--context or -e/--environment.")
 			log.Info("The following contexts are available:")
 			printContexts(ankhConfig)
 			log.Info("The following environments are available:")
@@ -315,10 +491,11 @@ func switchContext(ctx *ankh.ExecutionContext, ankhConfig *ankh.AnkhConfig, cont
 
 func main() {
 	app := cli.App("ankh", "Another Kubernetes Helper")
-	app.Spec = "[--verbose] [--ignore-config-errors] [--ankhconfig] [--kubeconfig] [--datadir] [--release] [--context] [--environment] [--namespace] [--set...]"
+	app.Spec = "[--verbose] [--quiet] [--ignore-config-errors] [--ankhconfig] [--kubeconfig] [--datadir] [--release] [--context] [--environment] [--namespace] [--set...]"
 
 	var (
 		verbose            = app.BoolOpt("v verbose", false, "Verbose debug mode")
+		quiet              = app.BoolOpt("q quiet", false, "Quiet mode. Critical logging only. The quiet option overrides the verbose option.")
 		ignoreConfigErrors = app.BoolOpt("ignore-config-errors", false, "Ignore certain configuration errors that have defined, but potentially dangerous behavior.")
 		ankhconfig         = app.String(cli.StringOpt{
 			Name:   "ankhconfig",
@@ -341,7 +518,7 @@ func main() {
 		context = app.String(cli.StringOpt{
 			Name:   "c context",
 			Value:  "",
-			Desc:   "The context to use. Must provide this, or a whole environment via --environment",
+			Desc:   "The context to use. Must provide this, or an environment via --environment",
 			EnvVar: "ANKHCONTEXT",
 		})
 		environment = app.String(cli.StringOpt{
@@ -350,15 +527,17 @@ func main() {
 			Desc:   "The environment to use. Must provide this, or an individual context via `--context`",
 			EnvVar: "ANKHENVIRONMENT",
 		})
-		namespace = app.String(cli.StringOpt{
-			Name:  "n namespace",
-			Value: "",
-			Desc:  "The namespace to use with kubectl. Optional. Overrides any namespace provided in an ankh file. Commonly used with --chart without any ankh.yaml to operate over a single, local chart directory",
+		namespaceSet = false
+		namespace    = app.String(cli.StringOpt{
+			Name:      "n namespace",
+			Value:     "",
+			Desc:      "The namespace to use with kubectl. Optional. Overrides any namespace provided in an Ankh file.",
+			SetByUser: &namespaceSet,
 		})
 		datadir = app.String(cli.StringOpt{
 			Name:   "datadir",
 			Value:  path.Join(os.Getenv("HOME"), ".ankh", "data"),
-			Desc:   "The data directory for ankh template history",
+			Desc:   "The data directory for Ankh template history",
 			EnvVar: "ANKHDATADIR",
 		})
 		helmSet = app.Strings(cli.StringsOpt{
@@ -376,11 +555,7 @@ func main() {
 	ctx := &ankh.ExecutionContext{}
 
 	app.Before = func() {
-		if *verbose {
-			log.Level = logrus.DebugLevel
-		} else {
-			log.Level = logrus.InfoLevel
-		}
+		setLogLevel(ctx, logrus.InfoLevel)
 
 		helmVars := map[string]string{}
 		for _, helmkvPair := range *helmSet {
@@ -396,20 +571,41 @@ func main() {
 			log.Fatalf("Must not provide both `--context` and `--environment`, because an environment maps to one or more contexts.")
 		}
 
+		var namespaceOpt *string
+		if namespaceSet {
+			namespaceOpt = namespace
+		}
+
 		ctx = &ankh.ExecutionContext{
 			Verbose:             *verbose,
+			Quiet:               *quiet,
 			AnkhConfigPath:      *ankhconfig,
 			KubeConfigPath:      *kubeconfig,
 			Context:             *context,
 			Release:             *release,
 			Environment:         *environment,
-			Namespace:           *namespace,
+			Namespace:           namespaceOpt,
 			DataDir:             path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
 			Logger:              log,
 			HelmSetValues:       helmVars,
 			IgnoreContextAndEnv: ctx.IgnoreContextAndEnv,
 			IgnoreConfigErrors:  ctx.IgnoreConfigErrors || *ignoreConfigErrors,
 		}
+
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+		go signalHandler(ctx, sigs)
+
+		if ctx.Verbose && ctx.Quiet {
+			// Quiet overrides verbose, since it's more likely that the user
+			// requires certain invocations to be quiet, and may be composing
+			// with other tools that set verbose by default. Somewhat contrived
+			// situation, but it feels right.
+			ctx.Verbose = false
+		}
+
+		// Default to info level logging
+		setLogLevel(ctx, logrus.InfoLevel)
 
 		log.Debugf("Using KubeConfigPath %v (KUBECONFIG = '%v')", ctx.KubeConfigPath, os.Getenv("KUBECONFIG"))
 		log.Debugf("Using AnkhConfigPath %v (ANKHCONFIG = '%v')", ctx.AnkhConfigPath, os.Getenv("ANKHCONFIG"))
@@ -430,9 +626,10 @@ func main() {
 
 			ankhConfig, err := config.GetAnkhConfig(ctx, configPath)
 			if err != nil {
-				if !ctx.IgnoreContextAndEnv {
+				// TODO: this is a mess
+				if !ctx.IgnoreContextAndEnv && !ctx.IgnoreConfigErrors {
 					// The config validation errors are not recoverable.
-					check(err)
+					log.Fatalf("%s: Rerun with `ankh --ignore-config-errors ...` to ignore this error and use the merged configuration anyway.", err)
 				} else {
 					log.Warnf("%v", err)
 				}
@@ -480,10 +677,13 @@ func main() {
 			log.Debugf("Switching to context %v", mergedAnkhConfig.CurrentContextName)
 			switchContext(ctx, &mergedAnkhConfig, mergedAnkhConfig.CurrentContextName)
 		}
+
+		// Save the original config, and then assume the mergedAnkhConfig as the config going forward.
+		ctx.OriginalAnkhConfig = ctx.AnkhConfig
 		ctx.AnkhConfig = mergedAnkhConfig
 	}
 
-	app.Command("explain", "Explain how an ankh file would be applied to a Kubernetes cluster", func(cmd *cli.Cmd) {
+	app.Command("explain", "Explain how an Ankh file would be applied to a Kubernetes cluster", func(cmd *cli.Cmd) {
 		cmd.Spec = "[-f] [--chart]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
@@ -499,7 +699,7 @@ func main() {
 		}
 	})
 
-	app.Command("apply", "Deploy an ankh file to a Kubernetes cluster", func(cmd *cli.Cmd) {
+	app.Command("apply", "Apply an Ankh file to a Kubernetes cluster", func(cmd *cli.Cmd) {
 		cmd.Spec = "[-f] [--dry-run] [--chart] [--filter...]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
@@ -523,7 +723,46 @@ func main() {
 		}
 	})
 
-	app.Command("diff", "Diff objects in a templated ankh file against those currently in a Kubernetes cluster", func(cmd *cli.Cmd) {
+	app.Command("rollback", "Rollback deployments associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[-f] [--dry-run] [--chart]"
+
+		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually rollback anything to a cluster")
+		chart := cmd.StringOpt("chart", "", "Limits the rollback command to only the specified chart")
+
+		cmd.Action = func() {
+			ctx.AnkhFilePath = *ankhFilePath
+			ctx.DryRun = *dryRun
+			ctx.Chart = *chart
+			ctx.Mode = ankh.Rollback
+			ctx.Filters = []string{"deployment", "statfulset"}
+
+			ctx.Logger.Warnf("Rollback is not a transactional operation.\n" +
+				"\n" +
+				"Rollback uses `kubectl rollout undo` which only rolls back ReplicaSet specs under Deployment and StatefulSet objects.\n" +
+				"\n" +
+				"This design has two notable limitations in the context of Ankh, Helm, and templated object manifests:\n" +
+				"1) Manifest attributes such as labels are NOT rolled back. This can be problematic for use cases that visually track " +
+				"object history using labels or annotations. It is almost certain that the resulting Deployment and ReplicaSet will appear inconsistent.\n" +
+				"2) Other Chart objects, such as ConfigMaps and Services, are by design not rolled back. This can be problematic for use cases that attempt " +
+				"to apply charts atomically, where the Deployment spec has a hard dependency on an associated Service or ConfigMap. Rollout undo will NOT " +
+				"do the right thing in this case. You MUST `ankh ... apply` using the co-dependent chart and tag value in order to converge back to a correct state.\n" +
+				"\n" +
+				"If you already know the chart version and associated tag values (eg: `--set ...`) that you want to converge to, use `ankh --set $... apply --chart $chartName@$prevVersion` instead.\n")
+			selection, err := util.PromptForSelection([]string{"Abort", "OK"},
+				"Are you certain that you want to run `kubectl rollout undo` to rollback to a previous ReplicaSet spec? Select OK to proceed.")
+			check(err)
+
+			if selection != "OK" {
+				ctx.Logger.Fatalf("Aborting")
+			}
+
+			execute(ctx)
+			os.Exit(0)
+		}
+	})
+
+	app.Command("diff", "Diff against live objects associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
 		cmd.Spec = "[-f] [--chart] [--filter...]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
@@ -531,6 +770,7 @@ func main() {
 		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action.")
 
 		cmd.Action = func() {
+			setLogLevel(ctx, logrus.InfoLevel)
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.DryRun = false
 			ctx.Chart = *chart
@@ -546,7 +786,139 @@ func main() {
 		}
 	})
 
-	app.Command("lint", "Lint an ankh file, checking for possible errors or mistakes", func(cmd *cli.Cmd) {
+	app.Command("get", "Get objects associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[-f] [--chart] [--filter...] [EXTRA...]"
+
+		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
+		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action.")
+		extra := cmd.StringsArg("EXTRA", []string{}, "Extra arguments to pass to `kubectl`, which can be specified after `--` eg: `ankh ... get -- -o json`")
+
+		cmd.Action = func() {
+			setLogLevel(ctx, logrus.InfoLevel)
+			ctx.AnkhFilePath = *ankhFilePath
+			ctx.DryRun = false
+			ctx.Chart = *chart
+			ctx.Mode = ankh.Get
+			filters := []string{}
+			for _, filter := range *filter {
+				filters = append(filters, string(filter))
+			}
+			ctx.Filters = filters
+			for _, e := range *extra {
+				ctx.Logger.Debugf("Appending extra arg: %+v", e)
+				ctx.ExtraArgs = append(ctx.ExtraArgs, e)
+			}
+
+			execute(ctx)
+			os.Exit(0)
+		}
+	})
+
+	app.Command("pods", "Get pods associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[-f] [-w] [-d] [--chart] [EXTRA...]"
+
+		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
+		watch := cmd.BoolOpt("w watch", false, "Watch for updates (ie: pass -w to kubectl)")
+		describe := cmd.BoolOpt("d describe", false, "Use `kubectl describe ...` instead of `kubectl get -o wide ...` for pods")
+		extra := cmd.StringsArg("EXTRA", []string{}, "Extra arguments to pass to `kubectl`, which can be specified after `--` eg: `ankh ... get -- -o json`")
+
+		cmd.Action = func() {
+			setLogLevel(ctx, logrus.InfoLevel)
+			ctx.AnkhFilePath = *ankhFilePath
+			ctx.DryRun = false
+			ctx.Describe = *describe
+			ctx.Chart = *chart
+			ctx.Mode = ankh.Pods
+			for _, e := range *extra {
+				ctx.Logger.Debugf("Appending extra arg: %+v", e)
+				ctx.ExtraArgs = append(ctx.ExtraArgs, e)
+			}
+			if *watch {
+				ctx.Logger.Debug("Appending watch args as extra args")
+				ctx.ExtraArgs = append(ctx.ExtraArgs, "-w")
+			}
+
+			execute(ctx)
+			os.Exit(0)
+		}
+	})
+
+	app.Command("logs", "Get logs for pods associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[-c] [-f] [--filename] [--previous] [--tail] [--chart] [CONTAINER]"
+
+		ankhFilePath := cmd.StringOpt("filename", "ankh.yaml", "Config file name")
+		numTailLines := cmd.IntOpt("t tail", 10, "The number of most recent log lines to see. Pass 0 to receive all log lines available from Kubernetes, which is subject to its own retential policy.")
+		follow := cmd.BoolOpt("f", false, "Follow logs")
+		previous := cmd.BoolOpt("p previous", false, "Get logs for the previously terminated container, if any")
+		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
+		container := cmd.StringOpt("c container", "", "The container to exec on. Required when there is more than one container running in the pods associated with the templated Ankh file.")
+		containerArg := cmd.StringArg("CONTAINER", "", "The container to get logs for. Required when there is more than one container running in the pods associated with the templated Ankh file.")
+
+		cmd.Action = func() {
+			setLogLevel(ctx, logrus.InfoLevel)
+			ctx.AnkhFilePath = *ankhFilePath
+			ctx.DryRun = false
+			ctx.Chart = *chart
+			ctx.Mode = ankh.Logs
+			if *follow {
+				ctx.ExtraArgs = append(ctx.ExtraArgs, "-f")
+			}
+			if *previous {
+				ctx.ExtraArgs = append(ctx.ExtraArgs, "--previous")
+			}
+			if *container != "" && *containerArg != "" && *container != *containerArg {
+				ctx.Logger.Fatalf("Conflicting positional argument '%v' and container option (-c) '%v'. Please ensure that these are the same, or only use one one.",
+					*containerArg, *container)
+			}
+			if *container != "" {
+				ctx.ExtraArgs = append(ctx.ExtraArgs, []string{"-c", *container}...)
+			} else if *containerArg != "" {
+				ctx.ExtraArgs = append(ctx.ExtraArgs, []string{"-c", *containerArg}...)
+			}
+			if *numTailLines > 0 {
+				n := strconv.FormatInt(int64(*numTailLines), 10)
+				ctx.ExtraArgs = append(ctx.ExtraArgs, []string{"--tail", n}...)
+			}
+			ctx.Logger.Debugf("Using extraArgs %+v", ctx.ExtraArgs)
+
+			execute(ctx)
+			os.Exit(0)
+		}
+	})
+
+	app.Command("exec", "Exec a command on pods associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[-c] [--filename] [--chart] [PASSTHROUGH...]"
+
+		ankhFilePath := cmd.StringOpt("filename", "ankh.yaml", "Config file name")
+		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
+		container := cmd.StringOpt("c container", "", "The container to exec on. Required when there is more than one container running in the pods associated with the templated Ankh file.")
+		extra := cmd.StringsArg("PASSTHROUGH", []string{}, "Pass-through arguments to provide to `kubectl` after `exec`, which can be specified after `--` eg: `ankh ... get -- -o json`")
+
+		cmd.Action = func() {
+			setLogLevel(ctx, logrus.InfoLevel)
+			ctx.AnkhFilePath = *ankhFilePath
+			ctx.DryRun = false
+			ctx.Chart = *chart
+			ctx.Mode = ankh.Exec
+			if *container != "" {
+				ctx.ExtraArgs = append(ctx.ExtraArgs, []string{"-c", *container}...)
+			}
+			if len(*extra) == 0 {
+				*extra = []string{"/bin/sh"}
+			}
+			for _, e := range *extra {
+				ctx.Logger.Debugf("Appending extra arg: %+v", e)
+				ctx.PassThroughArgs = append(ctx.PassThroughArgs, e)
+			}
+
+			execute(ctx)
+			os.Exit(0)
+		}
+	})
+
+	app.Command("lint", "Lint an Ankh file, checking for possible errors or mistakes", func(cmd *cli.Cmd) {
 		cmd.Spec = "[-f] [--chart] [--filter...]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
@@ -568,7 +940,7 @@ func main() {
 		}
 	})
 
-	app.Command("template", "Output the results of templating an ankh file", func(cmd *cli.Cmd) {
+	app.Command("template", "Output the results of templating an Ankh file", func(cmd *cli.Cmd) {
 		cmd.Spec = "[-f] [--chart] [--filter...]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
@@ -590,69 +962,169 @@ func main() {
 		}
 	})
 
-	app.Command("inspect", "Inspect charts in ankh.yaml and display information", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--chart]"
-		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
-		chart := cmd.StringOpt("chart", "", "Limits the inspect command to only the specified chart")
+	app.Command("image", "Manage Docker images", func(cmd *cli.Cmd) {
+		ctx.IgnoreContextAndEnv = true
+		ctx.IgnoreConfigErrors = true
 
-		cmd.Command("values", "Display the contents of values.yaml, "+
-			"ankh-values.yaml, ankh-resource-profiles.yaml, and ankh-releases.yaml", func(cmd *cli.Cmd) {
-			cmd.Spec += " [--use-context]"
-			useContext := cmd.BoolOpt("use-context", false, "Select values by current context")
+		cmd.Command("tags", "List tags for a Docker image", func(cmd *cli.Cmd) {
+			cmd.Spec = "IMAGE"
+			image := cmd.StringArg("IMAGE", "", "The docker image to fetch tags for")
 
 			cmd.Action = func() {
-				ctx.AnkhFilePath = *ankhFilePath
-				ctx.UseContext = *useContext
-				ctx.Chart = *chart
-				if ctx.Environment != "" {
-					log.Fatalf("Must not provide `--environment` to inspect, because inspect operates on charts using a single context.")
+				output, err := docker.ListTags(ctx, *image, false)
+				check(err)
+				if output != "" {
+					fmt.Println(output)
 				}
-				inspect(ctx, helm.InspectValues)
 				os.Exit(0)
 			}
 		})
 
-		cmd.Command("chart", "Display the contents of the Chart.yaml file",
-			func(cmd *cli.Cmd) {
-				cmd.Action = func() {
-					ctx.AnkhFilePath = *ankhFilePath
-					ctx.Chart = *chart
-					inspect(ctx, helm.InspectChart)
-					os.Exit(0)
-				}
-			})
+		cmd.Command("ls", "List images for a Docker repository", func(cmd *cli.Cmd) {
+			cmd.Spec = "[-n]"
+			numToShow := cmd.IntOpt("n num", 5, "Number of tags to show, fuzzy-sorted descending by semantic version. Pass zero to see all versions.")
 
-		cmd.Command("templates", "Display the contents of each template file",
-			func(cmd *cli.Cmd) {
-				cmd.Action = func() {
-					ctx.AnkhFilePath = *ankhFilePath
-					ctx.Chart = *chart
-					inspect(ctx, helm.InspectTemplates)
-					os.Exit(0)
+			cmd.Action = func() {
+				output, err := docker.ListImages(ctx, *numToShow)
+				check(err)
+				if output != "" {
+					fmt.Printf(output)
 				}
-			})
+				os.Exit(0)
+			}
+		})
 	})
 
-	app.Command("config", "Manage ankh configuration", func(cmd *cli.Cmd) {
+	app.Command("chart", "Manage Helm charts", func(cmd *cli.Cmd) {
 		ctx.IgnoreContextAndEnv = true
 		ctx.IgnoreConfigErrors = true
 
-		cmd.Command("init", "Initialize ankh configuration", func(cmd *cli.Cmd) {
+		cmd.Command("ls", "List Helm charts and their versions", func(cmd *cli.Cmd) {
+			cmd.Spec = "[-n]"
+			numToShow := cmd.IntOpt("n num", 5, "Number of versions to show, sorted descending by creation date. Pass zero to see all versions.")
+
 			cmd.Action = func() {
-				if len(ctx.AnkhConfig.Contexts) == 0 {
-					ctx.AnkhConfig.Contexts = map[string]ankh.Context{
+				if ctx.AnkhConfig.Helm.Registry == "" {
+					// TODO: Registry should be a global config, not a per-context config
+					for name, x := range ctx.AnkhConfig.Contexts {
+						ctx.Logger.Infof("Using HelmRegistryURL '%v' taken from the first "+
+							"Ankh context '%v'", ctx.AnkhConfig.Helm.Registry, name)
+						ctx.AnkhConfig.Helm.Registry = x.HelmRegistryURL
+						break
+					}
+				}
+
+				helmOutput, err := helm.ListCharts(ctx, *numToShow)
+				check(err)
+				if helmOutput != "" {
+					fmt.Printf(helmOutput)
+				}
+				os.Exit(0)
+			}
+		})
+
+		cmd.Command("versions", "List versions for a Helm chart", func(cmd *cli.Cmd) {
+			cmd.Spec = "CHART"
+			chart := cmd.StringArg("CHART", "", "The Helm chart to fetch versions for")
+
+			cmd.Action = func() {
+				if ctx.AnkhConfig.Helm.Registry == "" {
+					// TODO: Registry should be a global config, not a per-context config
+					for name, x := range ctx.AnkhConfig.Contexts {
+						ctx.Logger.Infof("Using HelmRegistryURL '%v' taken from the first "+
+							"Ankh context '%v'", ctx.AnkhConfig.Helm.Registry, name)
+						ctx.AnkhConfig.Helm.Registry = x.HelmRegistryURL
+						break
+					}
+				}
+
+				helmOutput, err := helm.ListVersions(ctx, *chart, false)
+				check(err)
+				if helmOutput != "" {
+					fmt.Println(helmOutput)
+				}
+				os.Exit(0)
+			}
+		})
+
+		cmd.Command("inspect", "Inspect a Helm chart", func(cmd *cli.Cmd) {
+			cmd.Spec = "CHART"
+			chart := cmd.StringArg("CHART", "", "The Helm chart to inspect, passed in the `CHART[@VERSION]` format.")
+
+			cmd.Action = func() {
+				if ctx.AnkhConfig.Helm.Registry == "" {
+					// TODO: Registry should be a global config, not a per-context config
+					for name, x := range ctx.AnkhConfig.Contexts {
+						ctx.Logger.Infof("Using HelmRegistryURL '%v' taken from the first "+
+							"Ankh context '%v'", ctx.AnkhConfig.Helm.Registry, name)
+						ctx.AnkhConfig.Helm.Registry = x.HelmRegistryURL
+						break
+					}
+				}
+
+				helmOutput, err := helm.Inspect(ctx, *chart)
+				check(err)
+				if helmOutput != "" {
+					fmt.Println(helmOutput)
+				}
+				os.Exit(0)
+			}
+		})
+
+		cmd.Command("publish", "Publish a Helm chart using files from the current directory", func(cmd *cli.Cmd) {
+			cmd.Action = func() {
+				if ctx.AnkhConfig.Helm.Registry == "" {
+					// TODO: Registry should be a global config, not a per-context config
+					for name, x := range ctx.AnkhConfig.Contexts {
+						ctx.Logger.Infof("Using HelmRegistryURL '%v' taken from the first "+
+							"Ankh context '%v'", ctx.AnkhConfig.Helm.Registry, name)
+						ctx.AnkhConfig.Helm.Registry = x.HelmRegistryURL
+						break
+					}
+				}
+
+				err := helm.Publish(ctx)
+				check(err)
+				os.Exit(0)
+			}
+		})
+
+		cmd.Command("bump", "Bump a Helm chart's semantic version using Chart.yaml from the current directory", func(cmd *cli.Cmd) {
+			cmd.Spec = "[SEMVERTYPE]"
+			semVerType := cmd.StringArg("SEMVERTYPE", "patch", "Which part of the semantic version (eg: x.y.z) to bump: \"major\", \"minor\", or \"patch\".")
+
+			cmd.Action = func() {
+				err := helm.Bump(ctx, *semVerType)
+				check(err)
+				os.Exit(0)
+			}
+		})
+	})
+
+	app.Command("config", "Manage Ankh configuration", func(cmd *cli.Cmd) {
+		ctx.IgnoreContextAndEnv = true
+		ctx.IgnoreConfigErrors = true
+
+		cmd.Command("init", "Initialize Ankh configuration", func(cmd *cli.Cmd) {
+			cmd.Action = func() {
+				// Use the original, unmerged config. We want to explicitly avoid
+				// serializing the contents of any remote configs.
+				newAnkhConfig := ctx.OriginalAnkhConfig
+
+				if len(newAnkhConfig.Contexts) == 0 {
+					newAnkhConfig.Contexts = map[string]ankh.Context{
 						"minikube": {
 							KubeContext:      "minikube",
 							EnvironmentClass: "dev",
 							ResourceProfile:  "constrained",
+							Release:          "minikube",
 							HelmRegistryURL:  "https://kubernetes-charts.storage.googleapis.com",
-							ClusterAdmin:     true,
 						},
 					}
 					ctx.Logger.Infof("Initializing `contexts` to a single sample context for kube-context `minikube`")
 				}
 
-				out, err := yaml.Marshal(ctx.AnkhConfig)
+				out, err := yaml.Marshal(newAnkhConfig)
 				check(err)
 
 				err = ioutil.WriteFile(ctx.AnkhConfigPath, out, 0644)
@@ -662,7 +1134,7 @@ func main() {
 			}
 		})
 
-		cmd.Command("view", "View merged ankh configuration", func(cmd *cli.Cmd) {
+		cmd.Command("view", "View merged Ankh configuration", func(cmd *cli.Cmd) {
 			cmd.Action = func() {
 				out, err := yaml.Marshal(ctx.AnkhConfig)
 				check(err)
@@ -738,102 +1210,8 @@ func main() {
 	app.Run(os.Args)
 }
 
-func inspect(ctx *ankh.ExecutionContext,
-	cb func(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ankh.Chart) (string, error)) {
-
-	ankhFile, err := ankh.GetAnkhFile(ctx)
-	check(err)
-
-	if len(ankhFile.Charts) < 1 {
-		log.Infof(
-			"%s does not contain any charts. Inspect commands only operate on ankh.yaml files containing charts",
-			ctx.AnkhFilePath)
-		return
-	}
-
-	usingContextLog := ""
-	if ctx.UseContext {
-		usingContextLog = fmt.Sprintf(" using context \"%v\"", ctx.AnkhConfig.CurrentContextName)
-	}
-	for _, chart := range ankhFile.Charts {
-		ctx.Logger.Infof("Inspecting chart \"%v\"%v", chart.Name, usingContextLog)
-		output, err := cb(ctx, ankhFile, chart)
-		check(err)
-		fmt.Println(output)
-	}
-}
-
 func check(err error) {
 	if err != nil {
 		log.Fatalf("%v", err)
-	}
-}
-
-func runScripts(ctx *ankh.ExecutionContext, scripts []struct{ Path string }) {
-	for _, script := range scripts {
-		path := script.Path
-		if path == "" {
-			log.Warnf("Missing path in script %s", script)
-			break
-		}
-		if !filepath.IsAbs(path) {
-			cwd, err := os.Getwd()
-			if err != nil {
-				log.Fatalf("Failed to get working directory when attempting to run script %s", script)
-			}
-			path = filepath.Join(cwd, path)
-		}
-		_, err := os.Stat(path)
-		if os.IsNotExist(err) {
-			log.Fatalf("Script not found: %s", path)
-		}
-		// check that the script is executable
-		err = syscall.Access(path, unix.X_OK)
-		if err != nil {
-			log.Fatalf("Permission denied, script is not executable: %s", path)
-		}
-		log.Infof("Running script: %s", path)
-		if ctx.DryRun {
-			log.Infof("- OK (dry run) %s", path)
-			break
-		}
-		// pass kube context and the "global" config as a yaml environment variable
-		cmd := exec.Command(path)
-		envVars := []string{}
-		if ctx.AnkhConfig.CurrentContext.Global != nil {
-			global, err := yaml.Marshal(ctx.AnkhConfig.CurrentContext.Global)
-			check(err)
-			envVars = []string{
-				"ANKH_CONFIG_GLOBAL=" + string(global),
-				"ANKH_KUBE_CONTEXT=" + string(ctx.AnkhConfig.CurrentContext.KubeContext),
-				"KUBECONFIG=" + string(ctx.KubeConfigPath),
-			}
-		}
-		if ctx.Mode == ankh.Explain {
-			explainVars := []string{}
-			for _, s := range envVars {
-				replaced := strings.Replace(s, "\n", "\\n", -1)
-				eqIdx := strings.Index(replaced, "=")
-				eVar := fmt.Sprintf("export %v='%v' &&", replaced[0:eqIdx], replaced[eqIdx+1:])
-				explainVars = append(explainVars, eVar)
-			}
-			explain := strings.Join(explainVars, " ")
-			explain += " "
-			explain += strings.Join(cmd.Args, " ")
-			fmt.Println(explain)
-			break
-		}
-		if len(envVars) > 0 {
-			cmd.Env = append(os.Environ(), envVars...)
-		}
-		var stdOut, stdErr bytes.Buffer
-		cmd.Stdout = &stdOut
-		cmd.Stderr = &stdErr
-		err = cmd.Run()
-		if err != nil {
-			log.Fatalf("- FAILED %s:\n%s\nstdout: %s\nstderr: %s", path, err, stdOut.String(), stdErr.String())
-		}
-		log.Infof("- OK %s", path)
-		log.Debugf("%s Stdout:\n%s", path, stdOut.String())
 	}
 }
