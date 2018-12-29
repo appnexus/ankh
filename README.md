@@ -4,10 +4,10 @@
 Another Kubernetes Helper for shipping code.
 
 ## Dependencies
-Ankh uses kubectl and helm under the hood, make sure you install them.
+Ankh uses `helm` and `kubectl` - make sure you install them.
 
-- Kubectl: https://kubernetes.io/docs/tasks/tools/install-kubectl/
-- Helm (version 2.7 or newer): https://github.com/kubernetes/helm
+- Kubectl **>= 1.8.6** - https://kubernetes.io/docs/tasks/tools/install-kubectl/
+- Helm **>= 2.7** - https://github.com/kubernetes/helm
 
 ## Build and Installation
 
@@ -26,107 +26,170 @@ go get github.com/appnexus/ankh/ankh
 
 ## Introduction
 
-**Ankh** is a command line tool that wraps **helm template** and **kubectl apply**.
+Ankh helps manage application deployments across various Kubernetes clusters and namespaces. Users manage their deployments using Helm charts, but without the additional complexity of running Tiller.
 
-Ankh helps organizations manage multiple application deployments across different namespaces. Users get to manage their deployments using Helm charts, but without the additional complexity of running Tiller.
+Simplicity, transparency and composability are the primary design goals of Ankh. Under the hood, Ankh wraps **helm** and **kubectl**.
 
-Multiple application deployments may be expressed in a single file:
+Ankh can manage multiple charts using an Ankh file:
 
 ```
 $ cat ankh.yaml
-namespace: mynamespace
-
 charts:
-  - name: haste-server
+  - name: theserver
+    namespace: bar
     version: 0.0.1
-    default-values:
-      some-value: "that you need"
-      more-values:
-        x: 1
-        y: true
-  - name: zoonavigator
-    version: 0.0.1
-    values:
-      production:
-        foo: 'very prod'
-      dev:
-        foo: 'not so prod'
-        bar: false
+    
+  - name: myservice
+    namespace: foo
+    version: 1.0.0
 ```
 
-Simplicity, transparency and composability are the primary design goals of Ankh.
+...or a single chart
 
-**ankh inspect** lets you inspect helm chart files, helm templates, and ankh-derived yaml values.
+```
+$ ankh -n mynamespace ... --chart haste-server@0.0.1
+```
 
-**ankh template** runs `helm template` with all derived yaml values, prefixing any logging output with a comment `#` to ensure the output is still valid yaml.
+## Operations
 
-**ankh explain** outputs a bash-compatible representation of the underlying invocations to `helm template` and `kubectl apply`.
+Most Ankh commands call `helm`, `kubectl`, or both.
 
-**ankh apply** runs `kubectl apply` using the `helm template` output.
+**template** runs `helm template` with all derived yaml values.
 
-Ankh makes it easy to observe and verify incremental changes. It can be used to achieve reproducible deployments when combined with source control, or even simple CI / CD pipelines.
+**apply** runs `kubectl apply` using the `helm template` output.
+
+**explain** outputs a bash-compatible representation of the underlying invocations to `helm template` and `kubectl apply` as they would be run during `ankh apply`
+
+**get, logs, exec, rollback, diff** run common kubectl operations using Ankh's context and environment semantics.
+
+### Other operations
+
+Ankh provides a few commands for managing key artifacts: Helm charts and Docker images.
+
+**image** lets you view docker images in a remote registry.
+
+**chart** lets you view and publish chart artifacts in a remote registry.
+
+## Behavior
+
+### Chart version prompt
+
+Ankh usually attempts to prompt the user for missing information instead of failing. For example, if a chart is missing a version (either missing on the command line using --chart or missing in an Ankh file), Ankh will use the configured Helm registry URL to fetch available vesions for the chart and prompt for which to use.
+
+This can be disabled using `--no-prompt` (TODO).
+
+### Tag value prompt
+
+Often, charts are written in a way such that there is a deployment whose pod spec has a primary container with a configurable image tag. E.g. for tagValueName="tag"
+
+```
+      containers:
+      - name: theserver
+        image: docker.myorganization.net/theserver:{{ .Values.tag }}
+        env:
+           ...
+```
+
+If a tag value is not set on the command line as `--set $tagValueName=...`, Ankh can use the configured docker registry `docker.registry` to prompt the user for a tag value. This can be enabled by setting `helm.tagValueName` to the name of the variable used in your deployment templates for the primary container's image tag. E.g
+
+```
+helm:
+  # the helm variable name `tag` canonically means primary image tag across all
+  # of the charts we author and manage
+  tagValueName: tag
+```
+
+### Kubectl label selection vs columns
+
+Ankh operations that read from Kubernetes use templated Helm charts manifests to know which objects to operate over. Specifically, Deployments and StatefulSets are scraped for labels that can be used to select Pods. To allow for flexibile label behavior, Ankh exposes `kubectl.wildcardSelectorLabels` to configure which labels present on a Deployment or StatefulSet should not be included when querying for Pods, and should be shown as columns in any output text, when appropriate. E.g.
+
+```
+kubectl
+   wildcardSelectorLabels:
+   # The following labels exist on Deployment objects, but for the purpose of
+   # selecting pods, we should not consider them for equality checks, and instead
+   # show them as columns in `get` etc output. We do this because the `tag` label
+   # is set to `.Values.tag` and chart is set to `.Chart.Version`, both of which
+   # are potentially highly variable and should be shown shown instead of selected
+   against. useful to see in `get` output and and, most importantly
+   - tag
+   - chart
+```
 
 ## Configuration
 
 ### Contexts
 
-**Ankh** configs are driven by *contexts*, much like kubectl. When Ankh is invoked, it uses the *current-context* to decide which kubectl context, environment-class, and other common configurations to use.
-
-**Note**: `current-context` will be removed in the next major version of Ankh. Use the `--context` flag on individual commands instead if you need to target a single context.
+**Ankh** configs are driven by *contexts*, like kubectl. 
 
 ```
 $ cat ~/.ankh/config
-current-context: minikube
 contexts:
   minikube-local:
     kube-context: minikube
     environment-class: production
     resource-profile: constrained
-    helm-registry-url: https://helm-registry.myorganization.net/helm-repo/charts
+    release: minikube
+    helm-registry-url: https://helm-registry.myorganization.net/repo/
     global:
-      ingress:
-        host: localhost
       some-value: 'needed by all charts'
+$ ankh --context my-context apply
 ```
 
-You can view available contexts from your ankh config using:
+You can view available contexts from your Ankh config using:
 
 ```
 ankh config get-contexts
 ```
 
-...and switch to one via use-context
+...and use one use during execution
 
-```
-ankh config use-context my-context
-```
 
 You can also specify the context to use via a command line flag:
+
 ```
 ankh --context my-context apply
 ```
 
-The config/context API design was taken straight from kubectl, for a familiar feel.
-
-You may include other yaml config files into your ankh config via the `include` property. This is useful if you need to keep multiple ankh configs in sync, perhaps across multiple developers on a team. E.g.
+You may include other yaml config files into your Ankh config using `include`. This is useful when you need to maintain a consistent view of ankh configuration, perhaps across multiple developers on a team. Included files may be remote HTTP resources or local files on the filesystem. E.g.
 
 ```
 $ cat ~/.ankh/config
-
 include:
 - https://some-config-server.net/production.yaml
 - https://some-config-server.net/staging.yaml
-- https://some-config-server.net/development.yaml
-
 ...
 ```
 
-Note: you may only `use-context` on contexts defined inside your ankh config, not any contexts from `include`. Just use `--context` or `--environment` for those.
+#### Context-aware yaml config
+
+One of the primary features of Ankh is the ability to write context-aware yaml configuration for Helm charts. Often, it's necessary to have separate values for classes of operating environments, like `dev` and `production`. For example, we may want to set the log level or 
+
+##### In a Helm chart:
+
+Ankh supports reading from three special files in a chart, in the following order of precedence:
+
+* ankh-values.yaml
+* ankh-resource-profiles.yaml
+* ankh-releases.yaml
+
+See YAML schemas below for more on `values`, `resource-profiles`, and `releases`.
+
+##### In an Ankh file:
+
+Ankh also supports reading from the `values`, `resource-profiles`, and `releases` keys in the Chart object in an Ankh file for context-aware yaml. The structure is the same as the yaml structure when these values are in ankh-*.yaml files in the Helm chart.
 
 ### Environments
-Environments are a list of context names. Using an environment is good for when you have multiple contexts to `apply` to as part of one atomic action. These must be valid context names present under `contexts`. A good example of this would be multiple geo-distributed clusters that you want to deploy to as part of a "staging" environment:
+Environments are a list of context names. Using an environment, you can manage multiple contexts as a single logical environment. One example of this use case is to have multiple geo-distributed clusters that you want to deploy to as part of a "staging" environment:
 
 ```
+contexts:
+  nym-staging:
+    ...
+  ams-staging:
+    ...
+  lax-staging:
+    ...
 environments:
   staging:
     contexts:
@@ -135,47 +198,31 @@ environments:
     - lax-staging
 ```
 
-When you invoke `ankh apply` with the `--environment` flag, it will do an `ankh apply` to each of the contexts defined in the environment in the order listed. E.g.
+When you invoke Ankh using `--environment`, it will operate over each of the contexts defined in the environment in the order listed. E.g.
 
 ```
 ankh --environment staging apply
 ```
 
+This will run `apply` over contexts `nym2-staging`, `ams1-staging`, and `lax-staging` in that order.
+
 ### Ankh files
 
-Once your ankh config contains the set of contexts and you've selected one via *use-context*, the primary source of input to ankh will be an Ankh file, typically named ankh.yaml
+An Ankh file, typically named ankh.yaml, can be used as a description file for what Ankh should do.
 
 ```
-$ cat ankh.yaml | head -n15
-namespace: utils
-
+$ cat ankh.yaml
 charts:
-  - name: haste-server
+  - name: theserver
+    namespace: bar
     version: 0.0.1
-    default-values:
-      tag: latest
-      ingress:
-        host: haste.myorganization.net
-    resource-profiles:
-      constrained:
-        haste-server:
-          cpu: 0.1
-          memory: 64Mi
-      natural:
+    
+  - name: myservice
+    namespace: foo
+    version: 1.0.0
 ```
 
-An Ankh file tracks the target namespace and all of the charts you want to manage.
-
-### Ankh yaml in Charts
-
-Ankh supports reading from three special files in a chart, in the following order of precedence:
-
-* ankh-values.yaml
-* ankh-resource-profiles.yaml
-* ankh-releases.yaml
-
-These files should be structured the the same way they would be if they were present as keys, less `ankh-`, in an Ankh file.
-See YAML schemas below for more on `values`, `resource-profiles`, and `releases`.
+When invoked, Ankh will operate over both the `haste-server` and `myservice` charts. 
 
 ## YAML schemas
 
@@ -183,13 +230,30 @@ See YAML schemas below for more on `values`, `resource-profiles`, and `releases`
 
 | Field                         | Type                     | Description                                                                                                                                                                                                                        |
 | -------------                 | :---:                    | :-------------:                                                                                                                                                                                                                    |
-| include                       | []string                 | A list of ankh config references to load and merge into this ankh config. Can be a local file, an http endpoint, or, experimentaly, a Kubernetes ConfigMap reference of the form `kubecontext://$context/$namespace/$object/$key`. |
+| include                       | []string                 | A list of Ankh config references to load and merge into this Ankh config. May be a local file or an HTTP resource to GET.														|
 | environments                  | map[string]`Environment` | A mapping from environment name to `Environment` objects. Helps organize Context objects as logical environments for the purpose of operating on many contexts at once.                                                            |
 | contexts                      | map[string]`Context`     | A mapping from context names to `Context` objects. Analogous, but not equivalent, to contexts in a kubeconfig.                                                                                                                     |
-| current-context               | string                   | The current context. This context will be used when Ankh is invoked. Must be a valid context, which is a key under `contexts`. **Note**: will be removed in next major.                                                            |
-| supported-environments        | []string                 | Deprecated name for `supported-environment-classes`.                                                                                                                                                                               |
-| supported-environment-classes | []string                 | An array of supported environment classes. Any `environment-class` value in a `Context` must be included in this array.                                                                                                            |
-| supported-resource-profiles   | []string                 | An array of supported resource profiles. Any `resource-profile` value in a `Context` must be included in this array.                                                                                                               |
+| kubectl                       | `KubectlConfig`            | Configuration for Kubectl. |
+| helm                          | `HelmConfig`               | Configuration for Helm . 	|
+| docker                        | `DockerConfig`             | Configuration for Docker.	|
+
+#### `KubectlConfig`
+| Field         | Type     | Description                                                                                                        |
+| ------------- | :---:    | :-------------:                                                                                                    |
+| wildCardLabels      | []string | A list of object labels that should be treated as wildcards when peforming read operations using Kubectl (eg: get, logs). These labels will not be used for selecting using `-l` with kubectl, and instead will be shown as columns (when appropriate) using `-L` with kubectl. |
+
+
+#### `HelmConfig`
+| Field         | Type     | Description                                                                                                        |
+| ------------- | :---:    | :-------------:                                                                                                    |
+| tagValueName      | string | The name of the Helm value that corresponds to a Chart's `tag` ie: the primary container's docker tag. If set, Ankh will prompt the user for a value if this is not set on the command line via `--set $tagValueName=...` for `apply` and `template` operations, and assume a benign default value in other cases for the purpose of templating charts for suboperations. |
+| registry          | string | The Helm registry to use. This is always used by `ankh chart ...` subcommands, and it is the default registry used when operating over `Chart` objects unless overriden. See the `Chart` object in an Ankh file.		|
+| authType          | string | The authentication type to use for the Helm registry. Only `basic` auth is supported, which means you must provide a username and password on `ankh chart publish` and other authenticated helm registry commands.	|
+
+#### `DockerConfig`
+| Field         | Type     | Description                                                                                                        |
+| ------------- | :---:    | :-------------:                                                                                                    |
+| registry      | string | The docker registry to use. This is always used by `ankh docker ...` subcommands and is also used by other commands to produce prompts, typically when `helm.tagValueName` is set and Ankh sees that no tag value has been provided. |
 
 #### `Environment`
 | Field         | Type     | Description                                                                                                        |
@@ -199,41 +263,29 @@ See YAML schemas below for more on `values`, `resource-profiles`, and `releases`
 #### `Context`
 | Field             | Type     | Description                                                                                                                                                                    |
 | -------------     | :---:    | :-------------:                                                                                                                                                                |
-| kube-context      | string   | The kube context to use. This must be a valid context name present in your kube config (tyipcally ~/.kube/config or $KUBECONFIG)                                               |
-| kube-server       | string   | The kube server to use. This must be a valid Kubernetes API server. Similar to the `server` field in kubectl's `cluster` object. This can be used in place of `kube-context`.) |
-| environment       | string   | Deprecated name for `environment-class`. Not to be confused with `environments` (sets of contexts) present the AnkhConfig object.                                              |
-| environment-class | string   | The environment class to use. Must be a valid environment class in `supported-environment-classes`                                                                             |
-| resource-profile  | string   | The resource profile to use. Must be a valid resource profile in `supported-resource-profiles`                                                                                 |
-| release           | string   | The release name to pass to Helm via --release                                                                                                                                 |
-| helm-registry-url | string   | The URL to the Helm chart repo to use                                                                                                                                          |
-| cluster-admin     | bool     | If true, then `admin-dependencies` are run.                                                                                                                                    |
-| global            | `Global` | global configuration available to all charts                                                                                                                                   |
-
-#### `Global`
-| Field         | Type              | Description                                                                                                                   |
-| ------------- | :---:             | :-------------:                                                                                                               |
-| ingress       | map[string]string | Map from chart name to ingress host name. The ingress host name is exposed to helm charts as the yaml key `ingress.host`      |
-| _             | RawYaml           | All other keys are provided as raw yaml, each key prefixed with `global.` (eg: `global.somekey` for `somekey` under `Global`)
+| kube-context      | string   | The kube context to use. This must be a valid context name present in your kube config (tyipcally ~/.kube/config or $KUBECONFIG). Prefer `kube-server` instead, which is less dependent on local configuration. |
+| kube-server       | string   | The kube server to use. This must be a valid Kubernetes API server. Similar to the `server` field in kubectl's `cluster` object. This can be used in place of `kube-context`, and should be preferred. |
+| environment-class | string   | Optional. The environment class to use.                															| 
+| resource-profile  | string   | Optional. The resource profile to use.                    															|
+| release           | string   | Optional. The release name to use. This is passed to Helm  as --release                                                                                                        |
+| helm-registry-url | string   | Optional. The URL to the Helm chart repo to use. Overrides the global Helm registry. Either this or the global registry must be defined. 					|
+| global            | RawYaml  | Global yaml values: available to all charts                                                                                                                                   |
 
 #### `AnkhFile`
-| Field              | Type     | Description                                                                                                                                                                                                                                             |
-| -------------      | :---:    | :-------------:                                                                                                                                                                                                                                         |
-| namespace          | string   | The namespace to use when running `helm` and `kubectl`                                                                                                                                                                                                  |
-| bootstrap          | `Script` | Optional. A bootstrap script to run before applying any charts.                                                                                                                                                                                         |
-| admin-dependencies | []string | Optional. Path to dependent directories, each containing an ankh.yaml that should be run, in order. These dependencies are only satisified when `cluster-admin` is true in the current `Context`, and they are always run before regular `dependencies` |
-| dependencies       | []string | Optional. Path to dependent directories, each containing an ankh.yaml that should be run, in order.                                                                                                                                                     |
-
-#### `Script`
-| Field         | Type   | Description                                                                                                                                                                                                                        |
-| ------------- | :---:  | :-------------:                                                                                                                                                                                                                    |
-| path          | string | The path to an executable script. Two env vars are exported: `ANKH_KUBE_CONTEXT` is the `kube-context` from the current `Context`. `ANKH_CONFIG_GLOBAL` is the `Global` config section from the current `Context` provided as yaml |
+| Field              | Type     | Description                                                                                           						|
+| -------------      | :---:    | :-------------:                                                                                       						|
+| namespace          | string   | The namespace to use when running `helm` and `kubectl`. May be overriden at the Chart level.          						|
+| charts 	     | Chart    | The set of charts to operate over. All charts within a namespace are applied with a single `kubectl` invocation. Namespaces are applied in alphabetical order. Charts with an empty namespace are applied first. Use `dependencies` to achieve a custom `execution ordering. |
+| dependencies       | []string | Optional. Paths to dependent Ankh files (eg: an ankh.yaml) that should be executed first, in order. May be a local file or an HTTP resource to GET.	|
 
 #### `Chart`
-| Field             | Type               | Description                                                                                                                                                                                                    |
-| -------------     | :---:              | :-------------:                                                                                                                                                                                                |
-| name              | string             | The chart name. May be the name of a chart in a Helm registry, or the name of a subdirectory (with a valid Chart layout - see Helm documentation on this) under `charts` from the directory where Ankh is run. |
-| version           | string             | Optional. The chart version, if pulling from a Helm registry.                                                                                                                                                  |
-| default-values    | RawYaml            | Optional. Values to use for all environment classes and resource profiles.                                                                                                                                     |
-| values            | map[string]RawYaml | Optional. Values to use, by environment class.                                                                                                                                                                 |
-| resource-profiles | map[string]RawYaml | Optional. Values to use, by resource profile.                                                                                                                                                                  |
-| releases          | map[string]RawYaml | Optional. Values to use, by release.                                                                                                                                                                  |
+| Field             | Type               | Description                                                          				|
+| -------------     | :---:              | :-------------:                                                      				|
+| name              | string             | The chart name. Must be the name of a chart in a Helm registry					|
+| namespace         | string             | The namespace to use when running `helm` and `kubectl`. Overrides `namespace` in an Ankh file.	| 
+| version           | string             | Optional. The chart version, if pulling from a Helm registry.                			|
+| path              | string             | Optional. The path to a local chart directory. Can be used instead of a remote `version` in a Helm registry.  		|
+| default-values    | RawYaml            | Optional. Values to use in all contexts.   			|
+| values            | map[string]RawYaml | Optional. Values to use, by environment class. Any context whose `environment-class` exactly matches one of the keys in this map will use all values under that key.                              			|
+| resource-profiles | map[string]RawYaml | Optional. Values to use, by resource profile. Any context whose `resource-profile` exactly matches one of the keys in this map will use all values under that key.                                  			|
+| releases          | map[string]RawYaml | Optional. Values to use, by release. Any context whose `release` is a regular expression match for one of the keys in this map, using only the first matched going from top to bottom, will use all values under that key, eg: `staging|production:` to match either of the strings `staging` or `production`.                                         			|

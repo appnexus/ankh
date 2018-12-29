@@ -9,8 +9,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/appnexus/ankh/context"
@@ -33,17 +36,15 @@ func explain(args []string) string {
 	return explain + " && \\\n"
 }
 
-func findChartFilesImpl(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, chart ankh.Chart) (ankh.ChartFiles, error) {
+func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.ChartFiles, error) {
 	name := chart.Name
 	version := chart.Version
 
-	dirPath := chart.Path
-	if dirPath == "" {
-		// No explicit path set, so try the "charts" subdirectory.
-		dirPath = filepath.Join(filepath.Dir(ankhFile.Path), "charts", name)
+	dirErr := os.ErrNotExist
+	if version == "" && chart.Path != "" {
+		ctx.Logger.Debugf("Considering directory %v for chart %v", chart.Path, name)
+		_, dirErr = os.Stat(chart.Path)
 	}
-	ctx.Logger.Debugf("Considering directory %v for chart %v", dirPath, name)
-	_, dirErr := os.Stat(dirPath)
 
 	files := ankh.ChartFiles{}
 	// Setup a directory where we'll either copy the chart files, if we've got a
@@ -60,18 +61,26 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, char
 	// make changes to the ankh specific yaml files before passing them as `-f`
 	// args to `helm template`
 	if dirErr == nil {
-		if err := util.CopyDir(dirPath, filepath.Join(tmpDir, name)); err != nil {
+		if err := util.CopyDir(chart.Path, filepath.Join(tmpDir, name)); err != nil {
 			return files, err
 		}
 	} else {
-		// We cannot pull down a chart without a version.
+		// TODO: Eventually, only support the global helm registry
+		registry := ctx.AnkhConfig.Helm.Registry
+		if registry == "" {
+			registry = ctx.AnkhConfig.CurrentContext.HelmRegistryURL
+		}
+		if registry == "" {
+			return files, fmt.Errorf("No helm registry configured. Set `helm.registry` globally, or `See README.md on where to specify a helm registry.")
+		}
+
+		// We cannot pull down a chart without a version
 		if version == "" {
-			return files, fmt.Errorf("Must either provide a `version` to fetch chart \"%v\" from registry \"%v\", or provide a `path` to a local directory for this chart.", name, ctx.AnkhConfig.CurrentContext.HelmRegistryURL)
+			return files, fmt.Errorf("Cannot template chart '%v' without a version", chart.Name)
 		}
 
 		tarballFileName := fmt.Sprintf("%s-%s.tgz", name, version)
-		tarballURL := fmt.Sprintf("%s/%s", strings.TrimRight(
-			ctx.AnkhConfig.CurrentContext.HelmRegistryURL, "/"), tarballFileName)
+		tarballURL := fmt.Sprintf("%s/%s", strings.TrimRight(registry, "/"), tarballFileName)
 
 		ok := false
 		for attempt := 1; attempt <= 5; attempt++ {
@@ -100,7 +109,7 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, char
 				ok = true
 				break
 			} else {
-				ctx.Logger.Warningf("got a status code %v when trying to call %s (attempt %v)", resp.StatusCode, tarballURL, attempt)
+				ctx.Logger.Warningf("Received HTTP status '%v' (code %v) when trying to call %s (attempt %v)", resp.Status, resp.StatusCode, tarballURL, attempt)
 			}
 		}
 		if !ok {
@@ -125,12 +134,12 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, char
 var findChartFiles = findChartFilesImpl
 var execContext = exec.Command
 
-func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.AnkhFile) (string, error) {
+func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, namespace string) (string, error) {
 	currentContext := ctx.AnkhConfig.CurrentContext
 	helmArgs := []string{"helm", "template"}
 
-	if ankhFile.Namespace != "" {
-		helmArgs = append(helmArgs, []string{"--namespace", ankhFile.Namespace}...)
+	if namespace != "" {
+		helmArgs = append(helmArgs, []string{"--namespace", namespace}...)
 	}
 
 	if currentContext.Release != "" {
@@ -141,7 +150,22 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		helmArgs = append(helmArgs, "--set", key+"="+val)
 	}
 
-	files, err := findChartFiles(ctx, ankhFile, chart)
+	// default to the global TagValueName, but allow per-chart overrides
+	tagValueName := ctx.AnkhConfig.Helm.TagValueName
+	if chart.TagValueName != "" {
+		ctx.Logger.Debugf("Overriding tagValueName to chart.TagValuename=%v (was configured globally as %v)",
+			chart.TagValueName, ctx.AnkhConfig.Helm.TagValueName, chart.Tag)
+		tagValueName = chart.TagValueName
+	}
+
+	// Set tagValueName=Chart.Tag, if configured and present
+	if tagValueName != "" && chart.Tag != "" {
+		ctx.Logger.Debugf("Setting helm value %v=%v since tagValueName and chart.Tag are set",
+			tagValueName, chart.Tag)
+		helmArgs = append(helmArgs, "--set", tagValueName+"="+chart.Tag)
+	}
+
+	files, err := findChartFiles(ctx, chart)
 
 	if err != nil {
 		return "", err
@@ -169,7 +193,7 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 	if currentContext.Release != "" {
 		_, releasesError := os.Stat(files.AnkhReleasesPath)
 		if releasesError == nil {
-			out, err := util.CreateReducedYAMLFile(files.AnkhReleasesPath, currentContext.Release, false);
+			out, err := util.CreateReducedYAMLFile(files.AnkhReleasesPath, currentContext.Release, false)
 			if err != nil {
 				return "", fmt.Errorf("unable to process ankh-releases.yaml file for chart '%s': %v", chart.Name, err)
 			}
@@ -179,7 +203,7 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		}
 	}
 
-	// Load `default-values` from ankhFile
+	// Load `default-values`
 	if chart.DefaultValues != nil {
 		defaultValuesPath := filepath.Join(files.Dir, "default-values.yaml")
 		defaultValuesBytes, err := yaml.Marshal(chart.DefaultValues)
@@ -194,7 +218,7 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		helmArgs = append(helmArgs, "-f", defaultValuesPath)
 	}
 
-	// Load `values` from ankhFile
+	// Load `values`
 	if chart.Values != nil {
 		values, err := util.MapSliceRegexMatch(chart.Values, currentContext.EnvironmentClass)
 		if err != nil {
@@ -215,7 +239,7 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		}
 	}
 
-	// Load `resource-profiles` from ankhFile
+	// Load `resource-profiles`
 	if chart.ResourceProfiles != nil {
 		values, err := util.MapSliceRegexMatch(chart.ResourceProfiles, currentContext.ResourceProfile)
 		if err != nil {
@@ -237,7 +261,7 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, ankhFile ankh.A
 		}
 	}
 
-	// Load `releases` from ankhFile
+	// Load `releases`
 	if chart.Releases != nil {
 		values, err := util.MapSliceRegexMatch(chart.Releases, currentContext.Release)
 		if err != nil {
@@ -319,30 +343,441 @@ func Version() (string, error) {
 	return string(helmOutput), nil
 }
 
-func Template(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) (string, error) {
+type HelmReducedEntry struct {
+	Created string
+	Version string
+}
+
+type HelmIndexEntry struct {
+	Name    string
+	Version string
+	Created string
+}
+
+type HelmIndex struct {
+	ApiVersion string
+	Entries    map[string][]HelmIndexEntry
+}
+
+func listCharts(ctx *ankh.ExecutionContext, numToShow int, descending bool) (map[string][]string, error) {
+	indexURL := fmt.Sprintf("%s/index.yaml", strings.TrimRight(
+		ctx.AnkhConfig.Helm.Registry, "/"))
+	ctx.Logger.Debugf("downloading index.yaml from %s", indexURL)
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{
+		Transport: tr,
+		Timeout:   time.Duration(5 * time.Second),
+	}
+	resp, err := client.Get(indexURL)
+	if err != nil {
+		return nil, fmt.Errorf("got an error %v when trying to call %v", err, indexURL)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("Received HTTP status '%v' (code %v) when trying to call %s", resp.Status, resp.StatusCode, indexURL)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	index := HelmIndex{}
+	err = yaml.Unmarshal(body, &index)
+	if err != nil {
+		return nil, err
+	}
+
+	// Group all entries together, by chart.
+	// Sort them by creation date, and then truncate to `numToShow`
+	reduced := make(map[string][]string)
+	for k, v := range index.Entries {
+		sort.Slice(v, func(i, j int) bool {
+			lessThan := strings.Compare(v[i].Created, v[j].Created) <= 0
+			if descending {
+				return !lessThan
+			}
+			return lessThan
+		})
+		for _, e := range v {
+			reduced[k] = append(reduced[k], e.Version)
+		}
+		if numToShow > 0 && len(v) > numToShow {
+			reduced[k] = reduced[k][:numToShow]
+		}
+	}
+
+	return reduced, nil
+}
+
+func ListCharts(ctx *ankh.ExecutionContext, numToShow int) (string, error) {
+	reduced, err := listCharts(ctx, numToShow, true)
+	if err != nil {
+		return "", err
+	}
+
+	// Show charts in alphabetical order
+	reducedKeys := []string{}
+	for k, _ := range reduced {
+		reducedKeys = append(reducedKeys, k)
+	}
+	sort.Strings(reducedKeys)
+
+	formatted := bytes.NewBufferString("")
+	w := tabwriter.NewWriter(formatted, 0, 8, 8, ' ', 0)
+	fmt.Fprintf(w, "NAME\tVERSION(S)\n")
+	for _, k := range reducedKeys {
+		v := reduced[k]
+		fmt.Fprintf(w, "%v\t%v\n", k, strings.Join(v, ", "))
+	}
+	w.Flush()
+	return formatted.String(), nil
+}
+
+func ListVersions(ctx *ankh.ExecutionContext, chart string, descending bool) (string, error) {
+	reduced, err := listCharts(ctx, 0, descending)
+	if err != nil {
+		return "", err
+	}
+
+	// Show charts in alphabetical order
+	versions, ok := reduced[chart]
+	if !ok || len(versions) == 0 {
+		return "", fmt.Errorf("Could not find chart '%v' in registry '%v'. "+
+			"Try `ankh chart ls` to see all charts and their versions.",
+			chart, ctx.AnkhConfig.Helm.Registry)
+	}
+
+	return strings.Join(versions, "\n"), nil
+}
+
+type ChartYaml struct {
+	Name    string
+	Version string
+}
+
+func readChartYaml(ctx *ankh.ExecutionContext, path string) (map[string]interface{}, ChartYaml, error) {
+	rawYaml := make(map[string]interface{})
+	chartYaml := ChartYaml{}
+
+	wd, _ := os.Getwd()
+	chartFile, err := os.Open("Chart.yaml")
+	if err != nil {
+		return rawYaml, chartYaml, fmt.Errorf("Could not read Chart.yaml in the current working directly '%v' (error = `%v`). "+
+			"Please run from a valid Chart directory containing Chart.yaml. "+
+			"See upstream Helm documentation on the Chart file structure for more information.",
+			wd, err)
+	}
+
+	chartFileContent, err := ioutil.ReadAll(chartFile)
+	if err != nil {
+		return rawYaml, chartYaml, err
+	}
+
+	err = yaml.Unmarshal(chartFileContent, &rawYaml)
+	if err != nil {
+		return rawYaml, chartYaml, err
+	}
+
+	name, ok := rawYaml["name"].(string)
+	if !ok {
+		return rawYaml, chartYaml, fmt.Errorf("Chart.yaml missing `Name`, or its type is not a string.")
+	}
+
+	version, ok := rawYaml["version"].(string)
+	if !ok {
+		return rawYaml, chartYaml, fmt.Errorf("Chart.yaml missing `version`, or its type is not a string.")
+	}
+
+	chartYaml = ChartYaml{
+		Name: name,
+		Version: version,
+	}
+
+	err = yaml.Unmarshal(chartFileContent, &chartYaml)
+	if err != nil {
+		return rawYaml, chartYaml, fmt.Errorf("Could not parse Chart.yaml to get `name` and `version` fields: %v", err)
+	}
+
+	return rawYaml, chartYaml, nil
+
+}
+
+func writeChartYaml(ctx *ankh.ExecutionContext, chartYaml map[string]interface{}, path string) error {
+	wd, _ := os.Getwd()
+	chartFile, err := os.Create("Chart.yaml")
+	if err != nil {
+		return fmt.Errorf("Could not read Chart.yaml in the current working directly '%v' (error = `%v`). "+
+			"Please run from a valid Chart directory containing Chart.yaml. "+
+			"See upstream Helm documentation on the Chart file structure for more information.",
+			wd, err)
+	}
+
+	bytes, err := yaml.Marshal(&chartYaml)
+	if err != nil {
+		return err
+	}
+
+	_, err = chartFile.Write(bytes)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func Publish(ctx *ankh.ExecutionContext) error {
+	_, chartYaml, err := readChartYaml(ctx, "Chart.yaml")
+	if err != nil {
+		return err
+	}
+
+	wd, _ := os.Getwd()
+	localTarballPath := fmt.Sprintf("%v/%v-%v.tgz", wd, chartYaml.Name, chartYaml.Version)
+	removeTarball := func() {
+		err = os.Remove(localTarballPath)
+		if err != nil && !os.IsNotExist(err) {
+			ctx.Logger.Warnf("Error removing tarball '%s': %v", localTarballPath, err)
+		}
+	}
+
+	// Remove any existing package file now, just in case.
+	// Also, clean up at the end of this function.
+	removeTarball()
+	defer removeTarball()
+
+	helmArgs := []string{"helm", "package", wd}
+	helmCmd := execContext(helmArgs[0], helmArgs[1:]...)
+
+	var stderr bytes.Buffer
+	helmCmd.Stderr = &stderr
+
+	// Use helm to create a package tarball
+	ctx.Logger.Infof("Packaging '%v-%v'", chartYaml.Name, chartYaml.Version)
+	err = helmCmd.Run()
+	var helmError = string(stderr.Bytes())
+	if err != nil {
+		outputMsg := ""
+		if len(helmError) > 0 {
+			outputMsg = fmt.Sprintf(" -- the helm process had the following output on stderr:\n%s", helmError)
+		}
+		return fmt.Errorf("error running helm command '%v': %v%v",
+			strings.Join(helmCmd.Args, " "), err, outputMsg)
+	}
+	ctx.Logger.Infof("Finished packaging '%v:%v'", chartYaml.Name, chartYaml.Version)
+
+	// Open up and read the contents of the package in order to PUT it upstream
+	localTarballFile, err := os.Open(localTarballPath)
+	if err != nil {
+		return fmt.Errorf("Failed to open packaged chart tarball at path '%v' "+
+			"after running helm command '%v' (error = %v)",
+			localTarballPath, strings.Join(helmCmd.Args, " "), err)
+	}
+
+	body, err := ioutil.ReadAll(localTarballFile)
+	if err != nil {
+		return err
+	}
+
+	upstreamTarballPath := fmt.Sprintf("%v/%v-%v.tgz", ctx.AnkhConfig.Helm.Registry, chartYaml.Name, chartYaml.Version)
+	ctx.Logger.Infof("Publishing '%v'", upstreamTarballPath)
+
+	// Create a request with the chart on the PUT body
+	req, err := http.NewRequest("PUT", upstreamTarballPath, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+
+	switch strings.ToLower(ctx.AnkhConfig.Helm.AuthType) {
+	case "basic":
+		// Get basic auth credentials
+		username := os.Getenv("ANKH_HELM_REGISTRY_USERNAME")
+		if username == "" {
+			username, err = util.PromptForUsername()
+			if err != nil {
+				return fmt.Errorf("Failed to read credentials from stdin: %v", err)
+			}
+		} else {
+			ctx.Logger.Infof("Using environment ANKH_HELM_REGISTRY_USERNAME=%v for 'basic' auth on helm registry '%v",
+				username, ctx.AnkhConfig.Helm.Registry)
+		}
+
+		password := os.Getenv("ANKH_HELM_REGISTRY_PASSWORD")
+		if password == "" {
+			password, err = util.PromptForPassword()
+			if err != nil {
+				return fmt.Errorf("Failed to read credentials from stdin: %v", err)
+			}
+		} else {
+			ctx.Logger.Infof("Using environment ANKH_HELM_REGISTRY_PASSWORD=<redacted> for 'basic' auth on helm registry '%v",
+				ctx.AnkhConfig.Helm.Registry)
+		}
+
+		req.SetBasicAuth(username, password)
+	default:
+		if ctx.AnkhConfig.Helm.AuthType != "" {
+			ctx.Logger.Fatalf("Helm registry auth type '%v' is not supported - only 'basic' auth is supported.")
+		}
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+		Timeout: time.Duration(5 * time.Second),
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("got an error %v when trying to PUT %v", err, upstreamTarballPath)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("Received HTTP status '%v' (code %v) when trying to PUT %s",
+			resp.Status, resp.StatusCode, upstreamTarballPath)
+	}
+
+	ctx.Logger.Infof("Helm registry PUT resp: %+v", resp)
+	ctx.Logger.Infof("Finished publishing '%v'", upstreamTarballPath)
+	return nil
+}
+
+func Template(ctx *ankh.ExecutionContext, charts []ankh.Chart, namespace string) (string, error) {
 	finalOutput := ""
-
-	if len(ankhFile.Charts) > 0 {
-		ctx.Logger.Debugf("templating charts")
-
-		for _, chart := range ankhFile.Charts {
+	if len(charts) > 0 {
+		for _, chart := range charts {
 			extraString := ""
 			if chart.Version != "" {
-				extraString = fmt.Sprintf(" using version \"%v\"", chart.Version)
+				extraString = fmt.Sprintf(" at version \"%v\"", chart.Version)
 			} else if chart.Path != "" {
-				extraString = fmt.Sprintf(" using path \"%v\"", chart.Path)
+				extraString = fmt.Sprintf(" from path \"%v\"", chart.Path)
 			}
 			ctx.Logger.Infof("Templating chart \"%s\"%s", chart.Name, extraString)
-			chartOutput, err := templateChart(ctx, chart, ankhFile)
+			chartOutput, err := templateChart(ctx, chart, namespace)
 			if err != nil {
 				return finalOutput, err
 			}
 			finalOutput += chartOutput
 		}
+		if namespace != "" {
+			ctx.Logger.Infof("Finished templating charts for namespace %v", namespace)
+		} else {
+			ctx.Logger.Infof("Finished templating charts with an explicit empty namespace")
+		}
 	} else {
-		ctx.Logger.Infof(
-			"%s does not contain any charts. Template commands only operate on ankh.yaml files containing charts",
-			ctx.AnkhFilePath)
+		ctx.Logger.Infof("%s does not contain any charts. Nothing to do.", ctx.AnkhFilePath)
 	}
 	return finalOutput, nil
+}
+
+func inspectFile(relativeDir string, file string) (string, error) {
+	result := fmt.Sprintf("\n---\n# Source: %s/%s\n", relativeDir, path.Base(file))
+	bytes, err := ioutil.ReadFile(file)
+	if err != nil {
+		return "", err
+	}
+
+	return result + string(bytes), nil
+}
+
+func inspectDirectory(relativeDir string, dir string) (string, error) {
+	var r, result string
+	var files []os.FileInfo
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+
+	for _, f := range files {
+		path := fmt.Sprintf("%v/%v", dir, f.Name())
+		if f.IsDir() {
+			r, err = inspectDirectory(fmt.Sprintf("%v/%v", relativeDir, f.Name()), path)
+		} else {
+			r, err = inspectFile(relativeDir, path)
+		}
+		if err != nil {
+			return "", err
+		}
+		result += r
+	}
+	return result, nil
+}
+
+func Inspect(ctx *ankh.ExecutionContext, singleChart string) (string, error) {
+	var result string
+
+	tokens := strings.Split(singleChart, "@")
+	if len(tokens) < 1 || len(tokens) > 2 {
+		ctx.Logger.Fatalf("Invalid chart '%v'.  Chart must be specified as `CHART[@VERSION]`.",
+			singleChart)
+	}
+
+	chartName := tokens[0]
+	chartVersion := ""
+	if len(tokens) == 2 {
+		chartVersion = tokens[1]
+	} else {
+		versions, err := ListVersions(ctx, chartName, true)
+		if err != nil {
+			return "", err
+		}
+
+		ctx.Logger.Infof("Found chart \"%v\" without a version", chartName)
+		selectedVersion, err := util.PromptForSelection(strings.Split(strings.Trim(versions, "\n "), "\n"),
+			fmt.Sprintf("Select a version for chart '%v'", chartName))
+		if err != nil {
+			return "", err
+		}
+
+		chartVersion = selectedVersion
+		ctx.Logger.Infof("Using %v@%v based on selection", chartName, chartVersion)
+	}
+
+	ctx.Logger.Infof("Inspecting chart \"%s\" at version \"%v\" from registry \"%v\"",
+		chartName, chartVersion, ctx.AnkhConfig.Helm.Registry)
+
+	chart := ankh.Chart{
+		Name:    chartName,
+		Version: chartVersion,
+	}
+	files, err := findChartFiles(ctx, chart)
+	if err != nil {
+		return "", err
+	}
+
+	// Inspect everything inside the Chart directory
+	inspection, err := inspectDirectory(chartName, files.ChartDir)
+	if err != nil {
+		return "", err
+	}
+
+	result += inspection
+	return result, nil
+}
+
+func Bump(ctx *ankh.ExecutionContext, semVerType string) error {
+	rawYaml, chartYaml, err := readChartYaml(ctx, "Chart.yaml")
+	if err != nil {
+		return err
+	}
+
+	ctx.Logger.Infof("Found version \"%v\" in Chart.yaml. Bumping \"%v\" version...",
+		chartYaml.Version, semVerType)
+	newVersion, err := util.SemverBump(chartYaml.Version, semVerType)
+	if err != nil {
+		return fmt.Errorf("Could not bump version using semantic versioning. See https://semver.org for the semantic version spec. Original error: %v", err)
+	}
+
+	rawYaml["version"] = newVersion
+
+	ctx.Logger.Infof("Writing new version \"%v\" to Chart.yaml", newVersion)
+	err = writeChartYaml(ctx, rawYaml, "Chart.yaml")
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

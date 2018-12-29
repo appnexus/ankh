@@ -15,6 +15,6 @@ spec:
       paths:
       - path: /
         backend:
-          serviceName: thorondor-ui{{ if ne .Release.Name "RELEASE-NAME" }}-{{ .Release.Name}}{{ end }}
+          serviceName: test-app{{ if ne .Release.Name "RELEASE-NAME" }}-{{ .Release.Name}}{{ end }}
           servicePort: {{ .Values.service.externalPort }}
 {{ end }}

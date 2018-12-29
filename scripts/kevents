@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# vim: set syntax=sh:
-set -e
-
-kubectl get events -o jsonpath='{range .items[*]}{.lastTimestamp}{": "}{.involvedObject.name}{"."}{.involvedObject.kind}{"."}{.involvedObject.namespace}{": "}{.message}{"\n"}{end}' $@ | sort

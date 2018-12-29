@@ -14,4 +14,17 @@ charts:
         another:
           value: "hello"
         foo: "bar"
-
+    resource-profiles:
+      constrained:
+        replicas: 1
+        cpuLimit: 0.1
+      natural:
+        replicas: 3
+        cpuLimit: 4
+    releases:
+      production-usa:
+        some:
+          thing: 1
+      production-eu:
+        some:
+          more: 1
