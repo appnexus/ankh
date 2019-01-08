@@ -76,8 +76,6 @@ Ankh provides a few commands for managing key artifacts: Helm charts and Docker 
 
 Ankh usually attempts to prompt the user for missing information instead of failing. For example, if a chart is missing a version (either missing on the command line using --chart or missing in an Ankh file), Ankh will use the configured Helm registry URL to fetch available vesions for the chart and prompt for which to use.
 
-This can be disabled using `--no-prompt` (TODO).
-
 ### Tag value prompt
 
 Often, charts are written in a way such that there is a deployment whose pod spec has a primary container with a configurable image tag. E.g. for tagValueName="tag"

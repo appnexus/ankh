@@ -8,15 +8,16 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/coreos/go-semver/semver"
 	"github.com/manifoldco/promptui"
 	"github.com/sirupsen/logrus"
-	"github.com/coreos/go-semver/semver"
 )
 
 type CustomFormatter struct {
@@ -504,11 +505,73 @@ func PromptForInput(defaultValue string, label string) (string, error) {
 	return input, nil
 }
 
-func PromptForSelection(choices []string, label string) (string, error) {
+func promptForSelectionFzf(choices []string, label string) (string, error) {
+	fzf := exec.Command("fzf", "--header",
+		fmt.Sprintf("%s (use the arrow keys to browse, or type to fuzzy search)", label),
+		"--layout", "reverse-list", "--height", "20%", "--min-height", "10")
+	inPipe, _ := fzf.StdinPipe()
+	outPipe, _ := fzf.StdoutPipe()
+	fzf.Stderr = os.Stderr
+
+	err := fzf.Start()
+	if err != nil {
+		return "", err
+	}
+
+	input := strings.Join(choices, "\n")
+	inPipe.Write([]byte(input))
+	inPipe.Close()
+
+	buf, err := ioutil.ReadAll(outPipe)
+	if err != nil {
+		panic(err)
+	}
+
+	err = fzf.Wait()
+	if err != nil {
+		return "", err
+	}
+
+	out := strings.Trim(string(buf), "\n")
+	return out, nil
+}
+
+func promptForSelection(choices []string, label string) (string, error) {
 	prompt := promptui.Select{
 		Label: label,
 		Items: choices,
-		Size: 10,
+		Size:  10,
+	}
+
+	_, choice, err := prompt.Run()
+	if err != nil {
+		return "", err
+	}
+	return choice, nil
+}
+
+func hasCommand(name string) bool {
+	cmd := exec.Command("sh", "-c", "command", "-v", name)
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+
+	return true
+}
+
+func PromptForSelection(choices []string, label string) (string, error) {
+	if hasCommand("fzf") {
+		return promptForSelectionFzf(choices, label)
+	} else {
+		return promptForSelection(choices, label)
+	}
+}
+
+func PromptForSelectionWithAdd(choices []string, label string, addLabel string) (string, error) {
+	prompt := promptui.SelectWithAdd{
+		Label:    label,
+		Items:    choices,
+		AddLabel: addLabel,
 	}
 
 	_, choice, err := prompt.Run()

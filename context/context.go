@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -36,12 +37,14 @@ type ExecutionContext struct {
 	// Overrides:
 	// Chart may be a single chart in the charts array, or a local chart path
 	// Namespace may override a value present in the AnkhFile
-	Chart string
+	Chart     string
+	Tag       *string
 	Namespace *string
 
 	Mode Mode
 
-	Verbose, Quiet, CatchSignals, DryRun, Describe, WarnOnConfigError, UseContext, IgnoreContextAndEnv, IgnoreConfigErrors bool
+	Verbose, Quiet, CatchSignals, DryRun, Describe, WarnOnConfigError,
+		IgnoreContextAndEnv, IgnoreConfigErrors, NoPrompt bool
 
 	AnkhConfigPath string
 	KubeConfigPath string
@@ -111,6 +114,9 @@ type AnkhConfig struct {
 	Kubectl KubectlConfig `yaml:"kubectl,omitempty"`
 	Helm    HelmConfig    `yaml:"helm,omitempty"`
 	Docker  DockerConfig  `yaml:"docker,omitempty"`
+
+	// List of namespace suggestions to use if the user does not provide one when required.
+	Namespaces []string `yaml:"namespaces,omitempty"`
 }
 
 type KubeCluster struct {
@@ -161,6 +167,39 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context str
 
 		if selectedContext.KubeContext == "" && selectedContext.KubeServer == "" {
 			errors = append(errors, fmt.Errorf("Current context '%s' has missing or empty `kube-context` or `kube-server`", ankhConfig.CurrentContextName))
+		} else if selectedContext.KubeServer != "" {
+			kubeCluster := KubeCluster{
+				Cluster: struct {
+					Server string `yaml:"server"`
+				}{Server: selectedContext.KubeServer},
+				Name: "_kcluster",
+			}
+			kubeContext := KubeContext{
+				Context: struct {
+					Cluster string `yaml:"cluster"`
+				}{Cluster: kubeCluster.Name},
+				Name: "_kctx",
+			}
+			kubeConfig := &KubeConfig{
+				ApiVersion:     "v1",
+				Kind:           "Config",
+				Clusters:       []KubeCluster{kubeCluster},
+				Contexts:       []KubeContext{kubeContext},
+				CurrentContext: kubeContext.Name,
+			}
+
+			kubeConfigPath := path.Join(ctx.DataDir, "kubeconfig.yaml")
+			kubeConfigBytes, err := yaml.Marshal(kubeConfig)
+			if err != nil {
+				return []error{err}
+			}
+
+			if err := ioutil.WriteFile(kubeConfigPath, kubeConfigBytes, 0644); err != nil {
+				return []error{err}
+			}
+
+			selectedContext.KubeContext = kubeContext.Name
+			ctx.KubeConfigPath = kubeConfigPath
 		}
 
 		if selectedContext.EnvironmentClass == "" {
@@ -177,7 +216,7 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context str
 		if ankhConfig.CurrentContext.Release != "" {
 			ctx.Logger.Warnf("Overriding existing release \"%v\" to release argument \"%v\" from command line for context \"%v\"", ankhConfig.CurrentContext.Release, ctx.Release, ankhConfig.CurrentContextName)
 		} else {
-			ctx.Logger.Infof("Using release argument \"%v\" from command line for context \"%v\".", ctx.Release, ankhConfig.CurrentContextName)
+			ctx.Logger.Infof("Using release argument \"%v\" from command line for context \"%v\"", ctx.Release, ankhConfig.CurrentContextName)
 		}
 		ankhConfig.CurrentContext.Release = ctx.Release
 	}
@@ -187,11 +226,11 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context str
 // TODO: Rename me to target?
 type Chart struct {
 	Path         string
-	Name         string // TODO: Merge me and version into `Chart`?
-	Version      string // TODO: Merge me and Name into `Chart`?
-	Tag          string
-	TagValueName string
+	Name         string
+	Version      string
 	Namespace    *string
+	Tag          *string
+	TagValueName string
 	// DefaultValues are values that apply unconditionally, with lower precedence than values supplied in the fields below.
 	DefaultValues map[string]interface{} `yaml:"default-values"`
 	// Values, by environment-class, resource-profile, or release. MapSlice preserves map ordering so we can regex search from top to bottom.
@@ -268,8 +307,13 @@ func GetAnkhFile(ctx *ExecutionContext) (AnkhFile, error) {
 		ankhFile, err := ParseAnkhFile(ctx.AnkhFilePath)
 		if err == nil {
 			ctx.Logger.Debugf("- OK: %v", ctx.AnkhFilePath)
+			return ankhFile, nil
+		} else if os.IsNotExist(err) && ctx.AnkhFilePath == "ankh.yaml" {
+			ctx.Logger.Infof("Default Ankh file ankh.yaml not found")
+			return AnkhFile{}, nil
+		} else {
+			return ankhFile, err
 		}
-		return ankhFile, err
 	}
 
 	// We have a chart argument, which makes things more complicated.
@@ -293,7 +337,7 @@ func getAnkhFileForChart(ctx *ExecutionContext, singleChart string) (AnkhFile, e
 	// Extract that now if possible.
 	tokens := strings.Split(singleChart, "@")
 	if len(tokens) > 2 {
-		ctx.Logger.Fatalf("Invalid chart '%v'. Too many `@` characters found. Chart must either be a name with no `@`, or in the combined `name@version` format.")
+		ctx.Logger.Fatalf("Invalid chart '%v'. Too many `@` characters found. Chart must either be a name with no `@`, or in the combined `name@version` format")
 	}
 	if len(tokens) == 2 {
 		singleChart = tokens[0]
