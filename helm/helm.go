@@ -159,10 +159,10 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, namespace strin
 	}
 
 	// Set tagValueName=Chart.Tag, if configured and present
-	if tagValueName != "" && chart.Tag != "" {
+	if tagValueName != "" && chart.Tag != nil {
 		ctx.Logger.Debugf("Setting helm value %v=%v since tagValueName and chart.Tag are set",
-			tagValueName, chart.Tag)
-		helmArgs = append(helmArgs, "--set", tagValueName+"="+chart.Tag)
+			tagValueName, *chart.Tag)
+		helmArgs = append(helmArgs, "--set", tagValueName+"="+*chart.Tag)
 	}
 
 	files, err := findChartFiles(ctx, chart)
@@ -437,6 +437,22 @@ func ListCharts(ctx *ankh.ExecutionContext, numToShow int) (string, error) {
 	return formatted.String(), nil
 }
 
+func GetChartNames(ctx *ankh.ExecutionContext) ([]string, error) {
+	reducedKeys := []string{}
+
+	reduced, err := listCharts(ctx, 0, true)
+	if err != nil {
+		return reducedKeys, err
+	}
+
+	// Show charts in alphabetical order
+	for k, _ := range reduced {
+		reducedKeys = append(reducedKeys, k)
+	}
+	sort.Strings(reducedKeys)
+	return reducedKeys, nil
+}
+
 func ListVersions(ctx *ankh.ExecutionContext, chart string, descending bool) (string, error) {
 	reduced, err := listCharts(ctx, 0, descending)
 	if err != nil {
@@ -596,6 +612,9 @@ func Publish(ctx *ankh.ExecutionContext) error {
 		// Get basic auth credentials
 		username := os.Getenv("ANKH_HELM_REGISTRY_USERNAME")
 		if username == "" {
+			if ctx.NoPrompt {
+				return fmt.Errorf("Must define ANKH_HELM_REGISTRY_USERNAME for \"basic\" auth if run with `--no-prompt`")
+			}
 			username, err = util.PromptForUsername()
 			if err != nil {
 				return fmt.Errorf("Failed to read credentials from stdin: %v", err)
@@ -607,6 +626,9 @@ func Publish(ctx *ankh.ExecutionContext) error {
 
 		password := os.Getenv("ANKH_HELM_REGISTRY_PASSWORD")
 		if password == "" {
+			if ctx.NoPrompt {
+				return fmt.Errorf("Must define ANKH_HELM_REGISTRY_PASSWORD for \"basic\" if run with `--no-prompt`")
+			}
 			password, err = util.PromptForPassword()
 			if err != nil {
 				return fmt.Errorf("Failed to read credentials from stdin: %v", err)
@@ -668,7 +690,7 @@ func Template(ctx *ankh.ExecutionContext, charts []ankh.Chart, namespace string)
 			ctx.Logger.Infof("Finished templating charts with an explicit empty namespace")
 		}
 	} else {
-		ctx.Logger.Infof("%s does not contain any charts. Nothing to do.", ctx.AnkhFilePath)
+		ctx.Logger.Infof("%s does not contain any charts. Nothing to do.")
 	}
 	return finalOutput, nil
 }

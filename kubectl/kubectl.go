@@ -47,8 +47,8 @@ func isWildcardLabel(ctx *ankh.ExecutionContext, label string) bool {
 
 func getSelectorArgsForPods(ctx *ankh.ExecutionContext, input string, showWildCardLabels bool) ([]string, error) {
 	args := []string{}
-	labelMap := make(map[string][]string)
-	wildCardLabels := []string{}
+	selectorLabels := make(map[string][]string)
+	showLabels := make(map[string]string)
 	decoder := yaml.NewDecoder(strings.NewReader(input))
 
 	for {
@@ -63,23 +63,23 @@ func getSelectorArgsForPods(ctx *ankh.ExecutionContext, input string, showWildCa
 			for k, v := range obj.Metadata.Labels {
 				if isWildcardLabel(ctx, k) {
 					ctx.Logger.Debugf("Skipping wildcard label %v as label constraint", k)
-					wildCardLabels = append(wildCardLabels, k)
+					showLabels[k] = k
 				} else {
-					labelMap[k] = append(labelMap[k], v)
+					selectorLabels[k] = append(selectorLabels[k], v)
 				}
 			}
 		}
 	}
 
 	constraints := []string{}
-	for k, v := range labelMap {
+	for k, v := range selectorLabels {
 		c := fmt.Sprintf("%v in (%v)", k, strings.Join(v, ","))
 		constraints = append(constraints, c)
 	}
 	args = append(args, []string{"-l", strings.Join(constraints, ",")}...)
 
 	if showWildCardLabels {
-		for _, label := range wildCardLabels {
+		for _, label := range showLabels {
 			ctx.Logger.Debugf("Selecting %v as a label instead", label)
 			args = append(args, []string{"-L", label}...)
 		}
@@ -92,7 +92,7 @@ func getSelectorArgsForPods(ctx *ankh.ExecutionContext, input string, showWildCa
 func getSelectorArgsForInput(ctx *ankh.ExecutionContext, input string, showWildCardLabels bool) ([]string, error) {
 	args := []string{}
 	kindMap := make(map[string]string)
-	labelMap := make(map[string][]string)
+	selectorLabels := make(map[string][]string)
 	decoder := yaml.NewDecoder(strings.NewReader(input))
 
 	for {
@@ -126,14 +126,14 @@ func getSelectorArgsForInput(ctx *ankh.ExecutionContext, input string, showWildC
 						args = append(args, []string{"-L", k}...)
 					}
 				} else {
-					labelMap[k] = append(labelMap[k], v)
+					selectorLabels[k] = append(selectorLabels[k], v)
 				}
 			}
 		}
 	}
 
 	constraints := []string{}
-	for k, v := range labelMap {
+	for k, v := range selectorLabels {
 		c := fmt.Sprintf("%v in (%v)", k, strings.Join(v, ","))
 		constraints = append(constraints, c)
 	}
@@ -216,22 +216,14 @@ func kubectlExec(ctx *ankh.ExecutionContext, kubectlCmd *exec.Cmd, input string,
 }
 
 func kubectlCommonArgs(ctx *ankh.ExecutionContext, namespace string) []string {
-	kubectlArgs := []string{}
-
-	if ctx.AnkhConfig.CurrentContext.KubeServer != "" {
-		kubectlArgs = append(kubectlArgs, []string{"--server", ctx.AnkhConfig.CurrentContext.KubeServer}...)
-	} else {
-		kubectlArgs = append(kubectlArgs, []string{"--context", ctx.AnkhConfig.CurrentContext.KubeContext}...)
-	}
+	kubectlArgs := []string{"--context", ctx.AnkhConfig.CurrentContext.KubeContext}
 
 	if namespace != "" {
 		kubectlArgs = append(kubectlArgs, []string{"--namespace", namespace}...)
 	}
 
-	if ctx.AnkhConfig.CurrentContext.KubeServer == "" {
-		if ctx.KubeConfigPath != "" {
-			kubectlArgs = append(kubectlArgs, []string{"--kubeconfig", ctx.KubeConfigPath}...)
-		}
+	if ctx.KubeConfigPath != "" {
+		kubectlArgs = append(kubectlArgs, []string{"--kubeconfig", ctx.KubeConfigPath}...)
 	}
 
 	if ctx.DryRun {
@@ -359,9 +351,15 @@ func Execute(ctx *ankh.ExecutionContext, input string, namespace string,
 			pods = append(pods, split[0])
 		}
 		if len(pods) > 1 {
-			podSelection, err = util.PromptForSelection(pods, "Select a pod")
-			if err != nil {
-				return "", err
+			if ctx.NoPrompt {
+				podSelection = pods[0]
+				ctx.Logger.Warnf("Selecting first pod (of %d) \"%v\" due to `--no-prompt`",
+					len(pods), podSelection)
+			} else {
+				podSelection, err = util.PromptForSelection(pods, "Select a pod")
+				if err != nil {
+					return "", err
+				}
 			}
 		} else {
 			podSelection = pods[0]
@@ -389,6 +387,9 @@ func Execute(ctx *ankh.ExecutionContext, input string, namespace string,
 			}
 		}
 		if !containerSelected && len(containers) > 1 {
+			if ctx.NoPrompt {
+				return "", fmt.Errorf("Must pass a container via `-c` when using `ankh --noo-prompt ...`")
+			}
 			containerSelection, err = util.PromptForSelection(containers, "Select a container")
 			if err != nil {
 				return "", err
