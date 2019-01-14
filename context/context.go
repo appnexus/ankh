@@ -85,13 +85,16 @@ type Environment struct {
 }
 
 type KubectlConfig struct {
+	Command        string   `yaml:"command"`
 	WildCardLabels []string `yaml:"wildCardLabels,omitempty"`
 }
 
 type HelmConfig struct {
-	TagValueName string `yaml:"tagValueName"`
-	Registry     string `yaml:"registry"`
-	AuthType     string `yaml:"authType"`
+	Command string `yaml:"command"`
+	// TODO: Deprecate
+	TagValueNameUnused string `yaml:"tagValueName"`
+	Registry           string `yaml:"registry"`
+	AuthType           string `yaml:"authType"`
 }
 
 type DockerConfig struct {
@@ -223,30 +226,38 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context str
 	return errors
 }
 
+type ChartMeta struct {
+	Namespace *string `yaml:"namespace"`
+	TagImage  string  `yaml:"tagImage"`
+	TagKey    string  `yaml:"tagKey"`
+}
+
 // TODO: Rename me to target?
+type ChartFiles struct {
+	Dir                      string
+	ChartDir                 string
+	GlobalPath               string
+	MetaPath                 string
+	ValuesPath               string
+	AnkhValuesPath           string
+	AnkhResourceProfilesPath string
+	AnkhReleasesPath         string
+}
+
 type Chart struct {
-	Path         string
-	Name         string
-	Version      string
-	Namespace    *string
-	Tag          *string
-	TagValueName string
+	Path      string
+	Name      string
+	Version   string
+	Tag       *string
+	ChartMeta ChartMeta `yaml:"meta"`
 	// DefaultValues are values that apply unconditionally, with lower precedence than values supplied in the fields below.
 	DefaultValues map[string]interface{} `yaml:"default-values"`
 	// Values, by environment-class, resource-profile, or release. MapSlice preserves map ordering so we can regex search from top to bottom.
 	Values           yaml.MapSlice
 	ResourceProfiles yaml.MapSlice `yaml:"resource-profiles"`
 	Releases         yaml.MapSlice
-}
 
-type ChartFiles struct {
-	Dir                      string
-	ChartDir                 string
-	GlobalPath               string
-	ValuesPath               string
-	AnkhValuesPath           string
-	AnkhResourceProfilesPath string
-	AnkhReleasesPath         string
+	Files *ChartFiles `yaml:"-"` // private, filled in by FetchChart
 }
 
 // AnkhFile defines the shape of the `ankh.yaml` file which is used to define
@@ -293,9 +304,9 @@ func ParseAnkhFile(ankhFilePath string) (AnkhFile, error) {
 		return ankhFile, err
 	}
 
-	err = yaml.UnmarshalStrict(body, &ankhFile)
+	err = yaml.Unmarshal(body, &ankhFile)
 	if err != nil {
-		return ankhFile, fmt.Errorf("Error loading Ankh file '%v': %v\nAll Ankh yamls are parsed strictly. Please refer to README.md for the correct schema of an Ankh file", ankhFilePath, err)
+		return ankhFile, fmt.Errorf("Error loading Ankh file '%v': %v\nPlease refer to README.md for the correct schema of an Ankh file", ankhFilePath, err)
 	}
 
 	return ankhFile, nil

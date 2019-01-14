@@ -14,8 +14,8 @@ import (
 	"github.com/appnexus/ankh/util"
 )
 
-func Version() (string, error) {
-	kubectlArgs := []string{"kubectl", "version", "--client"}
+func Version(ctx *ankh.ExecutionContext) (string, error) {
+	kubectlArgs := []string{ctx.AnkhConfig.Kubectl.Command, "version", "--client"}
 	kubectlCmd := exec.Command(kubectlArgs[0], kubectlArgs[1:]...)
 	kubectlOutput, err := kubectlCmd.CombinedOutput()
 	if err != nil {
@@ -69,6 +69,10 @@ func getSelectorArgsForPods(ctx *ankh.ExecutionContext, input string, showWildCa
 				}
 			}
 		}
+	}
+
+	if len(selectorLabels) == 0 {
+		return []string{}, fmt.Errorf("No Deployments or StatefulSets found for input chart")
 	}
 
 	constraints := []string{}
@@ -241,7 +245,7 @@ func Execute(ctx *ankh.ExecutionContext, input string, namespace string,
 		cmd = exec.Command
 	}
 
-	kubectlArgs := []string{"kubectl"}
+	kubectlArgs := []string{ctx.AnkhConfig.Kubectl.Command}
 	switch ctx.Mode {
 	case ankh.Diff:
 		kubectlArgs = append(kubectlArgs, []string{"alpha", "diff", "LAST", "LOCAL"}...)
@@ -272,17 +276,15 @@ func Execute(ctx *ankh.ExecutionContext, input string, namespace string,
 	if !ctx.Describe {
 		outputMode = []string{"-o", "wide"}
 	}
-	showWildcardLabels := !ctx.Describe
 	switch ctx.Mode {
 	case ankh.Exec:
 		fallthrough
 	case ankh.Logs:
 		outputMode = []string{"-o", "go-template", "--template={{ range .items }}{{ printf \"%s|\" .metadata.name }}{{ range .spec.containers }}{{ printf \"%s,\" .name }}{{ end }}{{ printf \"\\n\" }}{{ end }}"}
-		showWildcardLabels = false
 		fallthrough
 	case ankh.Pods:
 		kubectlArgs = append(kubectlArgs, append([]string{"pods"}, outputMode...)...)
-		args, err := getSelectorArgsForPods(ctx, input, showWildcardLabels)
+		args, err := getSelectorArgsForPods(ctx, input, false)
 		if err != nil {
 			return "", err
 		}
@@ -294,7 +296,7 @@ func Execute(ctx *ankh.ExecutionContext, input string, namespace string,
 		}
 	case ankh.Get:
 		skipStdoutAndStderr = true
-		args, err := getSelectorArgsForInput(ctx, input, showWildcardLabels)
+		args, err := getSelectorArgsForInput(ctx, input, !ctx.Describe)
 		if err != nil {
 			return "", err
 		}
@@ -402,9 +404,9 @@ func Execute(ctx *ankh.ExecutionContext, input string, namespace string,
 		kubectlArgs := []string{}
 		switch ctx.Mode {
 		case ankh.Exec:
-			kubectlArgs = append(kubectlArgs, []string{"kubectl", "exec", "-it"}...)
+			kubectlArgs = append(kubectlArgs, []string{ctx.AnkhConfig.Kubectl.Command, "exec", "-it"}...)
 		case ankh.Logs:
-			kubectlArgs = append(kubectlArgs, []string{"kubectl", "logs"}...)
+			kubectlArgs = append(kubectlArgs, []string{ctx.AnkhConfig.Kubectl.Command, "logs"}...)
 		}
 		kubectlArgs = append(kubectlArgs, commonArgs...)
 		kubectlArgs = append(kubectlArgs, ctx.ExtraArgs...)

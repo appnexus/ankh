@@ -77,9 +77,26 @@ func printContexts(ankhConfig *ankh.AnkhConfig) {
 	}
 }
 
-func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error {
+func fetchChartsAndPromptForMissing(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error {
 	if ctx.NoPrompt {
-		ctx.Logger.Infof("Using `--no-prompt`")
+		for i := 0; i < len(ankhFile.Charts); i++ {
+			chart := &ankhFile.Charts[i]
+
+			err := helm.FetchChart(ctx, chart)
+			if err != nil {
+				return fmt.Errorf("Error fetching chart \"%v\": %v", chart.Name, err)
+			}
+
+			// This logic is unfortunately duplicated in this function.
+			// The gist is that if ctx.Namespace is set then we have a
+			// command line override, which we'll use later. If the namespace
+			// is set on the ChartMeta, then we'll prioritize using that.
+			if ctx.Namespace == nil && chart.ChartMeta.Namespace == nil {
+				return fmt.Errorf("Missing namespace for chart \"%v\". To use this chart "+
+					"without a namespace, use `ankh --namespace \"\" ...`",
+					chart.Name)
+			}
+		}
 		return nil
 	}
 
@@ -112,38 +129,6 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 	for i := 0; i < len(ankhFile.Charts); i++ {
 		chart := &ankhFile.Charts[i]
 
-		// Ensure that we have a namespace before we prompt for versions.
-		// If namespace is set on the command line, we'll use that as an
-		// override later during executeChartsOnNamespace, so don't check
-		// for anything here.
-		if ctx.Namespace == nil {
-			if ankhFile.Namespace != nil && chart.Namespace == nil {
-				ctx.Logger.Infof("Using namespace \"%v\" from Ankh file "+
-					"for chart \"%v\" which has no explicit namespace set",
-					*ankhFile.Namespace, chart.Name)
-				chart.Namespace = ankhFile.Namespace
-			} else {
-				ctx.Logger.Infof("Found chart \"%v\" without a namespace", chart.Name)
-				if len(ctx.AnkhConfig.Namespaces) > 0 {
-					selectedNamespace, err := util.PromptForSelection(ctx.AnkhConfig.Namespaces,
-						fmt.Sprintf("Select a namespace for chart '%v' (or re-run with -n/--namespace to provide your own)", chart.Name))
-					if err != nil {
-						return err
-					}
-					chart.Namespace = &selectedNamespace
-				} else {
-					providedNamespace, err := util.PromptForInput("",
-						fmt.Sprintf("Provide a namespace for chart '%v'", chart.Name))
-					if err != nil {
-						return err
-					}
-					chart.Namespace = &providedNamespace
-
-				}
-				ctx.Logger.Infof("Using namespace \"%v\" for chart \"%v\" based on prompt selection", *chart.Namespace, chart.Name)
-			}
-		}
-
 		if chart.Path == "" && chart.Version == "" {
 			versions, err := helm.ListVersions(ctx, chart.Name, true)
 			if err != nil {
@@ -152,7 +137,7 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 
 			ctx.Logger.Infof("Found chart \"%v\" without a version", chart.Name)
 			selectedVersion, err := util.PromptForSelection(strings.Split(strings.Trim(versions, "\n "), "\n"),
-				fmt.Sprintf("Select a version for chart '%v'", chart.Name))
+				fmt.Sprintf("Select a version for chart \"%v\"", chart.Name))
 			if err != nil {
 				return err
 			}
@@ -163,20 +148,61 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 			ctx.Logger.Infof("Using chart \"%v\" from local path \"%v\"", chart.Name, chart.Path)
 		}
 
-		tagValueName := ctx.AnkhConfig.Helm.TagValueName
-		if chart.TagValueName != "" {
-			tagValueName = chart.TagValueName
+		// Now that we have either a version or a local path, fetch the chart.
+		// We may be able to read a namespace from the ankh.yaml meta file
+		// within the chart.
+		err := helm.FetchChart(ctx, chart)
+		if err != nil {
+			return fmt.Errorf("Error fetching chart \"%v\": %v", chart.Name, err)
 		}
 
-		// Do nothing if tagValueName is not configured - the user does not want this behavior.
-		if tagValueName == "" {
+		// If namespace is set on the command line, we'll use that as an
+		// override later during executeChartsOnNamespace, so don't check
+		// for anything here.
+		if ctx.Namespace == nil {
+			if ankhFile.Namespace != nil && chart.ChartMeta.Namespace == nil {
+				ctx.Logger.Infof("Using namespace \"%v\" from Ankh file "+
+					"for chart \"%v\" which has no explicit namespace set",
+					*ankhFile.Namespace, chart.Name)
+				chart.ChartMeta.Namespace = ankhFile.Namespace
+			} else if chart.ChartMeta.Namespace == nil {
+				ctx.Logger.Infof("Found chart \"%v\" without a namespace", chart.Name)
+				if len(ctx.AnkhConfig.Namespaces) > 0 {
+					selectedNamespace, err := util.PromptForSelection(ctx.AnkhConfig.Namespaces,
+						fmt.Sprintf("Select a namespace for chart '%v' (or re-run with -n/--namespace to provide your own)", chart.Name))
+					if err != nil {
+						return err
+					}
+					chart.ChartMeta.Namespace = &selectedNamespace
+				} else {
+					providedNamespace, err := util.PromptForInput("",
+						fmt.Sprintf("Provide a namespace for chart '%v' > ", chart.Name))
+					if err != nil {
+						return err
+					}
+					chart.ChartMeta.Namespace = &providedNamespace
+
+				}
+				ctx.Logger.Infof("Using namespace \"%v\" for chart \"%v\" based on prompt selection", *chart.ChartMeta.Namespace, chart.Name)
+			} else {
+				ctx.Logger.Infof("Using namespace \"%v\" for chart \"%v\" based on ankh.yaml present in the chart", *chart.ChartMeta.Namespace, chart.Name)
+			}
+		}
+
+		// tagKey comes directly from the chart's metadata
+		tagKey := chart.ChartMeta.TagKey
+
+		// Do nothing if tagKey is not configured - the user does not want this behavior.
+		if tagKey == "" {
 			if ctx.Tag != nil {
-				ctx.Logger.Fatalf("Tag has been provided but `helm.tagValueName` is not configured. " +
-					"This means you want to pass a tag value, but have not told Ankh which helm value corresponds " +
-					"to the tag value/variable in your helm chart. Tag is shorthand for `--set $tagValueName=$tag`, " +
-					"so you can use this instead, or you can ensure that `helm.tagValueName` is configured")
+				ctx.Logger.Fatalf("Tag has been provided but `tagKey` is not configured on either the `chart` in an AnkhFile, nor in an `ankh.yaml` inside the helm chart. " +
+					"This means you passed a tag value, but have not told Ankh which helm value corresponds " +
+					"to the tag value/variable in your helm chart. Tag is shorthand for `--set $tagKey=$tag`, " +
+					"so you can use that instead, or you can ensure that `chart.tagKey` is configured")
 			}
 			continue
+		} else {
+			ctx.Logger.Infof("Using tagKey \"%v\" for chart \"%v\" based on ankh.yaml present in the chart", chart.ChartMeta.TagKey, chart.Name)
 		}
 
 		if ctx.Tag != nil {
@@ -187,23 +213,23 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 					chart.Name, tagArgumentUsedForChart, *ctx.Tag)
 			}
 
-			ctx.Logger.Infof("Using tag value \"%v=%s\" based on --tag argument", tagValueName, *ctx.Tag)
+			ctx.Logger.Infof("Using tag value \"%v=%s\" based on --tag argument", tagKey, *ctx.Tag)
 			chart.Tag = ctx.Tag
 			tagArgumentUsedForChart = chart.Name
 			continue
 		}
 
-		// Treat any existing --set tagValueName=$tag argument as authoritative
+		// Treat any existing --set tagKey=$tag argument as authoritative
 		for k, v := range ctx.HelmSetValues {
-			if k == tagValueName {
-				ctx.Logger.Infof("Using tag value \"%v=%s\" based on --set argument", tagValueName, v)
+			if k == tagKey {
+				ctx.Logger.Infof("Using tag value \"%v=%s\" based on --set argument", tagKey, v)
 				t := v
 				chart.Tag = &t
 				break
 			}
 		}
 
-		// For certain operations, we can assume a safe `unset` value for tagValueName
+		// For certain operations, we can assume a safe `unset` value for tagKey
 		// for the sole purpose of templating the Helm chart. The value won't be used
 		// meaningfully (like it would be with apply), so we choose this method instead
 		// of prompting the user for a value that isn't meaningful.
@@ -221,27 +247,30 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 				break
 			}
 
-			_, ok := ctx.HelmSetValues[tagValueName]
+			_, ok := ctx.HelmSetValues[tagKey]
 			if !ok {
 				// It's unset, so set it for the purpose of this execution
 				tag := "__ankh_tag_value_unset___"
-				ctx.Logger.Debugf("Setting configured tagValueName %v=%v for a safe operation",
-					tagValueName, tag)
+				ctx.Logger.Debugf("Setting configured tagKey %v=%v for a safe operation",
+					tagKey, tag)
 				chart.Tag = &tag
 			}
 		}
 
 		// If we stil don't have a chart.Tag value, prompt.
 		if chart.Tag == nil {
-			// It's common for the primary image to be named after the chart, so that's our best guess
-			// as a default suggestion.
-			defaultValue := chart.Name
-
-			ctx.Logger.Infof("Found chart \"%v\" without a value for \"%v\" ", chart.Name, tagValueName)
-			image, err := util.PromptForInput(defaultValue,
-				fmt.Sprintf("No tag specified for chart '%v'. Provide the name of an image to select a tag for, "+
-				"or nothing to skip this step", chart.Name))
-			check(err)
+			image := ""
+			if chart.ChartMeta.TagImage != "" {
+				// No need to prompt for an image name if we already have one in the chart metdata
+				image = chart.ChartMeta.TagImage
+			} else {
+				ctx.Logger.Infof("Found chart \"%v\" without a value for \"%v\" ", chart.Name, tagKey)
+				defaultValue := chart.Name
+				image, err = util.PromptForInput(defaultValue,
+					fmt.Sprintf("No tag specified for chart '%v'. Provide the name of an image to select a tag for, "+
+						"or nothing to skip this step > ", chart.Name))
+				check(err)
+			}
 
 			if image == "" {
 				ctx.Logger.Infof("Skipping tag prompt since no image name was provided")
@@ -254,16 +283,16 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 			trimmedOutput := strings.Trim(output, "\n ")
 			if trimmedOutput != "" {
 				tags := strings.Split(trimmedOutput, "\n")
-				tag, err := util.PromptForSelection(tags, fmt.Sprintf("Select a value for '%v'", tagValueName))
+				tag, err := util.PromptForSelection(tags, fmt.Sprintf("Select a value for \"%v\"", tagKey))
 				check(err)
 
-				ctx.Logger.Infof("Using implicit \"--set tag %v=%s\" based on prompt selection", tagValueName, tag)
+				ctx.Logger.Infof("Using implicit \"--set tag %v=%s\" based on prompt selection", tagKey, tag)
 				chart.Tag = &tag
 			} else if image != "" {
-				complaint := fmt.Sprintf("Could not determine a tag value, and we check for this because `tagValueName` is configured to be `%v`. "+
+				complaint := fmt.Sprintf("Could not determine a tag value, and we check for this because `tagKey` is configured to be `%v`. "+
 					"You may want to try passing a tag value explicitly using `ankh --set %v=... `, or simply ignore "+
 					"this error entirely using `ankh --ignore-config-errors ...` (not recommended)",
-					tagValueName, tagValueName)
+					tagKey, tagKey)
 				if ctx.IgnoreConfigErrors {
 					ctx.Logger.Warnf("%v", complaint)
 				} else {
@@ -370,7 +399,7 @@ func execute(ctx *ankh.ExecutionContext) {
 		contexts = environment.Contexts
 	}
 
-	err = promptForMissingConfigs(ctx, &rootAnkhFile)
+	err = fetchChartsAndPromptForMissing(ctx, &rootAnkhFile)
 	check(err)
 
 	if len(contexts) > 0 {
@@ -403,7 +432,7 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile ankh.AnkhFile) {
 		logExecuteAnkhFile(ctx, ankhFile)
 
 		if ctx.HelmVersion == "" {
-			ver, err := helm.Version()
+			ver, err := helm.Version(ctx)
 			if err != nil {
 				ctx.Logger.Fatalf("Failed to get helm version info: %v", err)
 			}
@@ -436,7 +465,7 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile ankh.AnkhFile) {
 				fallthrough
 			case ankh.Apply:
 				if ctx.KubectlVersion == "" {
-					ver, err := kubectl.Version()
+					ver, err := kubectl.Version(ctx)
 					if err != nil {
 						ctx.Logger.Fatalf("Failed to get kubectl version info: %v", err)
 					}
@@ -455,10 +484,8 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile ankh.AnkhFile) {
 					// Sweet string badnesss.
 					helmOutput = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(helmOutput), "&& \\"))
 					fmt.Println(fmt.Sprintf("(%s) | \\\n%s", helmOutput, kubectlOutput))
-				} else {
-					if kubectlOutput != "" {
-						fmt.Println(kubectlOutput)
-					}
+				} else if kubectlOutput != "" {
+					fmt.Println(kubectlOutput)
 				}
 			case ankh.Template:
 				fmt.Println(helmOutput)
@@ -498,7 +525,7 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile ankh.AnkhFile) {
 			// Gather charts by namespace, and execute them in sets.
 			chartSets := make(map[string][]ankh.Chart)
 			for _, chart := range ankhFile.Charts {
-				namespace := *chart.Namespace
+				namespace := *chart.ChartMeta.Namespace
 				chartSets[namespace] = append(chartSets[namespace], chart)
 			}
 
@@ -613,10 +640,10 @@ func main() {
 			SetByUser: &namespaceSet,
 		})
 		tagSet = false
-		tag = app.String(cli.StringOpt{
+		tag    = app.String(cli.StringOpt{
 			Name:      "t tag",
 			Value:     "",
-			Desc:      "The tag value to use. This value is passed to helm as `--set $tagValueName=$tag`. Requires `helm.tagValueName` to be configured. Only valid when Ankh has a single chart to operate over, eg: with `--chart` or when an Ankh file has one charty entry.",
+			Desc:      "The tag value to use. This value is passed to helm as `--set $tagKey=$tag`. Requires a `tagKey` to be configured, either on the `chart` in an Ankh file, or in an `ankh.yaml` inside the Helm chart. Only valid when Ankh has a single chart to operate over, eg: with `--chart` or when an Ankh file has one chart entry.",
 			SetByUser: &tagSet,
 		})
 		datadir = app.String(cli.StringOpt{
@@ -1285,13 +1312,13 @@ func main() {
 			ctx.Logger.Infof("Ankh version info:")
 			fmt.Println(AnkhBuildVersion)
 
-			ctx.Logger.Infof("`helm version --client` output:")
-			ver, err := helm.Version()
+			ctx.Logger.Infof("`%v version --client` output:", ctx.AnkhConfig.Helm.Command)
+			ver, err := helm.Version(ctx)
 			check(err)
 			fmt.Print(ver)
 
-			ctx.Logger.Infof("`kubectl version --client` output:")
-			ver, err = kubectl.Version()
+			ctx.Logger.Infof("`%v version --client` output:", ctx.AnkhConfig.Kubectl.Command)
+			ver, err = kubectl.Version(ctx)
 			check(err)
 			fmt.Print(ver)
 

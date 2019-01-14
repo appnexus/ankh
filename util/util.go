@@ -350,7 +350,7 @@ func CreateReducedYAMLFile(filename, key string, required bool) ([]byte, error) 
 		return result, err
 	}
 
-	if err = yaml.UnmarshalStrict(inBytes, &in); err != nil {
+	if err = yaml.Unmarshal(inBytes, &in); err != nil {
 		return result, err
 	}
 
