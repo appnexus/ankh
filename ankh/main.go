@@ -25,6 +25,7 @@ import (
 	"github.com/appnexus/ankh/docker"
 	"github.com/appnexus/ankh/helm"
 	"github.com/appnexus/ankh/kubectl"
+	"github.com/appnexus/ankh/slack"
 	"github.com/appnexus/ankh/util"
 )
 
@@ -300,6 +301,11 @@ func fetchChartsAndPromptForMissing(ctx *ankh.ExecutionContext, ankhFile *ankh.A
 				}
 			}
 		}
+
+		// we should finally have a tag value
+		if ctx.SlackChannel != "" {
+			ctx.SlackDeploymentVersion = *chart.Tag
+		}
 	}
 
 	return nil
@@ -401,6 +407,20 @@ func execute(ctx *ankh.ExecutionContext) {
 
 	err = fetchChartsAndPromptForMissing(ctx, &rootAnkhFile)
 	check(err)
+
+	if ctx.SlackChannel != "" {
+		if ctx.Mode == ankh.Rollback {
+			ctx.SlackDeploymentVersion = "rollback"
+		}
+		if !ctx.DryRun {
+			err := slack.PingSlackChannel(ctx)
+			if err != nil {
+				ctx.Logger.Errorf("Slack message failed with error: %v", err)
+			}
+		} else {
+			ctx.Logger.Infof("--dry-run set so not pinging slack channel %v about version %v release.", ctx.SlackChannel, ctx.SlackDeploymentVersion)
+		}
+	}
 
 	if len(contexts) > 0 {
 		log.Infof("Executing over environment \"%v\" with contexts [ %v ]", ctx.Environment, strings.Join(contexts, ", "))
@@ -819,11 +839,13 @@ func main() {
 	})
 
 	app.Command("apply", "Apply an Ankh file to a Kubernetes cluster", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--dry-run] [--chart] [--filter...]"
+		cmd.Spec = "[-f] [--dry-run] [--chart] [--slack] [--slack-message] [--filter...]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually apply anything to a cluster")
 		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
+		slackChannel := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
+		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
 		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action.")
 
 		cmd.Action = func() {
@@ -831,6 +853,8 @@ func main() {
 			ctx.DryRun = *dryRun
 			ctx.Chart = *chart
 			ctx.Mode = ankh.Apply
+			ctx.SlackChannel = *slackChannel
+			ctx.SlackMessageOverride = *slackMessageOverride
 			filters := []string{}
 			for _, filter := range *filter {
 				filters = append(filters, string(filter))
@@ -843,17 +867,21 @@ func main() {
 	})
 
 	app.Command("rollback", "Rollback deployments associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--dry-run] [--chart]"
+		cmd.Spec = "[-f] [--dry-run] [--chart] [--slack] [--slack-message]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually rollback anything to a cluster")
 		chart := cmd.StringOpt("chart", "", "Limits the rollback command to only the specified chart")
+		slackChannel := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
+		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
 
 		cmd.Action = func() {
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.DryRun = *dryRun
 			ctx.Chart = *chart
 			ctx.Mode = ankh.Rollback
+			ctx.SlackChannel = *slackChannel
+			ctx.SlackMessageOverride = *slackMessageOverride
 			ctx.Filters = []string{"deployment", "statfulset"}
 
 			ctx.Logger.Warnf("Rollback is not a transactional operation.\n" +
