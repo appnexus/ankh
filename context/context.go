@@ -44,7 +44,7 @@ type ExecutionContext struct {
 	Mode Mode
 
 	Verbose, Quiet, CatchSignals, DryRun, Describe, WarnOnConfigError,
-		IgnoreContextAndEnv, IgnoreConfigErrors, NoPrompt bool
+	IgnoreContextAndEnv, IgnoreConfigErrors, NoPrompt bool
 
 	AnkhConfigPath string
 	KubeConfigPath string
@@ -337,7 +337,7 @@ func getAnkhFileForChart(ctx *ExecutionContext, singleChart string) (AnkhFile, e
 	// Extract that now if possible.
 	tokens := strings.Split(singleChart, "@")
 	if len(tokens) > 2 {
-		ctx.Logger.Fatalf("Invalid chart '%v'. Too many `@` characters found. Chart must either be a name with no `@`, or in the combined `name@version` format")
+		ctx.Logger.Fatalf("Invalid chart '%v'. Too many `@` characters found. Chart must either be a name with no `@`, or in the combined `name@version` format", singleChart)
 	}
 	if len(tokens) == 2 {
 		singleChart = tokens[0]
