@@ -50,3 +50,9 @@ contexts:
     # every chart. Arrays are not supported within `global`.
     global:
       foo: bar
+
+# enables sending of release message to specified slack team and channel. 
+slack:
+  token: foobar123
+  username: random-foobar
+  icon-url: foobar.com/myimage.jpg

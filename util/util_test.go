@@ -88,3 +88,22 @@ func TestMultiErrorFormat(t *testing.T) {
 		t.Fail()
 	}
 }
+
+func TestGetEnviroment(t *testing.T) {
+	env := "staging"
+	context := "kube00abc1-dev"
+
+	expectedEnv := "staging"
+	expectedContext := "kube00abc1-dev"
+
+	result := GetEnvironmentOrContext(env, "")
+	if result != expectedEnv {
+		t.Logf("got %s but was expecting '%s'", result, expectedEnv)
+		t.Fail()
+	}
+	result = GetEnvironmentOrContext("", context)
+	if result != expectedContext {
+		t.Logf("got %s but was expecting '%s'", result, expectedContext)
+		t.Fail()
+	}
+}

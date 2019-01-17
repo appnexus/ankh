@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
 	"os"
@@ -15,6 +14,9 @@ import (
 	"strconv"
 	"strings"
 
+	"gopkg.in/yaml.v2"
+
+	ankh "github.com/appnexus/ankh/context"
 	"github.com/coreos/go-semver/semver"
 	"github.com/manifoldco/promptui"
 	"github.com/sirupsen/logrus"
@@ -599,4 +601,23 @@ func SemverBump(version string, semVerType string) (string, error) {
 	}
 
 	return v.String(), nil
+}
+
+// GetEnvironmentOrContext, given a enviroment and a context returns the non-empty value
+// NOTE: context and enviroment should not both be provided
+func GetEnvironmentOrContext(environment string, context string) string {
+	if environment != "" {
+		return environment
+	}
+	if context != "" {
+		return context
+	}
+	return ""
+}
+
+func GetAppVersion(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) string {
+
+	chart := &ankhFile.Charts[0]
+
+	return *chart.Tag
 }

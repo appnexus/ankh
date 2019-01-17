@@ -54,6 +54,10 @@ type ExecutionContext struct {
 	DataDir        string
 	HelmSetValues  map[string]string
 
+	SlackChannel           string
+	SlackMessageOverride   string
+	SlackDeploymentVersion string
+
 	Filters []string
 
 	ExtraArgs, PassThroughArgs []string
@@ -101,6 +105,12 @@ type DockerConfig struct {
 	Registry string `yaml:"registry"`
 }
 
+type SlackConfig struct {
+	Token    string `yaml:"token"`
+	Icon     string `yaml:"icon-url"`
+	Username string `yaml:"username"`
+}
+
 // AnkhConfig defines the shape of the ~/.ankh/config file used for global
 // configuration options
 type AnkhConfig struct {
@@ -117,6 +127,7 @@ type AnkhConfig struct {
 	Kubectl KubectlConfig `yaml:"kubectl,omitempty"`
 	Helm    HelmConfig    `yaml:"helm,omitempty"`
 	Docker  DockerConfig  `yaml:"docker,omitempty"`
+	Slack   SlackConfig   `yaml:"slack,omitempty"`
 
 	// List of namespace suggestions to use if the user does not provide one when required.
 	Namespaces []string `yaml:"namespaces,omitempty"`

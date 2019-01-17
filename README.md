@@ -234,6 +234,7 @@ When invoked, Ankh will operate over both the `haste-server` and `myservice` cha
 | kubectl                       | `KubectlConfig`            | Configuration for Kubectl. |
 | helm                          | `HelmConfig`               | Configuration for Helm . 	|
 | docker                        | `DockerConfig`             | Configuration for Docker.	|
+| slack                         | `SlackConfig`              | Configuration for Slack.   |
 
 #### `KubectlConfig`
 | Field         | Type     | Description                                                                                                        |
@@ -252,6 +253,13 @@ When invoked, Ankh will operate over both the `haste-server` and `myservice` cha
 | Field         | Type     | Description                                                                                                        |
 | ------------- | :---:    | :-------------:                                                                                                    |
 | registry      | string | The docker registry to use. This is always used by `ankh docker ...` subcommands and is also used by other commands to produce prompts, typically when `helm.tagValueName` is set and Ankh sees that no tag value has been provided. |
+
+#### `SlackConfig`
+| Field         | Type     | Description                                                                                                        |
+| ------------- | :---:    | :-------------:                                                                                                    |
+| token      | string | Bot token used to connect to slack team |
+| icon-url      | string | Optional. Url of icon to be used when message is posted to slack. Default is the ankh logo. |
+| username      | string | Optional. Username associated with message when posting message to slack. Default is `ankh` |
 
 #### `Environment`
 | Field         | Type     | Description                                                                                                        |

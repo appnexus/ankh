@@ -29,3 +29,7 @@
 [[constraint]]
   name = "github.com/coreos/go-semver"
   version = "0.2.0"
+
+[[constraint]]
+  name = "github.com/nlopes/slack"
+  version = "0.4.0"
