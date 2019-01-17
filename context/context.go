@@ -34,12 +34,10 @@ type ExecutionContext struct {
 	AnkhConfig, OriginalAnkhConfig AnkhConfig
 
 	AnkhFilePath string
-	// Overrides:
-	// Chart may be a single chart in the charts array, or a local chart path
-	// Namespace may override a value present in the AnkhFile
-	Chart     string
-	Tag       *string
-	Namespace *string
+	Chart        string
+	LocalChart   bool
+	Tag          *string
+	Namespace    *string
 
 	Mode Mode
 
@@ -342,10 +340,46 @@ func GetAnkhFile(ctx *ExecutionContext) (AnkhFile, error) {
 	return getAnkhFileForChart(ctx, ctx.Chart)
 }
 
-func getAnkhFileForChart(ctx *ExecutionContext, singleChart string) (AnkhFile, error) {
-	versionOverride := ""
+type HelmChart struct {
+	Name string
+}
 
-	var ankhFile AnkhFile
+func readChartDirectory(chartDir string) (*HelmChart, error) {
+	chartYamlPath := filepath.Join(chartDir, "Chart.yaml")
+	chartYaml, err := ioutil.ReadFile(chartYamlPath)
+	if err != nil {
+		return nil, err
+	}
+	helmChart := HelmChart{}
+	err = yaml.Unmarshal(chartYaml, &helmChart)
+	if err != nil {
+		return nil, err
+	}
+	if helmChart.Name == "" {
+		return nil, fmt.Errorf("Did not find any `name` in %v", chartYamlPath)
+	}
+	return &helmChart, nil
+}
+
+func getAnkhFileForChart(ctx *ExecutionContext, singleChart string) (AnkhFile, error) {
+	ankhFile := AnkhFile{}
+
+	if ctx.LocalChart {
+		// The user wants to use a local chart. Interpret singleChart as a directory.
+		ctx.Logger.Infof("Using chart directory %v", singleChart)
+		helmChart, err := readChartDirectory(singleChart)
+		if err != nil {
+			return AnkhFile{}, fmt.Errorf("Could not use \"%v\" as a local chart directory: %v", singleChart, err)
+		}
+
+		ankhFile = AnkhFile{
+			Charts: []Chart{
+				Chart{Path: singleChart, Name: helmChart.Name},
+			},
+		}
+		return ankhFile, nil
+	}
+
 	if _, err := os.Stat(ctx.AnkhFilePath); err == nil {
 		ctx.Logger.Infof("Reading Ankh file %v", ctx.AnkhFilePath)
 		ankhFile, err = ParseAnkhFile(ctx.AnkhFilePath)
@@ -357,6 +391,7 @@ func getAnkhFileForChart(ctx *ExecutionContext, singleChart string) (AnkhFile, e
 
 	// The single chart argument may have a version override in the format `name@version`
 	// Extract that now if possible.
+	versionOverride := ""
 	tokens := strings.Split(singleChart, "@")
 	if len(tokens) > 2 {
 		ctx.Logger.Fatalf("Invalid chart '%v'. Too many `@` characters found. Chart must either be a name with no `@`, or in the combined `name@version` format", singleChart)
