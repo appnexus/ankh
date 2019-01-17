@@ -40,13 +40,13 @@ func getTestUserProfile() UserProfile {
 		RealNameNormalized:    "Test Real Name Normalized",
 		DisplayName:           "Test Display Name",
 		DisplayNameNormalized: "Test Display Name Normalized",
-		Email:    "test@test.com",
-		Image24:  "https://s3-us-west-2.amazonaws.com/slack-files2/avatars/2016-10-18/92962080834_ef14c1469fc0741caea1_24.jpg",
-		Image32:  "https://s3-us-west-2.amazonaws.com/slack-files2/avatars/2016-10-18/92962080834_ef14c1469fc0741caea1_32.jpg",
-		Image48:  "https://s3-us-west-2.amazonaws.com/slack-files2/avatars/2016-10-18/92962080834_ef14c1469fc0741caea1_48.jpg",
-		Image72:  "https://s3-us-west-2.amazonaws.com/slack-files2/avatars/2016-10-18/92962080834_ef14c1469fc0741caea1_72.jpg",
-		Image192: "https://s3-us-west-2.amazonaws.com/slack-files2/avatars/2016-10-18/92962080834_ef14c1469fc0741caea1_192.jpg",
-		Fields:   getTestUserProfileCustomFields(),
+		Email:                 "test@test.com",
+		Image24:               "https://s3-us-west-2.amazonaws.com/slack-files2/avatars/2016-10-18/92962080834_ef14c1469fc0741caea1_24.jpg",
+		Image32:               "https://s3-us-west-2.amazonaws.com/slack-files2/avatars/2016-10-18/92962080834_ef14c1469fc0741caea1_32.jpg",
+		Image48:               "https://s3-us-west-2.amazonaws.com/slack-files2/avatars/2016-10-18/92962080834_ef14c1469fc0741caea1_48.jpg",
+		Image72:               "https://s3-us-west-2.amazonaws.com/slack-files2/avatars/2016-10-18/92962080834_ef14c1469fc0741caea1_72.jpg",
+		Image192:              "https://s3-us-west-2.amazonaws.com/slack-files2/avatars/2016-10-18/92962080834_ef14c1469fc0741caea1_192.jpg",
+		Fields:                getTestUserProfileCustomFields(),
 	}
 }
 
@@ -100,6 +100,18 @@ func getUserIdentity(rw http.ResponseWriter, r *http.Request) {
     "image_original": "https:\/\/s3-us-west-2.amazonaws.com\/slack-files2\/avatars\/2016-10-18\/92962080834_ef14c1469fc0741caea1_original.jpg"
   }
 }`)
+	rw.Write(response)
+}
+
+func getUserInfo(rw http.ResponseWriter, r *http.Request) {
+	rw.Header().Set("Content-Type", "application/json")
+	response, _ := json.Marshal(struct {
+		Ok   bool `json:"ok"`
+		User User `json:"user"`
+	}{
+		Ok:   true,
+		User: getTestUser(),
+	})
 	rw.Write(response)
 }
 
@@ -170,7 +182,7 @@ func TestGetUserIdentity(t *testing.T) {
 	http.HandleFunc("/users.identity", getUserIdentity)
 
 	once.Do(startServer)
-	SLACK_API = "http://" + serverAddr + "/"
+	APIURL = "http://" + serverAddr + "/"
 	api := New("testing-token")
 
 	identity, err := api.GetUserIdentity()
@@ -206,12 +218,30 @@ func TestGetUserIdentity(t *testing.T) {
 	}
 }
 
+func TestGetUserInfo(t *testing.T) {
+	http.HandleFunc("/users.info", getUserInfo)
+	expectedUser := getTestUser()
+
+	once.Do(startServer)
+	APIURL = "http://" + serverAddr + "/"
+	api := New("testing-token")
+
+	user, err := api.GetUserInfo("UXXXXXXXX")
+	if err != nil {
+		t.Errorf("Unexpected error: %s", err)
+		return
+	}
+	if !reflect.DeepEqual(expectedUser, *user) {
+		t.Fatal(ErrIncorrectResponse)
+	}
+}
+
 func TestGetUserByEmail(t *testing.T) {
 	http.HandleFunc("/users.lookupByEmail", getUserByEmail)
 	expectedUser := getTestUser()
 
 	once.Do(startServer)
-	SLACK_API = "http://" + serverAddr + "/"
+	APIURL = "http://" + serverAddr + "/"
 	api := New("testing-token")
 
 	user, err := api.GetUserByEmail("test@test.com")
@@ -232,7 +262,7 @@ func TestUserCustomStatus(t *testing.T) {
 	http.HandleFunc("/users.profile.set", setUserProfile)
 
 	once.Do(startServer)
-	SLACK_API = "http://" + serverAddr + "/"
+	APIURL = "http://" + serverAddr + "/"
 	api := New("testing-token")
 
 	testSetUserCustomStatus(api, up, t)
@@ -277,7 +307,7 @@ func TestGetUsers(t *testing.T) {
 	expectedUser := getTestUser()
 
 	once.Do(startServer)
-	SLACK_API = "http://" + serverAddr + "/"
+	APIURL = "http://" + serverAddr + "/"
 	api := New("testing-token")
 
 	users, err := api.GetUsers()
@@ -329,7 +359,7 @@ func TestSetUserPhoto(t *testing.T) {
 	http.HandleFunc("/users.setPhoto", setUserPhotoHandler(fileContent, params))
 
 	once.Do(startServer)
-	SLACK_API = "http://" + serverAddr + "/"
+	APIURL = "http://" + serverAddr + "/"
 	api := New(validToken)
 
 	err := api.SetUserPhoto(file.Name(), params)
@@ -436,7 +466,7 @@ func getUserProfileHandler(rw http.ResponseWriter, r *http.Request) {
 func TestGetUserProfile(t *testing.T) {
 	http.HandleFunc("/users.profile.get", getUserProfileHandler)
 	once.Do(startServer)
-	SLACK_API = "http://" + serverAddr + "/"
+	APIURL = "http://" + serverAddr + "/"
 	api := New("testing-token")
 	profile, err := api.GetUserProfile("UXXXXXXXX", false)
 	if err != nil {

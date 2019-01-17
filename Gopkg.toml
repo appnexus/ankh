@@ -32,4 +32,4 @@
 
 [[constraint]]
   name = "github.com/nlopes/slack"
-  version = "0.4.0"
+  revision = "3b9e5d653ede77b578819b587537227c1ac9f487"

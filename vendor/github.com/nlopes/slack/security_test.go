@@ -25,7 +25,14 @@ func newHeader(valid bool) http.Header {
 	return h
 }
 
-func TestNewSecretsVerifier(t *testing.T) {
+func TestExpiredTimestamp(t *testing.T) {
+	_, err := NewSecretsVerifier(newHeader(true), "abcdefg12345")
+	if err == nil {
+		t.Fatal("expected an error but got none")
+	}
+}
+
+func TestUnsafeSignatureVerifier(t *testing.T) {
 	tests := []struct {
 		title         string
 		header        http.Header
@@ -47,7 +54,7 @@ func TestNewSecretsVerifier(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		_, err := NewSecretsVerifier(test.header, test.signingSecret)
+		_, err := unsafeSignatureVerifier(test.header, test.signingSecret)
 
 		if !test.expectError && err != nil {
 			log.Fatalf("%s: Unexpected error: %s in test", test.title, err)
@@ -89,10 +96,13 @@ func TestEnsure(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		sv, _ := NewSecretsVerifier(test.header, test.signingSecret)
+		sv, err := unsafeSignatureVerifier(test.header, test.signingSecret)
+		if err != nil {
+			t.Fatalf("unexpected error: %s", err)
+		}
 		io.WriteString(&sv, test.body)
 
-		err := sv.Ensure()
+		err = sv.Ensure()
 
 		if !test.expectError && err != nil {
 			log.Fatalf("%s: Unexpected error: %s in test", test.title, err)

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 
 	"github.com/nlopes/slack"
@@ -15,14 +16,21 @@ func main() {
 		slack.OptionLog(log.New(os.Stdout, "slack-bot: ", log.Lshortfile|log.LstdFlags)),
 	)
 
-	rtm := api.NewRTM()
+	// turn on the batch_presence_aware option
+	rtm := api.NewRTM(slack.RTMOptionConnParams(url.Values{
+		"batch_presence_aware": {"1"},
+	}))
 	go rtm.ManageConnection()
 
 	for msg := range rtm.IncomingEvents {
 		fmt.Print("Event Received: ")
 		switch ev := msg.Data.(type) {
 		case *slack.HelloEvent:
-			// Ignore hello
+			// Replace USER-ID-N here with your User IDs
+			rtm.SendMessage(rtm.NewSubscribeUserPresence([]string{
+				"USER-ID-1",
+				"USER-ID-2",
+			}))
 
 		case *slack.ConnectedEvent:
 			fmt.Println("Infos:", ev.Info)

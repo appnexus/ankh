@@ -223,15 +223,14 @@
   version = "v1.10.0"
 
 [[projects]]
-  digest = "1:9407d3c57389f400ef8c1039e352ce00e2ab97c41bf1babba97c2a6922b7111e"
+  digest = "1:ebffdf25c903771e5b9b6e8e2bce68eaee099434348dd9f686279aabf6dee7cd"
   name = "github.com/nlopes/slack"
   packages = [
     ".",
     "slackutilsx",
   ]
   pruneopts = ""
-  revision = "b9033a72a20bf84563485e86a2adbea4bf265804"
-  version = "v0.4.0"
+  revision = "3b9e5d653ede77b578819b587537227c1ac9f487"
 
 [[projects]]
   digest = "1:5d9b668b0b4581a978f07e7d2e3314af18eb27b3fb5d19b70185b7c575723d11"
