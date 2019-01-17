@@ -78,15 +78,17 @@ func printContexts(ankhConfig *ankh.AnkhConfig) {
 	}
 }
 
-func fetchChartsAndPromptForMissing(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error {
+func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error {
 	if ctx.NoPrompt {
 		for i := 0; i < len(ankhFile.Charts); i++ {
 			chart := &ankhFile.Charts[i]
 
-			err := helm.FetchChart(ctx, chart)
+			// Fetch and merge chart metadata
+			meta, err := helm.FetchChartMeta(ctx, chart)
 			if err != nil {
 				return fmt.Errorf("Error fetching chart \"%v\": %v", chart.Name, err)
 			}
+			mergo.Merge(&chart.ChartMeta, meta)
 
 			// This logic is unfortunately duplicated in this function.
 			// The gist is that if ctx.Namespace is set then we have a
@@ -149,13 +151,12 @@ func fetchChartsAndPromptForMissing(ctx *ankh.ExecutionContext, ankhFile *ankh.A
 			ctx.Logger.Infof("Using chart \"%v\" from local path \"%v\"", chart.Name, chart.Path)
 		}
 
-		// Now that we have either a version or a local path, fetch the chart.
-		// We may be able to read a namespace from the ankh.yaml meta file
-		// within the chart.
-		err := helm.FetchChart(ctx, chart)
+		// Now that we have either a version or a local path, fetch the chart metadata and merge it.
+		meta, err := helm.FetchChartMeta(ctx, chart)
 		if err != nil {
 			return fmt.Errorf("Error fetching chart \"%v\": %v", chart.Name, err)
 		}
+		mergo.Merge(&chart.ChartMeta, meta)
 
 		// If namespace is set on the command line, we'll use that as an
 		// override later during executeChartsOnNamespace, so don't check
@@ -406,7 +407,7 @@ func execute(ctx *ankh.ExecutionContext) {
 		contexts = environment.Contexts
 	}
 
-	err = fetchChartsAndPromptForMissing(ctx, &rootAnkhFile)
+	err = promptForMissingConfigs(ctx, &rootAnkhFile)
 	check(err)
 
 	if ctx.SlackChannel != "" {
