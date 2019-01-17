@@ -264,6 +264,7 @@ func fetchChartsAndPromptForMissing(ctx *ankh.ExecutionContext, ankhFile *ankh.A
 			if chart.ChartMeta.TagImage != "" {
 				// No need to prompt for an image name if we already have one in the chart metdata
 				image = chart.ChartMeta.TagImage
+				ctx.Logger.Infof("Using tagImage \"%v\" for chart \"%v\" based on ankh.yaml present in the chart", chart.ChartMeta.TagImage, chart.Name)
 			} else {
 				ctx.Logger.Infof("Found chart \"%v\" without a value for \"%v\" ", chart.Name, tagKey)
 				defaultValue := chart.Name
