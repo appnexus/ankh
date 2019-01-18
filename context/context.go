@@ -34,12 +34,10 @@ type ExecutionContext struct {
 	AnkhConfig, OriginalAnkhConfig AnkhConfig
 
 	AnkhFilePath string
-	// Overrides:
-	// Chart may be a single chart in the charts array, or a local chart path
-	// Namespace may override a value present in the AnkhFile
-	Chart     string
-	Tag       *string
-	Namespace *string
+	Chart        string
+	LocalChart   bool
+	Tag          *string
+	Namespace    *string
 
 	Mode Mode
 
@@ -53,6 +51,10 @@ type ExecutionContext struct {
 	Environment    string
 	DataDir        string
 	HelmSetValues  map[string]string
+
+	SlackChannel           string
+	SlackMessageOverride   string
+	SlackDeploymentVersion string
 
 	Filters []string
 
@@ -85,17 +87,26 @@ type Environment struct {
 }
 
 type KubectlConfig struct {
+	Command        string   `yaml:"command"`
 	WildCardLabels []string `yaml:"wildCardLabels,omitempty"`
 }
 
 type HelmConfig struct {
-	TagValueName string `yaml:"tagValueName"`
-	Registry     string `yaml:"registry"`
-	AuthType     string `yaml:"authType"`
+	Command string `yaml:"command"`
+	// TODO: Deprecate
+	TagValueNameUnused string `yaml:"tagValueName"`
+	Registry           string `yaml:"registry"`
+	AuthType           string `yaml:"authType"`
 }
 
 type DockerConfig struct {
 	Registry string `yaml:"registry"`
+}
+
+type SlackConfig struct {
+	Token    string `yaml:"token"`
+	Icon     string `yaml:"icon-url"`
+	Username string `yaml:"username"`
 }
 
 // AnkhConfig defines the shape of the ~/.ankh/config file used for global
@@ -114,6 +125,7 @@ type AnkhConfig struct {
 	Kubectl KubectlConfig `yaml:"kubectl,omitempty"`
 	Helm    HelmConfig    `yaml:"helm,omitempty"`
 	Docker  DockerConfig  `yaml:"docker,omitempty"`
+	Slack   SlackConfig   `yaml:"slack,omitempty"`
 
 	// List of namespace suggestions to use if the user does not provide one when required.
 	Namespaces []string `yaml:"namespaces,omitempty"`
@@ -223,30 +235,38 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context str
 	return errors
 }
 
+type ChartMeta struct {
+	Namespace *string `yaml:"namespace"`
+	TagImage  string  `yaml:"tagImage"`
+	TagKey    string  `yaml:"tagKey"`
+}
+
 // TODO: Rename me to target?
+type ChartFiles struct {
+	Dir                      string
+	ChartDir                 string
+	GlobalPath               string
+	MetaPath                 string
+	ValuesPath               string
+	AnkhValuesPath           string
+	AnkhResourceProfilesPath string
+	AnkhReleasesPath         string
+}
+
 type Chart struct {
-	Path         string
-	Name         string
-	Version      string
-	Namespace    *string
-	Tag          *string
-	TagValueName string
+	Path      string
+	Name      string
+	Version   string
+	Tag       *string
+	ChartMeta ChartMeta `yaml:"meta"`
 	// DefaultValues are values that apply unconditionally, with lower precedence than values supplied in the fields below.
 	DefaultValues map[string]interface{} `yaml:"default-values"`
 	// Values, by environment-class, resource-profile, or release. MapSlice preserves map ordering so we can regex search from top to bottom.
 	Values           yaml.MapSlice
 	ResourceProfiles yaml.MapSlice `yaml:"resource-profiles"`
 	Releases         yaml.MapSlice
-}
 
-type ChartFiles struct {
-	Dir                      string
-	ChartDir                 string
-	GlobalPath               string
-	ValuesPath               string
-	AnkhValuesPath           string
-	AnkhResourceProfilesPath string
-	AnkhReleasesPath         string
+	Files *ChartFiles `yaml:"-"` // private, filled in by FetchChart
 }
 
 // AnkhFile defines the shape of the `ankh.yaml` file which is used to define
@@ -293,9 +313,9 @@ func ParseAnkhFile(ankhFilePath string) (AnkhFile, error) {
 		return ankhFile, err
 	}
 
-	err = yaml.UnmarshalStrict(body, &ankhFile)
+	err = yaml.Unmarshal(body, &ankhFile)
 	if err != nil {
-		return ankhFile, fmt.Errorf("Error loading Ankh file '%v': %v\nAll Ankh yamls are parsed strictly. Please refer to README.md for the correct schema of an Ankh file", ankhFilePath, err)
+		return ankhFile, fmt.Errorf("Error loading Ankh file '%v': %v\nPlease refer to README.md for the correct schema of an Ankh file", ankhFilePath, err)
 	}
 
 	return ankhFile, nil
@@ -320,10 +340,46 @@ func GetAnkhFile(ctx *ExecutionContext) (AnkhFile, error) {
 	return getAnkhFileForChart(ctx, ctx.Chart)
 }
 
-func getAnkhFileForChart(ctx *ExecutionContext, singleChart string) (AnkhFile, error) {
-	versionOverride := ""
+type HelmChart struct {
+	Name string
+}
 
-	var ankhFile AnkhFile
+func readChartDirectory(chartDir string) (*HelmChart, error) {
+	chartYamlPath := filepath.Join(chartDir, "Chart.yaml")
+	chartYaml, err := ioutil.ReadFile(chartYamlPath)
+	if err != nil {
+		return nil, err
+	}
+	helmChart := HelmChart{}
+	err = yaml.Unmarshal(chartYaml, &helmChart)
+	if err != nil {
+		return nil, err
+	}
+	if helmChart.Name == "" {
+		return nil, fmt.Errorf("Did not find any `name` in %v", chartYamlPath)
+	}
+	return &helmChart, nil
+}
+
+func getAnkhFileForChart(ctx *ExecutionContext, singleChart string) (AnkhFile, error) {
+	ankhFile := AnkhFile{}
+
+	if ctx.LocalChart {
+		// The user wants to use a local chart. Interpret singleChart as a directory.
+		ctx.Logger.Infof("Using chart directory %v", singleChart)
+		helmChart, err := readChartDirectory(singleChart)
+		if err != nil {
+			return AnkhFile{}, fmt.Errorf("Could not use \"%v\" as a local chart directory: %v", singleChart, err)
+		}
+
+		ankhFile = AnkhFile{
+			Charts: []Chart{
+				Chart{Path: singleChart, Name: helmChart.Name},
+			},
+		}
+		return ankhFile, nil
+	}
+
 	if _, err := os.Stat(ctx.AnkhFilePath); err == nil {
 		ctx.Logger.Infof("Reading Ankh file %v", ctx.AnkhFilePath)
 		ankhFile, err = ParseAnkhFile(ctx.AnkhFilePath)
@@ -335,6 +391,7 @@ func getAnkhFileForChart(ctx *ExecutionContext, singleChart string) (AnkhFile, e
 
 	// The single chart argument may have a version override in the format `name@version`
 	// Extract that now if possible.
+	versionOverride := ""
 	tokens := strings.Split(singleChart, "@")
 	if len(tokens) > 2 {
 		ctx.Logger.Fatalf("Invalid chart '%v'. Too many `@` characters found. Chart must either be a name with no `@`, or in the combined `name@version` format", singleChart)

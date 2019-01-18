@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
 	"os"
@@ -15,6 +14,9 @@ import (
 	"strconv"
 	"strings"
 
+	"gopkg.in/yaml.v2"
+
+	ankh "github.com/appnexus/ankh/context"
 	"github.com/coreos/go-semver/semver"
 	"github.com/manifoldco/promptui"
 	"github.com/sirupsen/logrus"
@@ -350,7 +352,7 @@ func CreateReducedYAMLFile(filename, key string, required bool) ([]byte, error) 
 		return result, err
 	}
 
-	if err = yaml.UnmarshalStrict(inBytes, &in); err != nil {
+	if err = yaml.Unmarshal(inBytes, &in); err != nil {
 		return result, err
 	}
 
@@ -388,27 +390,6 @@ func ArrayDedup(a []string) []string {
 		keys = append(keys, k)
 	}
 	return keys
-}
-
-type HelmChart struct {
-	Name string
-}
-
-func ReadChartDirectory(chartDir string) (*HelmChart, error) {
-	chartYamlPath := filepath.Join(chartDir, "Chart.yaml")
-	chartYaml, err := ioutil.ReadFile(chartYamlPath)
-	if err != nil {
-		return nil, err
-	}
-	helmChart := HelmChart{}
-	err = yaml.Unmarshal(chartYaml, &helmChart)
-	if err != nil {
-		return nil, err
-	}
-	if helmChart.Name == "" {
-		return nil, fmt.Errorf("Did not find any `name` in %v", chartYamlPath)
-	}
-	return &helmChart, nil
 }
 
 func compareTokens(t1, t2 string) int {
@@ -599,4 +580,23 @@ func SemverBump(version string, semVerType string) (string, error) {
 	}
 
 	return v.String(), nil
+}
+
+// GetEnvironmentOrContext, given a enviroment and a context returns the non-empty value
+// NOTE: context and enviroment should not both be provided
+func GetEnvironmentOrContext(environment string, context string) string {
+	if environment != "" {
+		return environment
+	}
+	if context != "" {
+		return context
+	}
+	return ""
+}
+
+func GetAppVersion(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) string {
+
+	chart := &ankhFile.Charts[0]
+
+	return *chart.Tag
 }

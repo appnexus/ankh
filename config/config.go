@@ -45,7 +45,7 @@ func GetAnkhConfig(ctx *ankh.ExecutionContext, configPath string) (ankh.AnkhConf
 		return ankhConfig, fmt.Errorf("Unable to make data dir '%s': %v", ctx.DataDir, err)
 	}
 
-	err = yaml.UnmarshalStrict(body, &ankhConfig)
+	err = yaml.Unmarshal(body, &ankhConfig)
 	if err != nil {
 		return ankhConfig, fmt.Errorf("Error loading ankh config '%s': %v", configPath, err)
 	}
@@ -60,6 +60,15 @@ func GetAnkhConfig(ctx *ankh.ExecutionContext, configPath string) (ankh.AnkhConf
 		environment := ankhConfig.Environments[name]
 		environment.Source = configPath
 		ankhConfig.Environments[name] = environment
+	}
+
+	// Set default helm and kubectl commands
+	if ankhConfig.Helm.Command == "" {
+		ankhConfig.Helm.Command = "helm"
+	}
+
+	if ankhConfig.Kubectl.Command == "" {
+		ankhConfig.Kubectl.Command = "kubectl"
 	}
 
 	return ankhConfig, nil

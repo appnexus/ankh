@@ -25,6 +25,7 @@ import (
 	"github.com/appnexus/ankh/docker"
 	"github.com/appnexus/ankh/helm"
 	"github.com/appnexus/ankh/kubectl"
+	"github.com/appnexus/ankh/slack"
 	"github.com/appnexus/ankh/util"
 )
 
@@ -79,7 +80,26 @@ func printContexts(ankhConfig *ankh.AnkhConfig) {
 
 func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error {
 	if ctx.NoPrompt {
-		ctx.Logger.Infof("Using `--no-prompt`")
+		for i := 0; i < len(ankhFile.Charts); i++ {
+			chart := &ankhFile.Charts[i]
+
+			// Fetch and merge chart metadata
+			meta, err := helm.FetchChartMeta(ctx, chart)
+			if err != nil {
+				return fmt.Errorf("Error fetching chart \"%v\": %v", chart.Name, err)
+			}
+			mergo.Merge(&chart.ChartMeta, meta)
+
+			// This logic is unfortunately duplicated in this function.
+			// The gist is that if ctx.Namespace is set then we have a
+			// command line override, which we'll use later. If the namespace
+			// is set on the ChartMeta, then we'll prioritize using that.
+			if ctx.Namespace == nil && chart.ChartMeta.Namespace == nil {
+				return fmt.Errorf("Missing namespace for chart \"%v\". To use this chart "+
+					"without a namespace, use `ankh --namespace \"\" ...`",
+					chart.Name)
+			}
+		}
 		return nil
 	}
 
@@ -112,38 +132,6 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 	for i := 0; i < len(ankhFile.Charts); i++ {
 		chart := &ankhFile.Charts[i]
 
-		// Ensure that we have a namespace before we prompt for versions.
-		// If namespace is set on the command line, we'll use that as an
-		// override later during executeChartsOnNamespace, so don't check
-		// for anything here.
-		if ctx.Namespace == nil {
-			if ankhFile.Namespace != nil && chart.Namespace == nil {
-				ctx.Logger.Infof("Using namespace \"%v\" from Ankh file "+
-					"for chart \"%v\" which has no explicit namespace set",
-					*ankhFile.Namespace, chart.Name)
-				chart.Namespace = ankhFile.Namespace
-			} else {
-				ctx.Logger.Infof("Found chart \"%v\" without a namespace", chart.Name)
-				if len(ctx.AnkhConfig.Namespaces) > 0 {
-					selectedNamespace, err := util.PromptForSelection(ctx.AnkhConfig.Namespaces,
-						fmt.Sprintf("Select a namespace for chart '%v' (or re-run with -n/--namespace to provide your own)", chart.Name))
-					if err != nil {
-						return err
-					}
-					chart.Namespace = &selectedNamespace
-				} else {
-					providedNamespace, err := util.PromptForInput("",
-						fmt.Sprintf("Provide a namespace for chart '%v'", chart.Name))
-					if err != nil {
-						return err
-					}
-					chart.Namespace = &providedNamespace
-
-				}
-				ctx.Logger.Infof("Using namespace \"%v\" for chart \"%v\" based on prompt selection", *chart.Namespace, chart.Name)
-			}
-		}
-
 		if chart.Path == "" && chart.Version == "" {
 			versions, err := helm.ListVersions(ctx, chart.Name, true)
 			if err != nil {
@@ -152,7 +140,7 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 
 			ctx.Logger.Infof("Found chart \"%v\" without a version", chart.Name)
 			selectedVersion, err := util.PromptForSelection(strings.Split(strings.Trim(versions, "\n "), "\n"),
-				fmt.Sprintf("Select a version for chart '%v'", chart.Name))
+				fmt.Sprintf("Select a version for chart \"%v\"", chart.Name))
 			if err != nil {
 				return err
 			}
@@ -163,20 +151,60 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 			ctx.Logger.Infof("Using chart \"%v\" from local path \"%v\"", chart.Name, chart.Path)
 		}
 
-		tagValueName := ctx.AnkhConfig.Helm.TagValueName
-		if chart.TagValueName != "" {
-			tagValueName = chart.TagValueName
+		// Now that we have either a version or a local path, fetch the chart metadata and merge it.
+		meta, err := helm.FetchChartMeta(ctx, chart)
+		if err != nil {
+			return fmt.Errorf("Error fetching chart \"%v\": %v", chart.Name, err)
+		}
+		mergo.Merge(&chart.ChartMeta, meta)
+
+		// If namespace is set on the command line, we'll use that as an
+		// override later during executeChartsOnNamespace, so don't check
+		// for anything here.
+		if ctx.Namespace == nil {
+			if ankhFile.Namespace != nil && chart.ChartMeta.Namespace == nil {
+				ctx.Logger.Infof("Using namespace \"%v\" from Ankh file "+
+					"for chart \"%v\" which has no explicit namespace set",
+					*ankhFile.Namespace, chart.Name)
+				chart.ChartMeta.Namespace = ankhFile.Namespace
+			} else if chart.ChartMeta.Namespace == nil {
+				ctx.Logger.Infof("Found chart \"%v\" without a namespace", chart.Name)
+				if len(ctx.AnkhConfig.Namespaces) > 0 {
+					selectedNamespace, err := util.PromptForSelection(ctx.AnkhConfig.Namespaces,
+						fmt.Sprintf("Select a namespace for chart '%v' (or re-run with -n/--namespace to provide your own)", chart.Name))
+					if err != nil {
+						return err
+					}
+					chart.ChartMeta.Namespace = &selectedNamespace
+				} else {
+					providedNamespace, err := util.PromptForInput("",
+						fmt.Sprintf("Provide a namespace for chart '%v' > ", chart.Name))
+					if err != nil {
+						return err
+					}
+					chart.ChartMeta.Namespace = &providedNamespace
+
+				}
+				ctx.Logger.Infof("Using namespace \"%v\" for chart \"%v\" based on prompt selection", *chart.ChartMeta.Namespace, chart.Name)
+			} else {
+				ctx.Logger.Infof("Using namespace \"%v\" for chart \"%v\" based on ankh.yaml present in the chart", *chart.ChartMeta.Namespace, chart.Name)
+			}
 		}
 
-		// Do nothing if tagValueName is not configured - the user does not want this behavior.
-		if tagValueName == "" {
+		// tagKey comes directly from the chart's metadata
+		tagKey := chart.ChartMeta.TagKey
+
+		// Do nothing if tagKey is not configured - the user does not want this behavior.
+		if tagKey == "" {
 			if ctx.Tag != nil {
-				ctx.Logger.Fatalf("Tag has been provided but `helm.tagValueName` is not configured. " +
-					"This means you want to pass a tag value, but have not told Ankh which helm value corresponds " +
-					"to the tag value/variable in your helm chart. Tag is shorthand for `--set $tagValueName=$tag`, " +
-					"so you can use this instead, or you can ensure that `helm.tagValueName` is configured")
+				ctx.Logger.Fatalf("Tag has been provided but `tagKey` is not configured on either the `chart` in an AnkhFile, nor in an `ankh.yaml` inside the helm chart. " +
+					"This means you passed a tag value, but have not told Ankh which helm value corresponds " +
+					"to the tag value/variable in your helm chart. Tag is shorthand for `--set $tagKey=$tag`, " +
+					"so you can use that instead, or you can ensure that `chart.tagKey` is configured")
 			}
 			continue
+		} else {
+			ctx.Logger.Infof("Using tagKey \"%v\" for chart \"%v\" based on ankh.yaml present in the chart", chart.ChartMeta.TagKey, chart.Name)
 		}
 
 		if ctx.Tag != nil {
@@ -187,23 +215,23 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 					chart.Name, tagArgumentUsedForChart, *ctx.Tag)
 			}
 
-			ctx.Logger.Infof("Using tag value \"%v=%s\" based on --tag argument", tagValueName, *ctx.Tag)
+			ctx.Logger.Infof("Using tag value \"%v=%s\" based on --tag argument", tagKey, *ctx.Tag)
 			chart.Tag = ctx.Tag
 			tagArgumentUsedForChart = chart.Name
 			continue
 		}
 
-		// Treat any existing --set tagValueName=$tag argument as authoritative
+		// Treat any existing --set tagKey=$tag argument as authoritative
 		for k, v := range ctx.HelmSetValues {
-			if k == tagValueName {
-				ctx.Logger.Infof("Using tag value \"%v=%s\" based on --set argument", tagValueName, v)
+			if k == tagKey {
+				ctx.Logger.Infof("Using tag value \"%v=%s\" based on --set argument", tagKey, v)
 				t := v
 				chart.Tag = &t
 				break
 			}
 		}
 
-		// For certain operations, we can assume a safe `unset` value for tagValueName
+		// For certain operations, we can assume a safe `unset` value for tagKey
 		// for the sole purpose of templating the Helm chart. The value won't be used
 		// meaningfully (like it would be with apply), so we choose this method instead
 		// of prompting the user for a value that isn't meaningful.
@@ -221,27 +249,31 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 				break
 			}
 
-			_, ok := ctx.HelmSetValues[tagValueName]
+			_, ok := ctx.HelmSetValues[tagKey]
 			if !ok {
 				// It's unset, so set it for the purpose of this execution
 				tag := "__ankh_tag_value_unset___"
-				ctx.Logger.Debugf("Setting configured tagValueName %v=%v for a safe operation",
-					tagValueName, tag)
+				ctx.Logger.Debugf("Setting configured tagKey %v=%v for a safe operation",
+					tagKey, tag)
 				chart.Tag = &tag
 			}
 		}
 
 		// If we stil don't have a chart.Tag value, prompt.
 		if chart.Tag == nil {
-			// It's common for the primary image to be named after the chart, so that's our best guess
-			// as a default suggestion.
-			defaultValue := chart.Name
-
-			ctx.Logger.Infof("Found chart \"%v\" without a value for \"%v\" ", chart.Name, tagValueName)
-			image, err := util.PromptForInput(defaultValue,
-				fmt.Sprintf("No tag specified for chart '%v'. Provide the name of an image to select a tag for, "+
-				"or nothing to skip this step", chart.Name))
-			check(err)
+			image := ""
+			if chart.ChartMeta.TagImage != "" {
+				// No need to prompt for an image name if we already have one in the chart metdata
+				image = chart.ChartMeta.TagImage
+				ctx.Logger.Infof("Using tagImage \"%v\" for chart \"%v\" based on ankh.yaml present in the chart", chart.ChartMeta.TagImage, chart.Name)
+			} else {
+				ctx.Logger.Infof("Found chart \"%v\" without a value for \"%v\" ", chart.Name, tagKey)
+				defaultValue := chart.Name
+				image, err = util.PromptForInput(defaultValue,
+					fmt.Sprintf("No tag specified for chart '%v'. Provide the name of an image to select a tag for, "+
+						"or nothing to skip this step > ", chart.Name))
+				check(err)
+			}
 
 			if image == "" {
 				ctx.Logger.Infof("Skipping tag prompt since no image name was provided")
@@ -254,22 +286,27 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 			trimmedOutput := strings.Trim(output, "\n ")
 			if trimmedOutput != "" {
 				tags := strings.Split(trimmedOutput, "\n")
-				tag, err := util.PromptForSelection(tags, fmt.Sprintf("Select a value for '%v'", tagValueName))
+				tag, err := util.PromptForSelection(tags, fmt.Sprintf("Select a value for \"%v\"", tagKey))
 				check(err)
 
-				ctx.Logger.Infof("Using implicit \"--set tag %v=%s\" based on prompt selection", tagValueName, tag)
+				ctx.Logger.Infof("Using implicit \"--set tag %v=%s\" based on prompt selection", tagKey, tag)
 				chart.Tag = &tag
 			} else if image != "" {
-				complaint := fmt.Sprintf("Could not determine a tag value, and we check for this because `tagValueName` is configured to be `%v`. "+
+				complaint := fmt.Sprintf("Could not determine a tag value, and we check for this because `tagKey` is configured to be `%v`. "+
 					"You may want to try passing a tag value explicitly using `ankh --set %v=... `, or simply ignore "+
 					"this error entirely using `ankh --ignore-config-errors ...` (not recommended)",
-					tagValueName, tagValueName)
+					tagKey, tagKey)
 				if ctx.IgnoreConfigErrors {
 					ctx.Logger.Warnf("%v", complaint)
 				} else {
 					ctx.Logger.Fatalf("%v", complaint)
 				}
 			}
+		}
+
+		// we should finally have a tag value
+		if ctx.SlackChannel != "" {
+			ctx.SlackDeploymentVersion = *chart.Tag
 		}
 	}
 
@@ -373,6 +410,20 @@ func execute(ctx *ankh.ExecutionContext) {
 	err = promptForMissingConfigs(ctx, &rootAnkhFile)
 	check(err)
 
+	if ctx.SlackChannel != "" {
+		if ctx.Mode == ankh.Rollback {
+			ctx.SlackDeploymentVersion = "rollback"
+		}
+		if !ctx.DryRun {
+			err := slack.PingSlackChannel(ctx)
+			if err != nil {
+				ctx.Logger.Errorf("Slack message failed with error: %v", err)
+			}
+		} else {
+			ctx.Logger.Infof("--dry-run set so not pinging slack channel %v about version %v release.", ctx.SlackChannel, ctx.SlackDeploymentVersion)
+		}
+	}
+
 	if len(contexts) > 0 {
 		log.Infof("Executing over environment \"%v\" with contexts [ %v ]", ctx.Environment, strings.Join(contexts, ", "))
 
@@ -403,7 +454,7 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile ankh.AnkhFile) {
 		logExecuteAnkhFile(ctx, ankhFile)
 
 		if ctx.HelmVersion == "" {
-			ver, err := helm.Version()
+			ver, err := helm.Version(ctx)
 			if err != nil {
 				ctx.Logger.Fatalf("Failed to get helm version info: %v", err)
 			}
@@ -436,7 +487,7 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile ankh.AnkhFile) {
 				fallthrough
 			case ankh.Apply:
 				if ctx.KubectlVersion == "" {
-					ver, err := kubectl.Version()
+					ver, err := kubectl.Version(ctx)
 					if err != nil {
 						ctx.Logger.Fatalf("Failed to get kubectl version info: %v", err)
 					}
@@ -455,10 +506,8 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile ankh.AnkhFile) {
 					// Sweet string badnesss.
 					helmOutput = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(helmOutput), "&& \\"))
 					fmt.Println(fmt.Sprintf("(%s) | \\\n%s", helmOutput, kubectlOutput))
-				} else {
-					if kubectlOutput != "" {
-						fmt.Println(kubectlOutput)
-					}
+				} else if kubectlOutput != "" {
+					fmt.Println(kubectlOutput)
 				}
 			case ankh.Template:
 				fmt.Println(helmOutput)
@@ -498,7 +547,7 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile ankh.AnkhFile) {
 			// Gather charts by namespace, and execute them in sets.
 			chartSets := make(map[string][]ankh.Chart)
 			for _, chart := range ankhFile.Charts {
-				namespace := *chart.Namespace
+				namespace := *chart.ChartMeta.Namespace
 				chartSets[namespace] = append(chartSets[namespace], chart)
 			}
 
@@ -613,10 +662,10 @@ func main() {
 			SetByUser: &namespaceSet,
 		})
 		tagSet = false
-		tag = app.String(cli.StringOpt{
+		tag    = app.String(cli.StringOpt{
 			Name:      "t tag",
 			Value:     "",
-			Desc:      "The tag value to use. This value is passed to helm as `--set $tagValueName=$tag`. Requires `helm.tagValueName` to be configured. Only valid when Ankh has a single chart to operate over, eg: with `--chart` or when an Ankh file has one charty entry.",
+			Desc:      "The tag value to use. This value is passed to helm as `--set $tagKey=$tag`. Requires a `tagKey` to be configured, either on the `chart` in an Ankh file, or in an `ankh.yaml` inside the Helm chart. Only valid when Ankh has a single chart to operate over, eg: with `--chart` or when an Ankh file has one chart entry.",
 			SetByUser: &tagSet,
 		})
 		datadir = app.String(cli.StringOpt{
@@ -776,14 +825,19 @@ func main() {
 	}
 
 	app.Command("explain", "Explain how an Ankh file would be applied to a Kubernetes cluster", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--chart]"
+		cmd.Spec = "[-f] [--chart] [--chart-path]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		chart := cmd.StringOpt("chart", "", "Limits the explain command to only the specified chart")
+		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 
 		cmd.Action = func() {
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.Chart = *chart
+			if *chartPath != "" {
+				ctx.Chart = *chartPath
+				ctx.LocalChart = true
+			}
 			ctx.Mode = ankh.Explain
 
 			execute(ctx)
@@ -792,18 +846,27 @@ func main() {
 	})
 
 	app.Command("apply", "Apply an Ankh file to a Kubernetes cluster", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--dry-run] [--chart] [--filter...]"
+		cmd.Spec = "[-f] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--filter...]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually apply anything to a cluster")
 		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
-		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action.")
+		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
+		slackChannel := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
+		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
+		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
 
 		cmd.Action = func() {
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.DryRun = *dryRun
 			ctx.Chart = *chart
+			if *chartPath != "" {
+				ctx.Chart = *chartPath
+				ctx.LocalChart = true
+			}
 			ctx.Mode = ankh.Apply
+			ctx.SlackChannel = *slackChannel
+			ctx.SlackMessageOverride = *slackMessageOverride
 			filters := []string{}
 			for _, filter := range *filter {
 				filters = append(filters, string(filter))
@@ -816,17 +879,26 @@ func main() {
 	})
 
 	app.Command("rollback", "Rollback deployments associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--dry-run] [--chart]"
+		cmd.Spec = "[-f] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually rollback anything to a cluster")
 		chart := cmd.StringOpt("chart", "", "Limits the rollback command to only the specified chart")
+		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
+		slackChannel := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
+		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
 
 		cmd.Action = func() {
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.DryRun = *dryRun
 			ctx.Chart = *chart
+			if *chartPath != "" {
+				ctx.Chart = *chartPath
+				ctx.LocalChart = true
+			}
 			ctx.Mode = ankh.Rollback
+			ctx.SlackChannel = *slackChannel
+			ctx.SlackMessageOverride = *slackMessageOverride
 			ctx.Filters = []string{"deployment", "statfulset"}
 
 			ctx.Logger.Warnf("Rollback is not a transactional operation.\n" +
@@ -855,17 +927,22 @@ func main() {
 	})
 
 	app.Command("diff", "Diff against live objects associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--chart] [--filter...]"
+		cmd.Spec = "[-f] [--chart] [--chart-path] [--filter...]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
-		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action.")
+		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
+		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
 
 		cmd.Action = func() {
 			setLogLevel(ctx, logrus.InfoLevel)
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.DryRun = false
 			ctx.Chart = *chart
+			if *chartPath != "" {
+				ctx.Chart = *chartPath
+				ctx.LocalChart = true
+			}
 			ctx.Mode = ankh.Diff
 			filters := []string{}
 			for _, filter := range *filter {
@@ -879,11 +956,12 @@ func main() {
 	})
 
 	app.Command("get", "Get objects associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--chart] [--filter...] [EXTRA...]"
+		cmd.Spec = "[-f] [--chart] [--chart-path] [--filter...] [EXTRA...]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
-		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action.")
+		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
+		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
 		extra := cmd.StringsArg("EXTRA", []string{}, "Extra arguments to pass to `kubectl`, which can be specified after `--` eg: `ankh ... get -- -o json`")
 
 		cmd.Action = func() {
@@ -891,6 +969,10 @@ func main() {
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.DryRun = false
 			ctx.Chart = *chart
+			if *chartPath != "" {
+				ctx.Chart = *chartPath
+				ctx.LocalChart = true
+			}
 			ctx.Mode = ankh.Get
 			filters := []string{}
 			for _, filter := range *filter {
@@ -908,10 +990,11 @@ func main() {
 	})
 
 	app.Command("pods", "Get pods associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [-w] [-d] [--chart] [EXTRA...]"
+		cmd.Spec = "[-f] [-w] [-d] [--chart] [--chart-path] [EXTRA...]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
+		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		watch := cmd.BoolOpt("w watch", false, "Watch for updates (ie: pass -w to kubectl)")
 		describe := cmd.BoolOpt("d describe", false, "Use `kubectl describe ...` instead of `kubectl get -o wide ...` for pods")
 		extra := cmd.StringsArg("EXTRA", []string{}, "Extra arguments to pass to `kubectl`, which can be specified after `--` eg: `ankh ... get -- -o json`")
@@ -922,6 +1005,10 @@ func main() {
 			ctx.DryRun = false
 			ctx.Describe = *describe
 			ctx.Chart = *chart
+			if *chartPath != "" {
+				ctx.Chart = *chartPath
+				ctx.LocalChart = true
+			}
 			ctx.Mode = ankh.Pods
 			for _, e := range *extra {
 				ctx.Logger.Debugf("Appending extra arg: %+v", e)
@@ -938,13 +1025,14 @@ func main() {
 	})
 
 	app.Command("logs", "Get logs for pods associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-c] [-f] [--filename] [--previous] [--tail] [--chart] [CONTAINER]"
+		cmd.Spec = "[-c] [-f] [--filename] [--previous] [--tail] [--chart] [--chart-path] [CONTAINER]"
 
 		ankhFilePath := cmd.StringOpt("filename", "ankh.yaml", "Config file name")
 		numTailLines := cmd.IntOpt("t tail", 10, "The number of most recent log lines to see. Pass 0 to receive all log lines available from Kubernetes, which is subject to its own retential policy.")
 		follow := cmd.BoolOpt("f", false, "Follow logs")
 		previous := cmd.BoolOpt("p previous", false, "Get logs for the previously terminated container, if any")
 		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
+		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		container := cmd.StringOpt("c container", "", "The container to exec on. Required when there is more than one container running in the pods associated with the templated Ankh file.")
 		containerArg := cmd.StringArg("CONTAINER", "", "The container to get logs for. Required when there is more than one container running in the pods associated with the templated Ankh file.")
 
@@ -953,6 +1041,10 @@ func main() {
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.DryRun = false
 			ctx.Chart = *chart
+			if *chartPath != "" {
+				ctx.Chart = *chartPath
+				ctx.LocalChart = true
+			}
 			ctx.Mode = ankh.Logs
 			if *follow {
 				ctx.ExtraArgs = append(ctx.ExtraArgs, "-f")
@@ -981,10 +1073,11 @@ func main() {
 	})
 
 	app.Command("exec", "Exec a command on pods associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-c] [--filename] [--chart] [PASSTHROUGH...]"
+		cmd.Spec = "[-c] [--filename] [--chart] [--chart-path] [PASSTHROUGH...]"
 
 		ankhFilePath := cmd.StringOpt("filename", "ankh.yaml", "Config file name")
 		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
+		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		container := cmd.StringOpt("c container", "", "The container to exec on. Required when there is more than one container running in the pods associated with the templated Ankh file.")
 		extra := cmd.StringsArg("PASSTHROUGH", []string{}, "Pass-through arguments to provide to `kubectl` after `exec`, which can be specified after `--` eg: `ankh ... get -- -o json`")
 
@@ -993,6 +1086,10 @@ func main() {
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.DryRun = false
 			ctx.Chart = *chart
+			if *chartPath != "" {
+				ctx.Chart = *chartPath
+				ctx.LocalChart = true
+			}
 			ctx.Mode = ankh.Exec
 			if *container != "" {
 				ctx.ExtraArgs = append(ctx.ExtraArgs, []string{"-c", *container}...)
@@ -1011,15 +1108,20 @@ func main() {
 	})
 
 	app.Command("lint", "Lint an Ankh file, checking for possible errors or mistakes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--chart] [--filter...]"
+		cmd.Spec = "[-f] [--chart] [--chart-path] [--filter...]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		chart := cmd.StringOpt("chart", "", "Limits the lint command to only the specified chart")
-		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action.")
+		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
+		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
 
 		cmd.Action = func() {
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.Chart = *chart
+			if *chartPath != "" {
+				ctx.Chart = *chartPath
+				ctx.LocalChart = true
+			}
 			ctx.Mode = ankh.Lint
 			filters := []string{}
 			for _, filter := range *filter {
@@ -1033,15 +1135,20 @@ func main() {
 	})
 
 	app.Command("template", "Output the results of templating an Ankh file", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--chart] [--filter...]"
+		cmd.Spec = "[-f] [--chart] [--chart-path] [--filter...]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		chart := cmd.StringOpt("chart", "", "Limits the template command to only the specified chart")
-		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action.")
+		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
+		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
 
 		cmd.Action = func() {
 			ctx.AnkhFilePath = *ankhFilePath
 			ctx.Chart = *chart
+			if *chartPath != "" {
+				ctx.Chart = *chartPath
+				ctx.LocalChart = true
+			}
 			ctx.Mode = ankh.Template
 			filters := []string{}
 			for _, filter := range *filter {
@@ -1285,13 +1392,13 @@ func main() {
 			ctx.Logger.Infof("Ankh version info:")
 			fmt.Println(AnkhBuildVersion)
 
-			ctx.Logger.Infof("`helm version --client` output:")
-			ver, err := helm.Version()
+			ctx.Logger.Infof("`%v version --client` output:", ctx.AnkhConfig.Helm.Command)
+			ver, err := helm.Version(ctx)
 			check(err)
 			fmt.Print(ver)
 
-			ctx.Logger.Infof("`kubectl version --client` output:")
-			ver, err = kubectl.Version()
+			ctx.Logger.Infof("`%v version --client` output:", ctx.AnkhConfig.Kubectl.Command)
+			ver, err = kubectl.Version(ctx)
 			check(err)
 			fmt.Print(ver)
 

@@ -39,10 +39,7 @@
 [[projects]]
   digest = "1:3c3f68ebab415344aef64363d23471e953a4715645115604aaf57923ae904f5e"
   name = "github.com/coreos/go-semver"
-  packages = [
-    ".",
-    "semver",
-  ]
+  packages = ["semver"]
   pruneopts = ""
   revision = "8ab6407b697782a06568d4b7f1db25550ec2e4c6"
   version = "v0.2.0"
@@ -142,6 +139,14 @@
   revision = "1003c8bd00dc2869cb5ca5282e6ce33834fed514"
 
 [[projects]]
+  digest = "1:09aa5dd1332b93c96bde671bafb053249dc813febf7d5ca84e8f382ba255d67d"
+  name = "github.com/gorilla/websocket"
+  packages = ["."]
+  pruneopts = ""
+  revision = "66b9c49e59c6c48f0ffce28c2d8b8a5678502c6d"
+  version = "v1.4.0"
+
+[[projects]]
   branch = "master"
   digest = "1:0bebbd29bb93e64eb6b580925eec51a63dc7cfa65e9c5fb135799e670c4433dc"
   name = "github.com/imdario/mergo"
@@ -218,6 +223,16 @@
   version = "v1.10.0"
 
 [[projects]]
+  digest = "1:ebffdf25c903771e5b9b6e8e2bce68eaee099434348dd9f686279aabf6dee7cd"
+  name = "github.com/nlopes/slack"
+  packages = [
+    ".",
+    "slackutilsx",
+  ]
+  pruneopts = ""
+  revision = "3b9e5d653ede77b578819b587537227c1ac9f487"
+
+[[projects]]
   digest = "1:5d9b668b0b4581a978f07e7d2e3314af18eb27b3fb5d19b70185b7c575723d11"
   name = "github.com/opencontainers/go-digest"
   packages = ["."]
@@ -251,6 +266,14 @@
   pruneopts = ""
   revision = "d1cebc7ea14a5fc0de7cb4a45acae773161642c6"
   version = "v1.0.0"
+
+[[projects]]
+  digest = "1:1d7e1867c49a6dd9856598ef7c3123604ea3daabf5b83f303ff457bcbc410b1d"
+  name = "github.com/pkg/errors"
+  packages = ["."]
+  pruneopts = ""
+  revision = "ba968bfe8b2f7e042a574c888954fccecfa385b4"
+  version = "v0.8.1"
 
 [[projects]]
   digest = "1:42a42c4bc67bed17f40fddf0f24d4403e25e7b96488456cf4248e6d16659d370"
@@ -317,13 +340,14 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
-    "github.com/coreos/go-semver",
+    "github.com/coreos/go-semver/semver",
     "github.com/docker/docker/api/types",
     "github.com/genuinetools/reg/registry",
     "github.com/imdario/mergo",
     "github.com/jawher/mow.cli",
     "github.com/manifoldco/promptui",
     "github.com/mattn/go-isatty",
+    "github.com/nlopes/slack",
     "github.com/sirupsen/logrus",
     "gopkg.in/yaml.v2",
   ]
