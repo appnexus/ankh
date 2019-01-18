@@ -37,6 +37,7 @@ func explain(args []string) string {
 }
 
 func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.ChartFiles, error) {
+	files := ankh.ChartFiles{}
 	name := chart.Name
 	version := chart.Version
 
@@ -44,9 +45,12 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.Char
 	if version == "" && chart.Path != "" {
 		ctx.Logger.Debugf("Considering directory %v for chart %v", chart.Path, name)
 		_, dirErr = os.Stat(chart.Path)
+		if dirErr != nil {
+			return files, fmt.Errorf("Could not use directory %v for chart %v: %v",
+				chart.Path, name, dirErr)
+		}
 	}
 
-	files := ankh.ChartFiles{}
 	// Setup a directory where we'll either copy the chart files, if we've got a
 	// directory, or we'll download and extract a tarball to the temp dir. Then
 	// we'll mutate some of the ankh specific files based on the current
@@ -386,8 +390,16 @@ type HelmIndex struct {
 }
 
 func listCharts(ctx *ankh.ExecutionContext, numToShow int, descending bool) (map[string][]string, error) {
-	indexURL := fmt.Sprintf("%s/index.yaml", strings.TrimRight(
-		ctx.AnkhConfig.Helm.Registry, "/"))
+	// TODO: Eventually, only support the global helm registry
+	registry := ctx.AnkhConfig.Helm.Registry
+	if registry == "" {
+		registry = ctx.AnkhConfig.CurrentContext.HelmRegistryURL
+	}
+	if registry == "" {
+		return nil, fmt.Errorf("No helm registry configured. Set `helm.registry` globally, or `See README.md on where to specify a helm registry.")
+	}
+
+	indexURL := fmt.Sprintf("%s/index.yaml", strings.TrimRight(registry, "/"))
 	ctx.Logger.Debugf("downloading index.yaml from %s", indexURL)
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -688,7 +700,7 @@ func Publish(ctx *ankh.ExecutionContext) error {
 			resp.Status, resp.StatusCode, upstreamTarballPath)
 	}
 
-	ctx.Logger.Infof("Helm registry PUT resp: %+v", resp)
+	ctx.Logger.Debug("Helm registry PUT resp: %+v", resp)
 	ctx.Logger.Infof("Finished publishing '%v'", upstreamTarballPath)
 	return nil
 }

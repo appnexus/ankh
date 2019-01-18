@@ -35,17 +35,8 @@ type KubeObject struct {
 	}
 }
 
-func isWildcardLabel(ctx *ankh.ExecutionContext, label string) bool {
-	for _, l := range ctx.AnkhConfig.Kubectl.WildCardLabels {
-		if label == l {
-			return true
-		}
-	}
-
-	return false
-}
-
-func getSelectorArgsForPods(ctx *ankh.ExecutionContext, input string, showWildCardLabels bool) ([]string, error) {
+func getSelectorArgsForPods(ctx *ankh.ExecutionContext, input string,
+	wildCardLabels []string, showWildCardLabels bool) ([]string, error) {
 	args := []string{}
 	selectorLabels := make(map[string][]string)
 	showLabels := make(map[string]string)
@@ -61,7 +52,7 @@ func getSelectorArgsForPods(ctx *ankh.ExecutionContext, input string, showWildCa
 		if strings.EqualFold(obj.Kind, "deployment") ||
 			strings.EqualFold(obj.Kind, "statefulset") {
 			for k, v := range obj.Metadata.Labels {
-				if isWildcardLabel(ctx, k) {
+				if util.Contains(wildCardLabels, k) {
 					ctx.Logger.Debugf("Skipping wildcard label %v as label constraint", k)
 					showLabels[k] = k
 				} else {
@@ -93,10 +84,12 @@ func getSelectorArgsForPods(ctx *ankh.ExecutionContext, input string, showWildCa
 	return args, nil
 }
 
-func getSelectorArgsForInput(ctx *ankh.ExecutionContext, input string, showWildCardLabels bool) ([]string, error) {
+func getSelectorArgsForInput(ctx *ankh.ExecutionContext, input string,
+	wildCardLabels []string, showWildCardLabels bool) ([]string, error) {
 	args := []string{}
 	kindMap := make(map[string]string)
 	selectorLabels := make(map[string][]string)
+	showLabels := make(map[string]string)
 	decoder := yaml.NewDecoder(strings.NewReader(input))
 
 	for {
@@ -123,12 +116,9 @@ func getSelectorArgsForInput(ctx *ankh.ExecutionContext, input string, showWildC
 			kindMap["pod"] = "pod"
 			kindMap["replicaset"] = "replicaset"
 			for k, v := range obj.Metadata.Labels {
-				if isWildcardLabel(ctx, k) {
+				if util.Contains(wildCardLabels, k) {
 					ctx.Logger.Debugf("Skipping wildcard label %v as label constraint", k)
-					if showWildCardLabels {
-						ctx.Logger.Debugf("Selecting %v as a label instead", k)
-						args = append(args, []string{"-L", k}...)
-					}
+					showLabels[k] = k
 				} else {
 					selectorLabels[k] = append(selectorLabels[k], v)
 				}
@@ -148,6 +138,14 @@ func getSelectorArgsForInput(ctx *ankh.ExecutionContext, input string, showWildC
 		kinds = append(kinds, k)
 	}
 	args = append(args, strings.Join(kinds, ","))
+
+	if showWildCardLabels {
+		for _, label := range showLabels {
+			ctx.Logger.Debugf("Selecting %v as a label instead", label)
+			args = append(args, []string{"-L", label}...)
+		}
+	}
+
 	ctx.Logger.Debugf("Decided to use args %+v", args)
 	return args, nil
 }
@@ -170,12 +168,18 @@ func kubectlExec(ctx *ankh.ExecutionContext, kubectlCmd *exec.Cmd, input string,
 		kubectlCmd.Stdin = os.Stdin
 	}
 
-	// We want to catch signals while running kubectl, which lets the user
-	// interrupt it gracefully.
-	ctx.CatchSignals = true
-	defer func() {
-		ctx.CatchSignals = false
-	}()
+	// Sometimes, We want to catch signals while running kubectl.
+	// We only set ctx.ShouldCatchSignals for operations that we want
+	// the user to interrupt gracefully (eg logs -f) but not for
+	// everything (eg apply)
+	if ctx.ShouldCatchSignals {
+		ctx.Logger.Debugf("Setting ctx.CatchSignals=true ...")
+		ctx.CatchSignals = true
+		defer func() {
+			ctx.Logger.Debugf("Setting ctx.CatchSignals=false ...")
+			ctx.CatchSignals = false
+		}()
+	}
 
 	err := kubectlCmd.Start()
 	if err != nil {
@@ -237,7 +241,7 @@ func kubectlCommonArgs(ctx *ankh.ExecutionContext, namespace string) []string {
 	return kubectlArgs
 }
 
-func Execute(ctx *ankh.ExecutionContext, input string, namespace string,
+func Execute(ctx *ankh.ExecutionContext, input string, namespace string, wildCardLabels []string,
 	cmd func(name string, arg ...string) *exec.Cmd) (string, error) {
 	skipStdin := false
 	skipStdoutAndStderr := false
@@ -283,20 +287,22 @@ func Execute(ctx *ankh.ExecutionContext, input string, namespace string,
 		outputMode = []string{"-o", "go-template", "--template={{ range .items }}{{ printf \"%s|\" .metadata.name }}{{ range .spec.containers }}{{ printf \"%s,\" .name }}{{ end }}{{ printf \"\\n\" }}{{ end }}"}
 		fallthrough
 	case ankh.Pods:
+		showWildCardLabels := false
+		if ctx.Mode == ankh.Pods {
+			// TODO: Clean this all up.
+			skipStdoutAndStderr = true
+			showWildCardLabels = true
+		}
 		kubectlArgs = append(kubectlArgs, append([]string{"pods"}, outputMode...)...)
-		args, err := getSelectorArgsForPods(ctx, input, false)
+		args, err := getSelectorArgsForPods(ctx, input, wildCardLabels, showWildCardLabels)
 		if err != nil {
 			return "", err
 		}
 		kubectlArgs = append(kubectlArgs, args...)
 		skipStdin = true
-		// TODO: Clean this all up.
-		if ctx.Mode == ankh.Pods {
-			skipStdoutAndStderr = true
-		}
 	case ankh.Get:
 		skipStdoutAndStderr = true
-		args, err := getSelectorArgsForInput(ctx, input, !ctx.Describe)
+		args, err := getSelectorArgsForInput(ctx, input, wildCardLabels, !ctx.Describe)
 		if err != nil {
 			return "", err
 		}

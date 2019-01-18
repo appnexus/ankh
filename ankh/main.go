@@ -209,10 +209,15 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 
 		if ctx.Tag != nil {
 			if tagArgumentUsedForChart != "" {
-				ctx.Logger.Fatalf("Cannot use tag value for chart \"%v\" because it was already used for chart \"%v\". "+
+				complaint := fmt.Sprintf("Cannot use tag value for chart \"%v\" because it was already used for chart \"%v\". "+
 					"A tag value is almost always intended for use with a single chart. To ignore this error and "+
 					"use tag value \"%v\" for _all_ charts, re-un using `ankh --ignore-config-errors ...` ",
 					chart.Name, tagArgumentUsedForChart, *ctx.Tag)
+				if ctx.IgnoreConfigErrors {
+					ctx.Logger.Warnf(complaint)
+				} else {
+					ctx.Logger.Fatalf(complaint)
+				}
 			}
 
 			ctx.Logger.Infof("Using tag value \"%v=%s\" based on --tag argument", tagKey, *ctx.Tag)
@@ -344,7 +349,7 @@ func filterOutput(ctx *ankh.ExecutionContext, helmOutput string) string {
 	return "---" + strings.Join(filtered, "---")
 }
 
-func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile) {
+func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) {
 	action := ""
 	switch ctx.Mode {
 	case ankh.Apply:
@@ -407,9 +412,6 @@ func execute(ctx *ankh.ExecutionContext) {
 		contexts = environment.Contexts
 	}
 
-	err = promptForMissingConfigs(ctx, &rootAnkhFile)
-	check(err)
-
 	if ctx.SlackChannel != "" {
 		if ctx.Mode == ankh.Rollback {
 			ctx.SlackDeploymentVersion = "rollback"
@@ -430,140 +432,159 @@ func execute(ctx *ankh.ExecutionContext) {
 		for _, context := range contexts {
 			log.Infof("Beginning to operate on context \"%v\" in environment \"%v\"", context, ctx.Environment)
 			switchContext(ctx, &ctx.AnkhConfig, context)
-			executeContext(ctx, rootAnkhFile)
+			executeContext(ctx, &rootAnkhFile)
 			log.Infof("Finished with context \"%v\" in environment \"%v\"", context, ctx.Environment)
 		}
 	} else {
-		if ctx.AnkhConfig.CurrentContextName == "" {
-			// Not sure if this is possible actually
-			log.Fatalf("No CurrentContextName found. Must provide an explicit `--context` or `--environment`")
-		}
-		executeContext(ctx, rootAnkhFile)
+		executeContext(ctx, &rootAnkhFile)
 	}
 }
 
-func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile ankh.AnkhFile) {
+func executeChartsOnNamespace(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile,
+	charts []ankh.Chart, namespace string) {
+	// Template, then filter.
+	helmOutput, err := helm.Template(ctx, charts, namespace)
+	check(err)
+	if len(ctx.Filters) > 0 {
+		helmOutput = filterOutput(ctx, helmOutput)
+	}
+
+	// Only pass wildcard labels for "get"-oriented operations.
+	useWildCardLabels := false
+	switch ctx.Mode {
+	case ankh.Diff:
+		fallthrough
+	case ankh.Get:
+		fallthrough
+	case ankh.Pods:
+		fallthrough
+	case ankh.Exec:
+		fallthrough
+	case ankh.Logs:
+		useWildCardLabels = true
+		fallthrough
+	case ankh.Explain:
+		fallthrough
+	case ankh.Rollback:
+		fallthrough
+	case ankh.Apply:
+		if ctx.KubectlVersion == "" {
+			ver, err := kubectl.Version(ctx)
+			if err != nil {
+				ctx.Logger.Fatalf("Failed to get kubectl version info: %v", err)
+			}
+			ctx.KubectlVersion = ver
+			ctx.Logger.Debug("Using kubectl version: ", strings.TrimSpace(ver))
+		}
+
+		// Override wild card labels at the chart level. Choose the first chart arbitrarily.
+		// Warn on this condition - we should eventually deprecate `get/logs/exec` calls
+		// that involve a multi-chart Ankh file.
+		wildCardLabels := []string{}
+		if useWildCardLabels {
+			wildCardLabels = ctx.AnkhConfig.Kubectl.WildCardLabels
+			if charts[0].ChartMeta.WildCardLabels != nil {
+				wildCardLabels = *charts[0].ChartMeta.WildCardLabels
+				ctx.Logger.Debugf("Using override wildCardLabels %+v from chart %v", wildCardLabels, charts[0].Name)
+				if len(ankhFile.Charts) > 1 {
+					ctx.Logger.Warnf("Action \"%v\" over multiple charts will be eventually be deprecated",
+						ctx.Mode)
+				}
+			}
+		}
+
+		kubectlOutput, err := kubectl.Execute(ctx, helmOutput, namespace, wildCardLabels, nil)
+		if err != nil && ctx.Mode == ankh.Diff {
+			ctx.Logger.Warnf("The `diff` feature entered alpha in kubectl v1.9.0, and seems to work best at version v1.12.1. "+
+				"Your results may vary. Current kubectl version string is `%s`", ctx.KubectlVersion)
+		}
+		check(err)
+
+		if ctx.Mode == ankh.Explain {
+			// Sweet string badnesss.
+			helmOutput = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(helmOutput), "&& \\"))
+			fmt.Println(fmt.Sprintf("(%s) | \\\n%s", helmOutput, kubectlOutput))
+		} else if kubectlOutput != "" {
+			fmt.Println(kubectlOutput)
+		}
+	case ankh.Template:
+		fmt.Println(helmOutput)
+	case ankh.Lint:
+		errors := helm.Lint(ctx, helmOutput, *ankhFile)
+		if len(errors) > 0 {
+			for _, err := range errors {
+				ctx.Logger.Warningf("%v", err)
+			}
+			log.Fatalf("Lint found %d errors", len(errors))
+		}
+
+		ctx.Logger.Infof("No issues")
+	}
+}
+
+func executeAnkhFile(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) {
+	err := promptForMissingConfigs(ctx, ankhFile)
+	check(err)
+
+	logExecuteAnkhFile(ctx, ankhFile)
+
+	if ctx.HelmVersion == "" {
+		ver, err := helm.Version(ctx)
+		if err != nil {
+			ctx.Logger.Fatalf("Failed to get helm version info: %v", err)
+		}
+		ctx.HelmVersion = ver
+		ctx.Logger.Debug("Using helm version: ", strings.TrimSpace(ver))
+	}
+
+	logChartsExecute := func(charts []ankh.Chart, namespace string, extra string) {
+		plural := "s"
+		n := len(charts)
+		if n == 1 {
+			plural = ""
+		}
+		names := []string{}
+		for _, chart := range charts {
+			names = append(names, chart.Name)
+		}
+		ctx.Logger.Infof("Using %vnamespace \"%v\" for %v chart%v [ %v ]",
+			extra, namespace, n, plural, strings.Join(names, ", "))
+	}
+
+	if ctx.Namespace != nil {
+		// Namespace overridden on the command line, so use that one for everything.
+		namespace := *ctx.Namespace
+		logChartsExecute(ankhFile.Charts, namespace, "command-line override ")
+		executeChartsOnNamespace(ctx, ankhFile, ankhFile.Charts, namespace)
+	} else {
+		// Gather charts by namespace, and execute them in sets.
+		chartSets := make(map[string][]ankh.Chart)
+		for _, chart := range ankhFile.Charts {
+			namespace := *chart.ChartMeta.Namespace
+			chartSets[namespace] = append(chartSets[namespace], chart)
+		}
+
+		// Sort the namespaces. We don't guarantee this behavior, but it's more sane than
+		// letting the namespace ordering depend on unorderd golang maps.
+		allNamespaces := []string{}
+		for namespace, _ := range chartSets {
+			allNamespaces = append(allNamespaces, namespace)
+		}
+		sort.Strings(allNamespaces)
+		for _, namespace := range allNamespaces {
+			charts := chartSets[namespace]
+			logChartsExecute(charts, namespace, "")
+			executeChartsOnNamespace(ctx, ankhFile, charts, namespace)
+		}
+	}
+}
+
+func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile *ankh.AnkhFile) {
 	dependencies := []string{}
 	if ctx.Chart == "" {
 		dependencies = rootAnkhFile.Dependencies
 	} else {
 		log.Debugf("Skipping dependencies since we are operating only on chart %v", ctx.Chart)
-	}
-
-	executeAnkhFile := func(ankhFile ankh.AnkhFile) {
-		logExecuteAnkhFile(ctx, ankhFile)
-
-		if ctx.HelmVersion == "" {
-			ver, err := helm.Version(ctx)
-			if err != nil {
-				ctx.Logger.Fatalf("Failed to get helm version info: %v", err)
-			}
-			ctx.HelmVersion = ver
-			ctx.Logger.Debug("Using helm version: ", strings.TrimSpace(ver))
-		}
-
-		executeChartsOnNamespace := func(charts []ankh.Chart, namespace string) {
-			helmOutput, err := helm.Template(ctx, charts, namespace)
-			check(err)
-
-			if len(ctx.Filters) > 0 {
-				helmOutput = filterOutput(ctx, helmOutput)
-			}
-
-			switch ctx.Mode {
-			case ankh.Diff:
-				fallthrough
-			case ankh.Rollback:
-				fallthrough
-			case ankh.Get:
-				fallthrough
-			case ankh.Pods:
-				fallthrough
-			case ankh.Exec:
-				fallthrough
-			case ankh.Explain:
-				fallthrough
-			case ankh.Logs:
-				fallthrough
-			case ankh.Apply:
-				if ctx.KubectlVersion == "" {
-					ver, err := kubectl.Version(ctx)
-					if err != nil {
-						ctx.Logger.Fatalf("Failed to get kubectl version info: %v", err)
-					}
-					ctx.KubectlVersion = ver
-					ctx.Logger.Debug("Using kubectl version: ", strings.TrimSpace(ver))
-				}
-
-				kubectlOutput, err := kubectl.Execute(ctx, helmOutput, namespace, nil)
-				if err != nil && ctx.Mode == ankh.Diff {
-					ctx.Logger.Warnf("The `diff` feature entered alpha in kubectl v1.9.0, and seems to work best at version v1.12.1. "+
-						"Your results may vary. Current kubectl version string is `%s`", ctx.KubectlVersion)
-				}
-				check(err)
-
-				if ctx.Mode == ankh.Explain {
-					// Sweet string badnesss.
-					helmOutput = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(helmOutput), "&& \\"))
-					fmt.Println(fmt.Sprintf("(%s) | \\\n%s", helmOutput, kubectlOutput))
-				} else if kubectlOutput != "" {
-					fmt.Println(kubectlOutput)
-				}
-			case ankh.Template:
-				fmt.Println(helmOutput)
-			case ankh.Lint:
-				errors := helm.Lint(ctx, helmOutput, ankhFile)
-				if len(errors) > 0 {
-					for _, err := range errors {
-						ctx.Logger.Warningf("%v", err)
-					}
-					log.Fatalf("Lint found %d errors", len(errors))
-				}
-
-				ctx.Logger.Infof("No issues")
-			}
-		}
-
-		logChartsExecute := func(charts []ankh.Chart, namespace string, extra string) {
-			plural := "s"
-			n := len(charts)
-			if n == 1 {
-				plural = ""
-			}
-			names := []string{}
-			for _, chart := range charts {
-				names = append(names, chart.Name)
-			}
-			ctx.Logger.Infof("Using %vnamespace \"%v\" for %v chart%v [ %v ]",
-				extra, namespace, n, plural, strings.Join(names, ", "))
-		}
-
-		if ctx.Namespace != nil {
-			// Namespace overridden on the command line, so use that one for everything.
-			namespace := *ctx.Namespace
-			logChartsExecute(ankhFile.Charts, namespace, "command-line override ")
-			executeChartsOnNamespace(ankhFile.Charts, namespace)
-		} else {
-			// Gather charts by namespace, and execute them in sets.
-			chartSets := make(map[string][]ankh.Chart)
-			for _, chart := range ankhFile.Charts {
-				namespace := *chart.ChartMeta.Namespace
-				chartSets[namespace] = append(chartSets[namespace], chart)
-			}
-
-			// Sort the namespaces. We don't guarantee this behavior, but it's more sane than
-			// letting the namespace ordering depend on unorderd golang maps.
-			allNamespaces := []string{}
-			for namespace, _ := range chartSets {
-				allNamespaces = append(allNamespaces, namespace)
-			}
-			sort.Strings(allNamespaces)
-			for _, namespace := range allNamespaces {
-				charts := chartSets[namespace]
-				logChartsExecute(charts, namespace, "")
-				executeChartsOnNamespace(charts, namespace)
-			}
-		}
 	}
 
 	for _, dep := range dependencies {
@@ -576,13 +597,13 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile ankh.AnkhFile) {
 		}
 		check(err)
 
-		executeAnkhFile(ankhFile)
+		executeAnkhFile(ctx, &ankhFile)
 
 		log.Infof("Finished satisfying dependency: %v", dep)
 	}
 
 	if len(rootAnkhFile.Charts) > 0 {
-		executeAnkhFile(rootAnkhFile)
+		executeAnkhFile(ctx, rootAnkhFile)
 	} else if len(dependencies) == 0 {
 		ctx.Logger.Fatalf("No charts nor dependencies provided, nothing to do")
 	}
@@ -693,9 +714,9 @@ func main() {
 
 		helmVars := map[string]string{}
 		for _, helmkvPair := range *helmSet {
-			k := strings.Split(helmkvPair, "=")
+			k := strings.SplitN(helmkvPair, "=", 2)
 			if len(k) != 2 {
-				log.Debugf("Malformed helm set value '%v', skipping...", helmkvPair)
+				log.Fatalf("Malformed --set argument '%v' (could not split on '='). Set arguments must be passed as 'key=value'", helmkvPair)
 			} else {
 				helmVars[k[0]] = k[1]
 			}
@@ -1017,6 +1038,7 @@ func main() {
 			if *watch {
 				ctx.Logger.Debug("Appending watch args as extra args")
 				ctx.ExtraArgs = append(ctx.ExtraArgs, "-w")
+				ctx.ShouldCatchSignals = true
 			}
 
 			execute(ctx)
@@ -1048,6 +1070,7 @@ func main() {
 			ctx.Mode = ankh.Logs
 			if *follow {
 				ctx.ExtraArgs = append(ctx.ExtraArgs, "-f")
+				ctx.ShouldCatchSignals = true
 			}
 			if *previous {
 				ctx.ExtraArgs = append(ctx.ExtraArgs, "--previous")
