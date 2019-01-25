@@ -2,6 +2,7 @@ package slack
 
 import (
 	"fmt"
+	"os/user"
 
 	ankh "github.com/appnexus/ankh/context"
 	"github.com/appnexus/ankh/util"
@@ -20,11 +21,19 @@ func PingSlackChannel(ctx *ankh.ExecutionContext) error {
 
 	// get environment from env vs. context
 	deploymentEnvironment := util.GetEnvironmentOrContext(ctx.Environment, ctx.Context)
-	messageText := getMessageText(ctx.SlackDeploymentVersion, ctx.Chart, deploymentEnvironment, ctx.SlackMessageOverride)
+	messageText, err := getMessageText(ctx, deploymentEnvironment)
+	if err != nil {
+		ctx.Logger.Infof("Unable to prompt for slack message. Using default value. Error: %v", err)
+	}
+
+	pretext := ctx.AnkhConfig.Slack.Pretext
+	if pretext == "" {
+		pretext = "A new release notification has been received"
+	}
 
 	attachment := slack.Attachment{
 		Color:   "good",
-		Pretext: "A new release notification has been received",
+		Pretext: pretext,
 		Text:    messageText,
 	}
 
@@ -48,7 +57,11 @@ func PingSlackChannel(ctx *ankh.ExecutionContext) error {
 		return err
 	}
 
-	_, _, err = api.PostMessage(channelId, slack.MsgOptionAttachments(attachment), slack.MsgOptionPostMessageParameters(messageParams))
+	if !ctx.DryRun {
+		_, _, err = api.PostMessage(channelId, slack.MsgOptionAttachments(attachment), slack.MsgOptionPostMessageParameters(messageParams))
+	} else {
+		ctx.Logger.Infof("--dry-run set so not sending message '%v' to slack channel %v", messageText, ctx.SlackChannel)
+	}
 
 	return err
 }
@@ -68,16 +81,51 @@ func getSlackChannelIDByName(api *slack.Client, channelName string) (string, err
 	return "", fmt.Errorf("channel %v not found", channelName)
 }
 
-func getMessageText(version string, chart string, env string, messageOverride string) string {
+func getMessageText(ctx *ankh.ExecutionContext, env string) (string, error) {
 
-	if messageOverride != "" {
-		return messageOverride
+	// Override takes precedence
+	if ctx.SlackMessageOverride != "" {
+		return ctx.SlackMessageOverride, nil
 	}
 
-	if version == "rollback" {
-		return fmt.Sprintf("*%v* is being ROLLED BACK to the previous version in *%v*", chart, env)
+	// If format is set, use that
+	format := ctx.AnkhConfig.Slack.Format
+	if ctx.SlackDeploymentVersion == "rollback" {
+		format = ctx.AnkhConfig.Slack.RollbackFormat
 	}
 
-	return fmt.Sprintf("*%v* _v.%v_ is being deployed to *%v*", chart, version, env)
+	if format != "" {
+		message, err := util.ReplaceFormatVariables(format, ctx.Chart, ctx.SlackDeploymentVersion, env)
+		if err != nil {
+			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for message", format)
+		} else {
+			return message, nil
+		}
+	}
 
+	// Otherwise, prompt for message
+	message, err := promptForMessageText(ctx.Chart, ctx.SlackDeploymentVersion, env)
+	if err != nil {
+		ctx.Logger.Infof("Unable to prompt for message. Will use default message")
+	}
+
+	return message, nil
+}
+
+func promptForMessageText(chart string, version string, env string) (string, error) {
+	currentUser, err := user.Current()
+	if err != nil {
+		return "", err
+	}
+	defaultMessage := fmt.Sprintf("%v is releasing %v@%v to *%v*", currentUser.Username, chart, version, env)
+	if env == "rollback" {
+		defaultMessage = fmt.Sprintf("%v is rolling back %v in *%v*", currentUser, chart, env)
+	}
+
+	message, err := util.PromptForInput(defaultMessage, "Slack Message")
+	if err != nil {
+		return defaultMessage, err
+	}
+
+	return message, nil
 }
