@@ -19,7 +19,7 @@ var log = logrus.New()
 
 func newValidAnkhConfig() AnkhConfig {
 	return AnkhConfig{
-		CurrentContextName:          "test",
+		CurrentContextName: "test",
 		Contexts: map[string]Context{
 			"test": Context{
 				EnvironmentClass: "dev",
@@ -216,27 +216,6 @@ func TestParseAnkhFile(t *testing.T) {
 			t.Log(err)
 			t.Fail()
 		}
-	})
-
-	t.Run("fail unmarshaling", func(t *testing.T) {
-		file, err := ioutil.TempFile("", "")
-		if err != nil {
-			t.Log(err)
-			t.Fail()
-		}
-		defer file.Close()
-
-		file.WriteString(strings.TrimSpace(`
-admin-typo-dependencies: []
-dependencies: []
-		`))
-
-		_, err = ParseAnkhFile(file.Name())
-		if err == nil {
-			t.Log(err)
-			t.Fail()
-		}
-
 	})
 
 	t.Run("adds Path", func(t *testing.T) {

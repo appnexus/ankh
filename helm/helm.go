@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"gopkg.in/yaml.v2"
 
 	"github.com/appnexus/ankh/context"
 	"github.com/appnexus/ankh/util"
@@ -122,7 +123,7 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.Char
 		Dir:                      tmpDir,
 		ChartDir:                 chartDir,
 		GlobalPath:               filepath.Join(tmpDir, "global.yaml"),
-		MetaPath:		  filepath.Join(chartDir, "ankh.yaml"),
+		MetaPath:                 filepath.Join(chartDir, "ankh.yaml"),
 		ValuesPath:               filepath.Join(chartDir, "values.yaml"),
 		AnkhValuesPath:           filepath.Join(chartDir, "ankh-values.yaml"),
 		AnkhResourceProfilesPath: filepath.Join(chartDir, "ankh-resource-profiles.yaml"),
@@ -535,7 +536,7 @@ func readChartYaml(ctx *ankh.ExecutionContext, path string) (map[string]interfac
 	}
 
 	chartYaml = ChartYaml{
-		Name: name,
+		Name:    name,
 		Version: version,
 	}
 
@@ -667,7 +668,7 @@ func Publish(ctx *ankh.ExecutionContext) error {
 		req.SetBasicAuth(username, password)
 	default:
 		if ctx.AnkhConfig.Helm.AuthType != "" {
-			ctx.Logger.Fatalf("Helm registry auth type '%v' is not supported - only 'basic' auth is supported.")
+			ctx.Logger.Fatalf("Helm registry auth type '%v' is not supported - only 'basic' auth is supported.", ctx.AnkhConfig.Helm.AuthType)
 		}
 	}
 
@@ -713,10 +714,10 @@ func Template(ctx *ankh.ExecutionContext, charts []ankh.Chart, namespace string)
 		if namespace != "" {
 			ctx.Logger.Infof("Finished templating charts for namespace %v", namespace)
 		} else {
-			ctx.Logger.Infof("Finished templating charts with an explicit empty namespace")
+			ctx.Logger.Info("Finished templating charts with an explicit empty namespace")
 		}
 	} else {
-		ctx.Logger.Infof("%s does not contain any charts. Nothing to do.")
+		ctx.Logger.Info("Does not contain any charts. Nothing to do.")
 	}
 	return finalOutput, nil
 }
