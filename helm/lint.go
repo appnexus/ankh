@@ -57,7 +57,7 @@ func LintObject(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, obj KubeObje
 			e := fmt.Errorf("Deployment with name '%v': object's spec.template.metadata.labels is missing a `release` label with the release name as a value (in this case, '%v'). Found these labels on spec.template.metadata: %+v", obj.Metadata.Name, release, obj.Spec.Template.Metadata.Labels)
 			errors = append(errors, e)
 		}
-		ctx.Logger.Debugf("Deployment with name '%v': object spec.template.metadata.labels exists, and the release label is %v", obj.Kind, obj.Metadata.Name, obj.Spec.Template.Metadata.Labels["release"])
+		ctx.Logger.Debugf("Deployment with name '%v': object spec.template.metadata.labels exists, and the release label is %v", obj.Metadata.Name, obj.Spec.Template.Metadata.Labels["release"])
 	case "service":
 		// If the Service is not targeting an ExternalName, it should target pods with a `release` label
 		if obj.Spec.Type != "ExternalName" {

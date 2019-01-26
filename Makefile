@@ -4,6 +4,7 @@ TEST_PACKAGES := ankh config context helm kubectl util
 
 export VERSION ?= DEVELOPMENT
 export GOCMD ?= go
+export GOTEST=$(GOCMD) test
 
 .PHONY: all
 all: ankh
@@ -41,3 +42,7 @@ cover: cover-generate
 .PHONY: cover-html
 cover-html: cover-generate
 	@$(GOCMD) tool cover -html=$(REPOROOT)/coverage.txt
+
+.PHONY: test
+test: 
+	$(GOTEST) -v ./...

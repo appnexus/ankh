@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"gopkg.in/yaml.v2"
 
 	"github.com/appnexus/ankh/context"
 	"github.com/appnexus/ankh/util"
@@ -37,6 +38,7 @@ func explain(args []string) string {
 }
 
 func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.ChartFiles, error) {
+	files := ankh.ChartFiles{}
 	name := chart.Name
 	version := chart.Version
 
@@ -44,9 +46,12 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.Char
 	if version == "" && chart.Path != "" {
 		ctx.Logger.Debugf("Considering directory %v for chart %v", chart.Path, name)
 		_, dirErr = os.Stat(chart.Path)
+		if dirErr != nil {
+			return files, fmt.Errorf("Could not use directory %v for chart %v: %v",
+				chart.Path, name, dirErr)
+		}
 	}
 
-	files := ankh.ChartFiles{}
 	// Setup a directory where we'll either copy the chart files, if we've got a
 	// directory, or we'll download and extract a tarball to the temp dir. Then
 	// we'll mutate some of the ankh specific files based on the current
@@ -122,7 +127,7 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.Char
 		Dir:                      tmpDir,
 		ChartDir:                 chartDir,
 		GlobalPath:               filepath.Join(tmpDir, "global.yaml"),
-		MetaPath:		  filepath.Join(chartDir, "ankh.yaml"),
+		MetaPath:                 filepath.Join(chartDir, "ankh.yaml"),
 		ValuesPath:               filepath.Join(chartDir, "values.yaml"),
 		AnkhValuesPath:           filepath.Join(chartDir, "ankh-values.yaml"),
 		AnkhResourceProfilesPath: filepath.Join(chartDir, "ankh-resource-profiles.yaml"),
@@ -386,8 +391,16 @@ type HelmIndex struct {
 }
 
 func listCharts(ctx *ankh.ExecutionContext, numToShow int, descending bool) (map[string][]string, error) {
-	indexURL := fmt.Sprintf("%s/index.yaml", strings.TrimRight(
-		ctx.AnkhConfig.Helm.Registry, "/"))
+	// TODO: Eventually, only support the global helm registry
+	registry := ctx.AnkhConfig.Helm.Registry
+	if registry == "" {
+		registry = ctx.AnkhConfig.CurrentContext.HelmRegistryURL
+	}
+	if registry == "" {
+		return nil, fmt.Errorf("No helm registry configured. Set `helm.registry` globally, or `See README.md on where to specify a helm registry.")
+	}
+
+	indexURL := fmt.Sprintf("%s/index.yaml", strings.TrimRight(registry, "/"))
 	ctx.Logger.Debugf("downloading index.yaml from %s", indexURL)
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -535,7 +548,7 @@ func readChartYaml(ctx *ankh.ExecutionContext, path string) (map[string]interfac
 	}
 
 	chartYaml = ChartYaml{
-		Name: name,
+		Name:    name,
 		Version: version,
 	}
 
@@ -667,7 +680,7 @@ func Publish(ctx *ankh.ExecutionContext) error {
 		req.SetBasicAuth(username, password)
 	default:
 		if ctx.AnkhConfig.Helm.AuthType != "" {
-			ctx.Logger.Fatalf("Helm registry auth type '%v' is not supported - only 'basic' auth is supported.")
+			ctx.Logger.Fatalf("Helm registry auth type '%v' is not supported - only 'basic' auth is supported.", ctx.AnkhConfig.Helm.AuthType)
 		}
 	}
 
@@ -688,7 +701,7 @@ func Publish(ctx *ankh.ExecutionContext) error {
 			resp.Status, resp.StatusCode, upstreamTarballPath)
 	}
 
-	ctx.Logger.Infof("Helm registry PUT resp: %+v", resp)
+	ctx.Logger.Debug("Helm registry PUT resp: %+v", resp)
 	ctx.Logger.Infof("Finished publishing '%v'", upstreamTarballPath)
 	return nil
 }
@@ -713,10 +726,10 @@ func Template(ctx *ankh.ExecutionContext, charts []ankh.Chart, namespace string)
 		if namespace != "" {
 			ctx.Logger.Infof("Finished templating charts for namespace %v", namespace)
 		} else {
-			ctx.Logger.Infof("Finished templating charts with an explicit empty namespace")
+			ctx.Logger.Info("Finished templating charts with an explicit empty namespace")
 		}
 	} else {
-		ctx.Logger.Infof("%s does not contain any charts. Nothing to do.")
+		ctx.Logger.Info("Does not contain any charts. Nothing to do.")
 	}
 	return finalOutput, nil
 }

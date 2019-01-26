@@ -8,6 +8,7 @@ import (
 )
 
 const minimalValidAnkhConfigYAMLPath string = "testdata/testconfig.yaml"
+
 func TestGetAnkhConfig(t *testing.T) {
 	t.Run("valid config", func(t *testing.T) {
 		tmpDir, _ := ioutil.TempDir("", "")
@@ -27,25 +28,6 @@ func TestGetAnkhConfig(t *testing.T) {
 		tmpDir, _ := ioutil.TempDir("", "")
 		ctx := &ankh.ExecutionContext{
 			AnkhConfigPath: "/does/not/exist",
-			DataDir:        tmpDir,
-		}
-
-		_, err := GetAnkhConfig(ctx, ctx.AnkhConfigPath)
-		if err == nil {
-			t.Log("expected to find an error but didnt get one")
-			t.Fail()
-		}
-	})
-
-	t.Run("fail unmarshaling", func(t *testing.T) {
-		tmpDir, _ := ioutil.TempDir("", "")
-		tmpFile, _ := ioutil.TempFile("", "")
-
-		tmpFile.WriteString(`invalid: config`)
-		defer tmpFile.Close()
-
-		ctx := &ankh.ExecutionContext{
-			AnkhConfigPath: tmpFile.Name(),
 			DataDir:        tmpDir,
 		}
 

@@ -260,6 +260,19 @@ When invoked, Ankh will operate over both the `haste-server` and `myservice` cha
 | token      | string | Bot token used to connect to slack team |
 | icon-url      | string | Optional. Url of icon to be used when message is posted to slack. Default is the ankh logo. |
 | username      | string | Optional. Username associated with message when posting message to slack. Default is `ankh` |
+| format        | string | Optional. Format of slack message that will be used. See available variables below. |
+| rollbackFormat | string | Optional. Format of message for rollbacks that will be used. See available variables below. |
+| pretext       | string | Optional. Pretext for slack message. Default is `A new release notification has been received`. |
+
+##### `Slack Message Variables`
+| Variable | Description
+| ------------- | :---:    
+| `%USER%`        | Current username |
+| `%CHART%`       | Current chart being used |
+| `%VERSION%`     | Version of the primary container |
+| `%TARGET%`      | Target environment or context |
+
+Example format: `format: "_%USER%_ is releasing *%CHART%@%VERSION%* to *%TARGET%*"`
 
 #### `Environment`
 | Field         | Type     | Description                                                                                                        |

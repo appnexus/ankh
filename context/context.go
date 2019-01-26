@@ -41,7 +41,7 @@ type ExecutionContext struct {
 
 	Mode Mode
 
-	Verbose, Quiet, CatchSignals, DryRun, Describe, WarnOnConfigError,
+	Verbose, Quiet, ShouldCatchSignals, CatchSignals, DryRun, Describe, WarnOnConfigError,
 	IgnoreContextAndEnv, IgnoreConfigErrors, NoPrompt bool
 
 	AnkhConfigPath string
@@ -104,9 +104,12 @@ type DockerConfig struct {
 }
 
 type SlackConfig struct {
-	Token    string `yaml:"token"`
-	Icon     string `yaml:"icon-url"`
-	Username string `yaml:"username"`
+	Token          string `yaml:"token"`
+	Icon           string `yaml:"icon-url"`
+	Username       string `yaml:"username"`
+	Format         string `yaml:"format"`
+	RollbackFormat string `yaml:"rollbackFormat"`
+	Pretext        string `yaml:"pretext"`
 }
 
 // AnkhConfig defines the shape of the ~/.ankh/config file used for global
@@ -150,8 +153,7 @@ type KubeConfig struct {
 	Kind                 string        `yaml:"kind"`
 	Clusters             []KubeCluster `yaml:"clusters"`
 	Contexts             []KubeContext `yaml:"contexts"`
-	CurrentContextUnused string        `yaml:"current-context"` // transitionary: this should never be user-supplied
-	CurrentContext       string        `yaml:"-"`               // transitionary: this should never be user-supplied
+	CurrentContextUnused string        `yaml:"current-context"` // for serialization purposes only
 }
 
 // ValidateAndInit ensures the AnkhConfig is internally sane and populates
@@ -193,11 +195,11 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context str
 				Name: "_kctx",
 			}
 			kubeConfig := &KubeConfig{
-				ApiVersion:     "v1",
-				Kind:           "Config",
-				Clusters:       []KubeCluster{kubeCluster},
-				Contexts:       []KubeContext{kubeContext},
-				CurrentContext: kubeContext.Name,
+				ApiVersion:           "v1",
+				Kind:                 "Config",
+				Clusters:             []KubeCluster{kubeCluster},
+				Contexts:             []KubeContext{kubeContext},
+				CurrentContextUnused: kubeContext.Name,
 			}
 
 			kubeConfigPath := path.Join(ctx.DataDir, "kubeconfig.yaml")
@@ -236,9 +238,10 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context str
 }
 
 type ChartMeta struct {
-	Namespace *string `yaml:"namespace"`
-	TagImage  string  `yaml:"tagImage"`
-	TagKey    string  `yaml:"tagKey"`
+	Namespace      *string   `yaml:"namespace"`
+	TagImage       string    `yaml:"tagImage"`
+	TagKey         string    `yaml:"tagKey"`
+	WildCardLabels *[]string `yaml:"wildCardLabels"`
 }
 
 // TODO: Rename me to target?
