@@ -416,13 +416,9 @@ func execute(ctx *ankh.ExecutionContext) {
 		if ctx.Mode == ankh.Rollback {
 			ctx.SlackDeploymentVersion = "rollback"
 		}
-		if !ctx.DryRun {
-			err := slack.PingSlackChannel(ctx)
-			if err != nil {
-				ctx.Logger.Errorf("Slack message failed with error: %v", err)
-			}
-		} else {
-			ctx.Logger.Infof("--dry-run set so not pinging slack channel %v about version %v release.", ctx.SlackChannel, ctx.SlackDeploymentVersion)
+		err := slack.PingSlackChannel(ctx)
+		if err != nil {
+			ctx.Logger.Errorf("Slack message failed with error: %v", err)
 		}
 	}
 

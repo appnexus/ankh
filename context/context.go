@@ -104,9 +104,12 @@ type DockerConfig struct {
 }
 
 type SlackConfig struct {
-	Token    string `yaml:"token"`
-	Icon     string `yaml:"icon-url"`
-	Username string `yaml:"username"`
+	Token          string `yaml:"token"`
+	Icon           string `yaml:"icon-url"`
+	Username       string `yaml:"username"`
+	Format         string `yaml:"format"`
+	RollbackFormat string `yaml:"rollbackFormat"`
+	Pretext        string `yaml:"pretext"`
 }
 
 // AnkhConfig defines the shape of the ~/.ankh/config file used for global

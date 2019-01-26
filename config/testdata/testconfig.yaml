@@ -56,3 +56,6 @@ slack:
   token: foobar123
   username: random-foobar
   icon-url: foobar.com/myimage.jpg
+  format: "_%USER%_ is releasing *%CHART%@%VERSION%* to *%TARGET%*"
+  rollbackFormat: "_%USER%_ is rolling back *%CHART%* in *%TARGET%*"
+  pretext: Release notification
