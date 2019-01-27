@@ -203,12 +203,21 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context str
 				CurrentContextUnused: kubeContext.Name,
 			}
 
-			kubeConfigPath := path.Join(ctx.DataDir, "kubeconfig.yaml")
+			kubeConfigDir := path.Join(ctx.DataDir, "kubeconfig",
+				// Extra forward slashes for the scheme seems wrong. So change them
+				// to underscores, or whatever.
+				strings.Replace(selectedContext.KubeServer, "/", "_", -1))
+			if err := os.MkdirAll(kubeConfigDir, 0755); err != nil {
+				return []error{err}
+			}
+
+			kubeConfigPath := path.Join(kubeConfigDir, "kubeconfig.yaml")
 			kubeConfigBytes, err := yaml.Marshal(kubeConfig)
 			if err != nil {
 				return []error{err}
 			}
 
+			ctx.Logger.Debugf("Using kubeConfigPath %v", kubeConfigPath)
 			if err := ioutil.WriteFile(kubeConfigPath, kubeConfigBytes, 0644); err != nil {
 				return []error{err}
 			}
@@ -258,11 +267,13 @@ type ChartFiles struct {
 }
 
 type Chart struct {
-	Path      string
-	Name      string
-	Version   string
-	Tag       *string
-	ChartMeta ChartMeta `yaml:"meta"`
+	Path    string
+	Name    string
+	Version string
+	Tag     *string
+	// Overrides any global Helm registry
+	HelmRegistry string
+	ChartMeta    ChartMeta `yaml:"meta"`
 	// DefaultValues are values that apply unconditionally, with lower precedence than values supplied in the fields below.
 	DefaultValues map[string]interface{} `yaml:"default-values"`
 	// Values, by environment-class, resource-profile, or release. MapSlice preserves map ordering so we can regex search from top to bottom.

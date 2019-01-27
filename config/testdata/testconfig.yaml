@@ -1,26 +1,18 @@
-# current-context defines which context you currently have "selected". It's
-# common for this value to change frequently as you move around to different
-# clusters.
-current-context: minikube
+# the helm registry instructs ankh where to pull charts from
+helm:
+  registry: https://kubernetes-charts.storage.googleapis.com/
 
-# supported-environment-classes define a list of your supported environment classes. Used for
-# validation of ankh files. It's best practice to keep this value in sync with
-# the rest of your teams so there isn't drift.
-supported-environment-classes:
-  - dev
-  - production
+docker:
+  registry: https://registry.docker.io/
 
-# supported-resource-profiles define a list of your supported profiles. Used for
-# validation of ankh files. Resource profiles are typically used for values that relate
-# to how beefy your app needs to be. If you're running a production cluster that
-# customers can hit, you'll probably want to support a value like "natural".
-# Alternatively if you want your app to run on a resource strapped local
-# cluster, you might consider also supporting something like "constrained". It's
-# best practice to keep this value in sync with the rest of your teams so there
-# isn't drift.
-supported-resource-profiles:
-  - natural
-  - constrained
+# enables sending of release message to specified slack team and channel.
+slack:
+  token: foobar123
+  username: random-foobar
+  icon-url: foobar.com/myimage.jpg
+  format: "_%USER%_ is releasing *%CHART%@%VERSION%* to *%TARGET%*"
+  rollbackFormat: "_%USER%_ is rolling back *%CHART%* in *%TARGET%*"
+  pretext: Release notification
 
 # contexts are the different ways in which your ankh files can be deployed to
 # kubernetes clusters. Each key in this object is a context and the names can be
@@ -30,32 +22,19 @@ contexts:
     # kube-context ties this context to a `kubectl` context
     kube-context: minikube
 
+    # ...or use kube-server to simply use a URL for accessing Kubernetes
+    #kube-server: some-kube-server.coolcompany.net
+
     # environment-class should be one of your `supported-environment-classes` defined above
     environment-class: dev
 
     # resource-profile should be one of your `supported-resource-profiles` defined above
     resource-profile: natural
 
-    # release name provided to helm - empty by default
-    release: ""
-
-    # helm-registry-url instructs ankh where to pull charts from
-    helm-registry-url: https://kubernetes-charts.storage.googleapis.com/
-
-    # cluster-admin controls if the `admin-dependencies` in an ankh file are
-    # executed before the rest of the `dependencies`
-    cluster-admin: true
+    # release name provided to helm
+    release: minikube
 
     # global can be any nested objects with values that need to be passed to
     # every chart. Arrays are not supported within `global`.
     global:
       foo: bar
-
-# enables sending of release message to specified slack team and channel. 
-slack:
-  token: foobar123
-  username: random-foobar
-  icon-url: foobar.com/myimage.jpg
-  format: "_%USER%_ is releasing *%CHART%@%VERSION%* to *%TARGET%*"
-  rollbackFormat: "_%USER%_ is rolling back *%CHART%* in *%TARGET%*"
-  pretext: Release notification

@@ -76,13 +76,18 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.Char
 			return files, err
 		}
 	} else {
-		// TODO: Eventually, only support the global helm registry
+		// Check for registies in the following order of precedence:
+		// - global, context, chart.
 		registry := ctx.AnkhConfig.Helm.Registry
-		if registry == "" {
+		if ctx.AnkhConfig.CurrentContext.HelmRegistryURL != "" {
+			// TODO: Deprecate me
 			registry = ctx.AnkhConfig.CurrentContext.HelmRegistryURL
 		}
+		if chart.HelmRegistry != "" {
+			registry = chart.HelmRegistry
+		}
 		if registry == "" {
-			return files, fmt.Errorf("No helm registry configured. Set `helm.registry` globally, or `See README.md on where to specify a helm registry.")
+			return files, fmt.Errorf("No helm registry configured. Set `helm.registry` globally, or see README.md on where to specify a helm registry.")
 		}
 
 		// We cannot pull down a chart without a version

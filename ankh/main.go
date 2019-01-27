@@ -108,26 +108,6 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 	// is typically only valid/intended for a single chart.
 	tagArgumentUsedForChart := ""
 
-	// Prompt for a chart argument if there is no chart argument and
-	// there is no AnkhFile present on the filesystem.
-	if len(ankhFile.Charts) == 0 {
-		if _, err := os.Stat(ctx.AnkhFilePath); os.IsNotExist(err) {
-			ctx.Logger.Infof("No chart specified as an argument, and no `charts` found in an Ankh file")
-			charts, err := helm.GetChartNames(ctx)
-			if err != nil {
-				return err
-			}
-
-			selectedChart, err := util.PromptForSelection(charts, "Select a chart")
-			if err != nil {
-				return err
-			}
-
-			ankhFile.Charts = []ankh.Chart{ankh.Chart{Name: selectedChart}}
-			ctx.Logger.Infof("Using chart \"%v\" based on prompt selection", selectedChart)
-		}
-	}
-
 	// Prompt for chart versions if any are missing
 	for i := 0; i < len(ankhFile.Charts); i++ {
 		chart := &ankhFile.Charts[i]
@@ -618,7 +598,22 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile *ankh.AnkhFile) {
 	if len(rootAnkhFile.Charts) > 0 {
 		executeAnkhFile(ctx, rootAnkhFile)
 	} else if len(dependencies) == 0 {
-		ctx.Logger.Fatalf("No charts nor dependencies provided, nothing to do")
+		if ctx.NoPrompt {
+			ctx.Logger.Fatalf("No charts nor dependencies provided, nothing to do")
+		} else if ctx.AnkhConfig.Helm.Registry != "" {
+			// Prompt for a chart
+			ctx.Logger.Infof("No chart specified as an argument, and no `charts` found in an Ankh file")
+			charts, err := helm.GetChartNames(ctx)
+			check(err)
+
+			selectedChart, err := util.PromptForSelection(charts, "Select a chart")
+			check(err)
+
+			rootAnkhFile.Charts = []ankh.Chart{ankh.Chart{Name: selectedChart}}
+			ctx.Logger.Infof("Using chart \"%v\" based on prompt selection", selectedChart)
+
+			executeAnkhFile(ctx, rootAnkhFile)
+		}
 	}
 }
 

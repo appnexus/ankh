@@ -44,5 +44,5 @@ cover-html: cover-generate
 	@$(GOCMD) tool cover -html=$(REPOROOT)/coverage.txt
 
 .PHONY: test
-test: 
+test:
 	$(GOTEST) -v ./...
