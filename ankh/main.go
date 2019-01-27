@@ -608,7 +608,9 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile *ankh.AnkhFile) {
 		}
 		check(err)
 
+		ctx.WorkingPath = path.Dir(ankhFilePath)
 		executeAnkhFile(ctx, &ankhFile)
+		ctx.WorkingPath = ""
 
 		log.Infof("Finished satisfying dependency: %v", dep)
 	}

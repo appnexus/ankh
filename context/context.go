@@ -44,6 +44,7 @@ type ExecutionContext struct {
 	Verbose, Quiet, ShouldCatchSignals, CatchSignals, DryRun, Describe, WarnOnConfigError,
 	IgnoreContextAndEnv, IgnoreConfigErrors, NoPrompt bool
 
+	WorkingPath    string
 	AnkhConfigPath string
 	KubeConfigPath string
 	Context        string

@@ -42,13 +42,19 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.Char
 	name := chart.Name
 	version := chart.Version
 
+	chartPath := chart.Path
 	dirErr := os.ErrNotExist
-	if version == "" && chart.Path != "" {
-		ctx.Logger.Debugf("Considering directory %v for chart %v", chart.Path, name)
-		_, dirErr = os.Stat(chart.Path)
+	if version == "" && chartPath != "" {
+		if ctx.WorkingPath != "" {
+			chartPath = filepath.Join(ctx.WorkingPath, chart.Path)
+			ctx.Logger.Debugf("Using chartPath %v since WorkingPath is %v",
+				chartPath, ctx.WorkingPath)
+		}
+		ctx.Logger.Debugf("Considering directory %v for chart %v", chartPath, name)
+		_, dirErr = os.Stat(chartPath)
 		if dirErr != nil {
 			return files, fmt.Errorf("Could not use directory %v for chart %v: %v",
-				chart.Path, name, dirErr)
+				chartPath, name, dirErr)
 		}
 	}
 
@@ -66,7 +72,7 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.Char
 	// make changes to the ankh specific yaml files before passing them as `-f`
 	// args to `helm template`
 	if dirErr == nil {
-		if err := util.CopyDir(chart.Path, filepath.Join(tmpDir, name)); err != nil {
+		if err := util.CopyDir(chartPath, filepath.Join(tmpDir, name)); err != nil {
 			return files, err
 		}
 	} else {
