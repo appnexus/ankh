@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"os/signal"
 	"path"
@@ -699,7 +700,7 @@ func main() {
 		})
 		datadir = app.String(cli.StringOpt{
 			Name:   "datadir",
-			Value:  path.Join(os.Getenv("HOME"), ".ankh", "data"),
+			Value:  path.Join("/tmp", ".ankh", "data"),
 			Desc:   "The data directory for Ankh template history",
 			EnvVar: "ANKHDATADIR",
 		})
@@ -754,7 +755,7 @@ func main() {
 			Environment:         *environment,
 			Namespace:           namespaceOpt,
 			Tag:                 tagOpt,
-			DataDir:             path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
+			DataDir:             path.Join(*datadir, fmt.Sprintf("%v-%v", time.Now().Unix(), rand.Intn(100000))),
 			Logger:              log,
 			HelmSetValues:       helmVars,
 			IgnoreContextAndEnv: ctx.IgnoreContextAndEnv,
