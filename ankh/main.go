@@ -236,6 +236,20 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 			}
 		}
 
+		// Treat any existing `tag` in `default-values` for this chart as the next-most authoritative
+		for k, v := range chart.DefaultValues {
+			if k == tagKey {
+				ctx.Logger.Infof("Using tag value \"%v=%s\" based on default-values present in the Ankh file", tagKey, v)
+				t, ok := v.(string)
+				if !ok {
+					ctx.Logger.Fatalf("Could not use value '%+v' from default-values in chart %v "+
+						"as a string value for tagKey '%v'", v, chart.Name, tagKey)
+				}
+				chart.Tag = &t
+				break
+			}
+		}
+
 		// For certain operations, we can assume a safe `unset` value for tagKey
 		// for the sole purpose of templating the Helm chart. The value won't be used
 		// meaningfully (like it would be with apply), so we choose this method instead
