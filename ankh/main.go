@@ -424,6 +424,17 @@ func execute(ctx *ankh.ExecutionContext) {
 	} else {
 		executeContext(ctx, &rootAnkhFile)
 	}
+
+	if ctx.SlackChannel != "" {
+		if ctx.Mode == ankh.Rollback {
+			ctx.SlackDeploymentVersion = "rollback"
+		}
+		err := slack.PingSlackChannel(ctx)
+		if err != nil {
+			ctx.Logger.Errorf("Slack message failed with error: %v", err)
+		}
+	}
+
 }
 
 func executeChartsOnNamespace(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile,
@@ -511,16 +522,6 @@ func executeChartsOnNamespace(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFil
 func executeAnkhFile(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) {
 	err := promptForMissingConfigs(ctx, ankhFile)
 	check(err)
-
-	if ctx.SlackChannel != "" {
-		if ctx.Mode == ankh.Rollback {
-			ctx.SlackDeploymentVersion = "rollback"
-		}
-		err := slack.PingSlackChannel(ctx)
-		if err != nil {
-			ctx.Logger.Errorf("Slack message failed with error: %v", err)
-		}
-	}
 
 	logExecuteAnkhFile(ctx, ankhFile)
 
