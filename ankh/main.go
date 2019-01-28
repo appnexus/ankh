@@ -412,16 +412,6 @@ func execute(ctx *ankh.ExecutionContext) {
 		contexts = environment.Contexts
 	}
 
-	if ctx.SlackChannel != "" {
-		if ctx.Mode == ankh.Rollback {
-			ctx.SlackDeploymentVersion = "rollback"
-		}
-		err := slack.PingSlackChannel(ctx)
-		if err != nil {
-			ctx.Logger.Errorf("Slack message failed with error: %v", err)
-		}
-	}
-
 	if len(contexts) > 0 {
 		log.Infof("Executing over environment \"%v\" with contexts [ %v ]", ctx.Environment, strings.Join(contexts, ", "))
 
@@ -521,6 +511,16 @@ func executeChartsOnNamespace(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFil
 func executeAnkhFile(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) {
 	err := promptForMissingConfigs(ctx, ankhFile)
 	check(err)
+
+	if ctx.SlackChannel != "" {
+		if ctx.Mode == ankh.Rollback {
+			ctx.SlackDeploymentVersion = "rollback"
+		}
+		err := slack.PingSlackChannel(ctx)
+		if err != nil {
+			ctx.Logger.Errorf("Slack message failed with error: %v", err)
+		}
+	}
 
 	logExecuteAnkhFile(ctx, ankhFile)
 
