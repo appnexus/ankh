@@ -633,7 +633,7 @@ func Publish(ctx *ankh.ExecutionContext) error {
 		return fmt.Errorf("error running helm command '%v': %v%v",
 			strings.Join(helmCmd.Args, " "), err, outputMsg)
 	}
-	ctx.Logger.Infof("Finished packaging '%v:%v'", chartYaml.Name, chartYaml.Version)
+	ctx.Logger.Infof("Finished packaging '%v-%v'", chartYaml.Name, chartYaml.Version)
 
 	// Open up and read the contents of the package in order to PUT it upstream
 	localTarballFile, err := os.Open(localTarballPath)
