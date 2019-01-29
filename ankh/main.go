@@ -91,11 +91,9 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 			}
 			mergo.Merge(&chart.ChartMeta, meta)
 
-			// This logic is unfortunately duplicated in this function.
-			// The gist is that if ctx.Namespace is set then we have a
-			// command line override, which we'll use later. If the namespace
-			// is set on the ChartMeta, then we'll prioritize using that.
-			if ctx.Namespace == nil && chart.ChartMeta.Namespace == nil {
+			// If namespace isn't set at any level, error out.
+			if ctx.Namespace == nil && ankhFile.Namespace == nil &&
+				chart.ChartMeta.Namespace == nil {
 				return fmt.Errorf("Missing namespace for chart \"%v\". To use this chart "+
 					"without a namespace, use `ankh --namespace \"\" ...`",
 					chart.Name)
@@ -142,11 +140,16 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 		// If namespace is set on the command line, we'll use that as an
 		// override later during executeChartsOnNamespace, so don't check
 		// for anything here.
+		// - command line override, ankh file, chart meta.
 		if ctx.Namespace == nil {
-			if ankhFile.Namespace != nil && chart.ChartMeta.Namespace == nil {
+			if ankhFile.Namespace != nil {
+				extraLog := ""
+				if chart.ChartMeta.Namespace == nil {
+					extraLog = " (overriding namespace \"%v\" from ankh.yaml present in the chart)"
+				}
 				ctx.Logger.Infof("Using namespace \"%v\" from Ankh file "+
-					"for chart \"%v\" which has no explicit namespace set",
-					*ankhFile.Namespace, chart.Name)
+					"for chart \"%v\"%v",
+					*ankhFile.Namespace, chart.Name, extraLog)
 				chart.ChartMeta.Namespace = ankhFile.Namespace
 			} else if chart.ChartMeta.Namespace == nil {
 				ctx.Logger.Infof("Found chart \"%v\" without a namespace", chart.Name)
