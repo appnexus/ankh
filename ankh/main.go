@@ -79,29 +79,7 @@ func printContexts(ankhConfig *ankh.AnkhConfig) {
 	}
 }
 
-func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error {
-	if ctx.NoPrompt {
-		for i := 0; i < len(ankhFile.Charts); i++ {
-			chart := &ankhFile.Charts[i]
-
-			// Fetch and merge chart metadata
-			meta, err := helm.FetchChartMeta(ctx, chart)
-			if err != nil {
-				return fmt.Errorf("Error fetching chart \"%v\": %v", chart.Name, err)
-			}
-			mergo.Merge(&chart.ChartMeta, meta)
-
-			// If namespace isn't set at any level, error out.
-			if ctx.Namespace == nil && ankhFile.Namespace == nil &&
-				chart.ChartMeta.Namespace == nil {
-				return fmt.Errorf("Missing namespace for chart \"%v\". To use this chart "+
-					"without a namespace, use `ankh --namespace \"\" ...`",
-					chart.Name)
-			}
-		}
-		return nil
-	}
-
+func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error {
 	// Make sure that we don't use the tag argument for more than one Chart.
 	// When this happens, it is almost always an error, because a tag value
 	// is typically only valid/intended for a single chart.
@@ -112,12 +90,17 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 		chart := &ankhFile.Charts[i]
 
 		if chart.Path == "" && chart.Version == "" {
+			ctx.Logger.Infof("Found chart \"%v\" without a version", chart.Name)
+			if ctx.NoPrompt {
+				ctx.Logger.Fatalf("Chart \"%v\" missing version (and no 'path' set either, not prompting due to --no-prompt)",
+					chart.Name)
+			}
+
 			versions, err := helm.ListVersions(ctx, chart.Name, true)
 			if err != nil {
 				return err
 			}
 
-			ctx.Logger.Infof("Found chart \"%v\" without a version", chart.Name)
 			selectedVersion, err := util.PromptForSelection(strings.Split(strings.Trim(versions, "\n "), "\n"),
 				fmt.Sprintf("Select a version for chart \"%v\"", chart.Name))
 			if err != nil {
@@ -153,6 +136,9 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 				chart.ChartMeta.Namespace = ankhFile.Namespace
 			} else if chart.ChartMeta.Namespace == nil {
 				ctx.Logger.Infof("Found chart \"%v\" without a namespace", chart.Name)
+				if ctx.NoPrompt {
+					ctx.Logger.Fatalf("Chart \"%v\" missing namespace (not prompting due to --no-prompt)", chart.Name)
+				}
 				if len(ctx.AnkhConfig.Namespaces) > 0 {
 					selectedNamespace, err := util.PromptForSelection(ctx.AnkhConfig.Namespaces,
 						fmt.Sprintf("Select a namespace for chart '%v' (or re-run with -n/--namespace to provide your own)", chart.Name))
@@ -264,6 +250,11 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 
 		// If we stil don't have a chart.Tag value, prompt.
 		if chart.Tag == nil {
+			if ctx.NoPrompt {
+				ctx.Logger.Fatalf("Chart \"%v\" missing value for `tagKey` (configured to be '%v',  not prompting due to --no-prompt)",
+					tagKey, chart.Name)
+			}
+
 			image := ""
 			if chart.ChartMeta.TagImage != "" {
 				// No need to prompt for an image name if we already have one in the chart metdata
@@ -295,10 +286,10 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 				ctx.Logger.Infof("Using implicit \"--set tag %v=%s\" based on prompt selection", tagKey, tag)
 				chart.Tag = &tag
 			} else if image != "" {
-				complaint := fmt.Sprintf("Could not determine a tag value, and we check for this because `tagKey` is configured to be `%v`. "+
+				complaint := fmt.Sprintf("Chart \"%v\" missing value for `tagKey` (configured to be `%v`). "+
 					"You may want to try passing a tag value explicitly using `ankh --set %v=... `, or simply ignore "+
 					"this error entirely using `ankh --ignore-config-errors ...` (not recommended)",
-					tagKey, tagKey)
+					chart.Name, tagKey, tagKey)
 				if ctx.IgnoreConfigErrors {
 					ctx.Logger.Warnf("%v", complaint)
 				} else {
@@ -518,7 +509,7 @@ func executeChartsOnNamespace(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFil
 }
 
 func executeAnkhFile(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) {
-	err := promptForMissingConfigs(ctx, ankhFile)
+	err := reconcileMissingConfigs(ctx, ankhFile)
 	check(err)
 
 	logExecuteAnkhFile(ctx, ankhFile)
