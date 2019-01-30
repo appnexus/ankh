@@ -37,7 +37,7 @@ func explain(args []string) string {
 	return explain + " && \\\n"
 }
 
-func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.ChartFiles, error) {
+func findChartFilesImpl(ctx *ankh.ExecutionContext, repository string, chart ankh.Chart) (ankh.ChartFiles, error) {
 	files := ankh.ChartFiles{}
 	name := chart.Name
 	version := chart.Version
@@ -76,18 +76,12 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.Char
 			return files, err
 		}
 	} else {
-		// Check for registies in the following order of precedence:
-		// - global, context, chart.
-		registry := ctx.AnkhConfig.Helm.Registry
-		if ctx.AnkhConfig.CurrentContext.HelmRegistryURL != "" {
-			// TODO: Deprecate me
-			registry = ctx.AnkhConfig.CurrentContext.HelmRegistryURL
+		// Override the provided repository if it is specified at the Chart level
+		if chart.HelmRepository != "" {
+			repository = chart.HelmRepository
 		}
-		if chart.HelmRegistry != "" {
-			registry = chart.HelmRegistry
-		}
-		if registry == "" {
-			return files, fmt.Errorf("No helm registry configured. Set `helm.registry` globally, or see README.md on where to specify a helm registry.")
+		if repository == "" {
+			return files, fmt.Errorf("No helm repository configured. Set `helm.repository` globally, or see README.md on where to specify a helm repository.")
 		}
 
 		// We cannot pull down a chart without a version
@@ -96,7 +90,7 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.Char
 		}
 
 		tarballFileName := fmt.Sprintf("%s-%s.tgz", name, version)
-		tarballURL := fmt.Sprintf("%s/%s", strings.TrimRight(registry, "/"), tarballFileName)
+		tarballURL := fmt.Sprintf("%s/%s", strings.TrimRight(repository, "/"), tarballFileName)
 
 		ok := false
 		for attempt := 1; attempt <= 5; attempt++ {
@@ -151,10 +145,10 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.Char
 var findChartFiles = findChartFilesImpl
 var execContext = exec.Command
 
-func FetchChartMeta(ctx *ankh.ExecutionContext, chart *ankh.Chart) (ankh.ChartMeta, error) {
+func FetchChartMeta(ctx *ankh.ExecutionContext, repository string, chart *ankh.Chart) (ankh.ChartMeta, error) {
 	meta := ankh.ChartMeta{}
 
-	files, err := findChartFiles(ctx, *chart)
+	files, err := findChartFiles(ctx, repository, *chart)
 	if err != nil {
 		return meta, err
 	}
@@ -207,7 +201,8 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, namespace strin
 		helmArgs = append(helmArgs, "--set", chart.ChartMeta.TagKey+"="+*chart.Tag)
 	}
 
-	files, err := findChartFiles(ctx, chart)
+	repository := ctx.DetermineHelmRepository(&chart.HelmRepository)
+	files, err := findChartFiles(ctx, repository, chart)
 
 	if err != nil {
 		return "", err
@@ -401,17 +396,12 @@ type HelmIndex struct {
 	Entries    map[string][]HelmIndexEntry
 }
 
-func listCharts(ctx *ankh.ExecutionContext, numToShow int, descending bool) (map[string][]string, error) {
-	// TODO: Eventually, only support the global helm registry
-	registry := ctx.AnkhConfig.Helm.Registry
-	if registry == "" {
-		registry = ctx.AnkhConfig.CurrentContext.HelmRegistryURL
-	}
-	if registry == "" {
-		return nil, fmt.Errorf("No helm registry configured. Set `helm.registry` globally, or `See README.md on where to specify a helm registry.")
+func listCharts(ctx *ankh.ExecutionContext, repository string, numToShow int, descending bool) (map[string][]string, error) {
+	if repository == "" {
+		return nil, fmt.Errorf("No helm repository configured. Set `helm.repository` globally, or `See README.md on where to specify a helm repository.")
 	}
 
-	indexURL := fmt.Sprintf("%s/index.yaml", strings.TrimRight(registry, "/"))
+	indexURL := fmt.Sprintf("%s/index.yaml", strings.TrimRight(repository, "/"))
 	ctx.Logger.Debugf("downloading index.yaml from %s", indexURL)
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -463,8 +453,8 @@ func listCharts(ctx *ankh.ExecutionContext, numToShow int, descending bool) (map
 	return reduced, nil
 }
 
-func ListCharts(ctx *ankh.ExecutionContext, numToShow int) (string, error) {
-	reduced, err := listCharts(ctx, numToShow, true)
+func ListCharts(ctx *ankh.ExecutionContext, repository string, numToShow int) (string, error) {
+	reduced, err := listCharts(ctx, repository, numToShow, true)
 	if err != nil {
 		return "", err
 	}
@@ -487,10 +477,10 @@ func ListCharts(ctx *ankh.ExecutionContext, numToShow int) (string, error) {
 	return formatted.String(), nil
 }
 
-func GetChartNames(ctx *ankh.ExecutionContext) ([]string, error) {
+func GetChartNames(ctx *ankh.ExecutionContext, repository string) ([]string, error) {
 	reducedKeys := []string{}
 
-	reduced, err := listCharts(ctx, 0, true)
+	reduced, err := listCharts(ctx, repository, 0, true)
 	if err != nil {
 		return reducedKeys, err
 	}
@@ -503,8 +493,8 @@ func GetChartNames(ctx *ankh.ExecutionContext) ([]string, error) {
 	return reducedKeys, nil
 }
 
-func ListVersions(ctx *ankh.ExecutionContext, chart string, descending bool) (string, error) {
-	reduced, err := listCharts(ctx, 0, descending)
+func ListVersions(ctx *ankh.ExecutionContext, repository string, chart string, descending bool) (string, error) {
+	reduced, err := listCharts(ctx, repository, 0, descending)
 	if err != nil {
 		return "", err
 	}
@@ -512,9 +502,9 @@ func ListVersions(ctx *ankh.ExecutionContext, chart string, descending bool) (st
 	// Show charts in alphabetical order
 	versions, ok := reduced[chart]
 	if !ok || len(versions) == 0 {
-		return "", fmt.Errorf("Could not find chart '%v' in registry '%v'. "+
+		return "", fmt.Errorf("Could not find chart '%v' in repository '%v'. "+
 			"Try `ankh chart ls` to see all charts and their versions.",
-			chart, ctx.AnkhConfig.Helm.Registry)
+			chart, repository)
 	}
 
 	return strings.Join(versions, "\n"), nil
@@ -595,7 +585,7 @@ func writeChartYaml(ctx *ankh.ExecutionContext, chartYaml map[string]interface{}
 	return nil
 }
 
-func Publish(ctx *ankh.ExecutionContext) error {
+func Publish(ctx *ankh.ExecutionContext, repository string) error {
 	_, chartYaml, err := readChartYaml(ctx, "Chart.yaml")
 	if err != nil {
 		return err
@@ -648,7 +638,7 @@ func Publish(ctx *ankh.ExecutionContext) error {
 		return err
 	}
 
-	upstreamTarballPath := fmt.Sprintf("%v/%v-%v.tgz", ctx.AnkhConfig.Helm.Registry, chartYaml.Name, chartYaml.Version)
+	upstreamTarballPath := fmt.Sprintf("%v/%v-%v.tgz", repository, chartYaml.Name, chartYaml.Version)
 	ctx.Logger.Infof("Publishing '%v'", upstreamTarballPath)
 
 	// Create a request with the chart on the PUT body
@@ -660,38 +650,38 @@ func Publish(ctx *ankh.ExecutionContext) error {
 	switch strings.ToLower(ctx.AnkhConfig.Helm.AuthType) {
 	case "basic":
 		// Get basic auth credentials
-		username := os.Getenv("ANKH_HELM_REGISTRY_USERNAME")
+		username := os.Getenv("ANKH_HELM_REPOSITORY_USERNAME")
 		if username == "" {
 			if ctx.NoPrompt {
-				return fmt.Errorf("Must define ANKH_HELM_REGISTRY_USERNAME for \"basic\" auth if run with `--no-prompt`")
+				return fmt.Errorf("Must define ANKH_HELM_REPOSITORY_USERNAME for \"basic\" auth if run with `--no-prompt`")
 			}
-			username, err = util.PromptForUsername()
+			username, err = util.PromptForUsernameWithLabel("Username: ")
 			if err != nil {
 				return fmt.Errorf("Failed to read credentials from stdin: %v", err)
 			}
 		} else {
-			ctx.Logger.Infof("Using environment ANKH_HELM_REGISTRY_USERNAME=%v for 'basic' auth on helm registry '%v",
-				username, ctx.AnkhConfig.Helm.Registry)
+			ctx.Logger.Infof("Using environment ANKH_HELM_REPOSITORY_USERNAME=%v for 'basic' auth on helm repository '%v",
+				username, repository)
 		}
 
-		password := os.Getenv("ANKH_HELM_REGISTRY_PASSWORD")
+		password := os.Getenv("ANKH_HELM_REPOSITORY_PASSWORD")
 		if password == "" {
 			if ctx.NoPrompt {
-				return fmt.Errorf("Must define ANKH_HELM_REGISTRY_PASSWORD for \"basic\" if run with `--no-prompt`")
+				return fmt.Errorf("Must define ANKH_HELM_REPOSITORY_PASSWORD for \"basic\" if run with `--no-prompt`")
 			}
-			password, err = util.PromptForPassword()
+			password, err = util.PromptForPasswordWithLabel("Password: ")
 			if err != nil {
 				return fmt.Errorf("Failed to read credentials from stdin: %v", err)
 			}
 		} else {
-			ctx.Logger.Infof("Using environment ANKH_HELM_REGISTRY_PASSWORD=<redacted> for 'basic' auth on helm registry '%v",
-				ctx.AnkhConfig.Helm.Registry)
+			ctx.Logger.Infof("Using environment ANKH_HELM_REPOSITORY_PASSWORD=<redacted> for 'basic' auth on helm repository '%v",
+				repository)
 		}
 
 		req.SetBasicAuth(username, password)
 	default:
 		if ctx.AnkhConfig.Helm.AuthType != "" {
-			ctx.Logger.Fatalf("Helm registry auth type '%v' is not supported - only 'basic' auth is supported.", ctx.AnkhConfig.Helm.AuthType)
+			ctx.Logger.Fatalf("Helm repository auth type '%v' is not supported - only 'basic' auth is supported.", ctx.AnkhConfig.Helm.AuthType)
 		}
 	}
 
@@ -712,7 +702,7 @@ func Publish(ctx *ankh.ExecutionContext) error {
 			resp.Status, resp.StatusCode, upstreamTarballPath)
 	}
 
-	ctx.Logger.Debug("Helm registry PUT resp: %+v", resp)
+	ctx.Logger.Debugf("Helm repository PUT resp: %+v", resp)
 	ctx.Logger.Infof("Finished publishing '%v'", upstreamTarballPath)
 	return nil
 }
@@ -778,7 +768,7 @@ func inspectDirectory(relativeDir string, dir string) (string, error) {
 	return result, nil
 }
 
-func Inspect(ctx *ankh.ExecutionContext, singleChart string) (string, error) {
+func Inspect(ctx *ankh.ExecutionContext, repository string, singleChart string) (string, error) {
 	var result string
 
 	tokens := strings.Split(singleChart, "@")
@@ -792,14 +782,14 @@ func Inspect(ctx *ankh.ExecutionContext, singleChart string) (string, error) {
 	if len(tokens) == 2 {
 		chartVersion = tokens[1]
 	} else {
-		versions, err := ListVersions(ctx, chartName, true)
+		versions, err := ListVersions(ctx, repository, chartName, true)
 		if err != nil {
 			return "", err
 		}
 
 		ctx.Logger.Infof("Found chart \"%v\" without a version", chartName)
 		selectedVersion, err := util.PromptForSelection(strings.Split(strings.Trim(versions, "\n "), "\n"),
-			fmt.Sprintf("Select a version for chart '%v'", chartName))
+			fmt.Sprintf("Select a version for chart '%v'", chartName), false)
 		if err != nil {
 			return "", err
 		}
@@ -808,14 +798,14 @@ func Inspect(ctx *ankh.ExecutionContext, singleChart string) (string, error) {
 		ctx.Logger.Infof("Using %v@%v based on selection", chartName, chartVersion)
 	}
 
-	ctx.Logger.Infof("Inspecting chart \"%s\" at version \"%v\" from registry \"%v\"",
-		chartName, chartVersion, ctx.AnkhConfig.Helm.Registry)
+	ctx.Logger.Infof("Inspecting chart \"%s\" at version \"%v\" from repository \"%v\"",
+		chartName, chartVersion, repository)
 
 	chart := ankh.Chart{
 		Name:    chartName,
 		Version: chartVersion,
 	}
-	files, err := findChartFiles(ctx, chart)
+	files, err := findChartFiles(ctx, repository, chart)
 	if err != nil {
 		return "", err
 	}

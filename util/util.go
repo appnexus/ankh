@@ -443,14 +443,14 @@ func FuzzySemVerCompare(s1, s2 string) bool {
 	return len(s1parts) <= len(s2parts)
 }
 
-func PromptForUsername() (string, error) {
+func PromptForUsernameWithLabel(label string) (string, error) {
 	current_user, err := user.Current()
 	if err != nil {
 		return "", err
 	}
 
 	user_prompt := promptui.Prompt{
-		Label:   "Username:",
+		Label:   label,
 		Default: current_user.Username,
 	}
 	username, err := user_prompt.Run()
@@ -460,9 +460,9 @@ func PromptForUsername() (string, error) {
 	return strings.Trim(username, " "), nil
 }
 
-func PromptForPassword() (string, error) {
+func PromptForPasswordWithLabel(label string) (string, error) {
 	passwordPrompt := promptui.Prompt{
-		Label: "Password:",
+		Label: label,
 		Mask:  '*',
 	}
 	password, err := passwordPrompt.Run()
@@ -486,10 +486,16 @@ func PromptForInput(defaultValue string, label string) (string, error) {
 	return input, nil
 }
 
-func promptForSelectionFzf(choices []string, label string) (string, error) {
-	fzf := exec.Command("fzf", "--header",
-		fmt.Sprintf("%s (use the arrow keys to browse, or type to fuzzy search)", label),
-		"--layout", "reverse-list", "--height", "20%", "--min-height", "10")
+func promptForSelectionFzf(choices []string, label string, firstRowHeader bool) (string, error) {
+	fzfArgs := []string{}
+	headerExtra := ""
+	if firstRowHeader && len(choices) > 1 {
+		headerExtra = fmt.Sprintf("\n%v", choices[0])
+		choices = choices[1:]
+	}
+	fzfArgs = append(fzfArgs, []string{"--header", fmt.Sprintf("%s (use the arrow keys to browse, or type to fuzzy search)%v", label, headerExtra)}...)
+	fzfArgs = append(fzfArgs, []string{"--layout", "reverse", "--height", "20%", "--min-height", "10"}...)
+	fzf := exec.Command("fzf", fzfArgs...)
 	inPipe, _ := fzf.StdinPipe()
 	outPipe, _ := fzf.StdoutPipe()
 	fzf.Stderr = os.Stderr
@@ -517,7 +523,11 @@ func promptForSelectionFzf(choices []string, label string) (string, error) {
 	return out, nil
 }
 
-func promptForSelection(choices []string, label string) (string, error) {
+func promptForSelection(choices []string, label string, firstRowHeader bool) (string, error) {
+	if firstRowHeader && len(choices) > 1 {
+		label = fmt.Sprintf("%v\n%v", label, choices[0])
+		choices = choices[1:]
+	}
 	prompt := promptui.Select{
 		Label: label,
 		Items: choices,
@@ -531,8 +541,8 @@ func promptForSelection(choices []string, label string) (string, error) {
 	return choice, nil
 }
 
-func hasCommand(name string) bool {
-	cmd := exec.Command("sh", "-c", "command", "-v", name)
+func hasFzf() bool {
+	cmd := exec.Command("fzf", "-h")
 	if err := cmd.Run(); err != nil {
 		return false
 	}
@@ -540,11 +550,11 @@ func hasCommand(name string) bool {
 	return true
 }
 
-func PromptForSelection(choices []string, label string) (string, error) {
-	if hasCommand("fzf") {
-		return promptForSelectionFzf(choices, label)
+func PromptForSelection(choices []string, label string, firstRowHeader bool) (string, error) {
+	if hasFzf() {
+		return promptForSelectionFzf(choices, label, firstRowHeader)
 	} else {
-		return promptForSelection(choices, label)
+		return promptForSelection(choices, label, firstRowHeader)
 	}
 }
 
@@ -610,16 +620,16 @@ func ReplaceFormatVariables(format string, chart string, version string, env str
 	}
 
 	// Replace %USER%
-	result = strings.Replace(result, "%USER%", currentUser.Username, 1)
+	result = strings.Replace(result, "%USER%", currentUser.Username, -1)
 
 	// Replace %CHART%
-	result = strings.Replace(result, "%CHART%", chart, 1)
+	result = strings.Replace(result, "%CHART%", chart, -1)
 
 	// Replace %VERSION%
-	result = strings.Replace(result, "%VERSION%", version, 1)
+	result = strings.Replace(result, "%VERSION%", version, -1)
 
 	// Replace %TARGET%
-	result = strings.Replace(result, "%TARGET%", env, 1)
+	result = strings.Replace(result, "%TARGET%", env, -1)
 
 	return result, nil
 }

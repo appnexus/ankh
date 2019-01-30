@@ -33,3 +33,11 @@
 [[constraint]]
   name = "github.com/nlopes/slack"
   revision = "3b9e5d653ede77b578819b587537227c1ac9f487"
+
+[[constraint]]
+  name = "github.com/andygrunwald/go-jira"
+  version = "1.6.0"
+
+[[constraint]]
+  name = "github.com/docker/distribution"
+  version = "2.7.0-rc.0"

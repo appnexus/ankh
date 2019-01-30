@@ -67,14 +67,34 @@ func PingSlackChannel(ctx *ankh.ExecutionContext) error {
 }
 
 func getSlackChannelIDByName(api *slack.Client, channelName string) (string, error) {
-	channels, err := api.GetChannels(true)
+
+	params := slack.GetConversationsParameters{}
+	params.ExcludeArchived = "true"
+	params.Limit = 1000
+
+	// Look for public channels and private channels the bot was invited to
+	params.Types = []string{"public_channel", "private_channel"}
+
+	channels, nextCursor, err := api.GetConversations(&params)
 	if err != nil || channels == nil {
 		return "", err
 	}
 
+	// Look for channel
 	for _, channel := range channels {
 		if channel.Name == channelName {
 			return channel.ID, nil
+		}
+	}
+
+	// If it doesn't exist and there are more channels, keep going
+	for nextCursor != "" {
+		channels, nextCursor, err = api.GetConversations(&params)
+		params.Cursor = nextCursor
+		for _, channel := range channels {
+			if channel.Name == channelName {
+				return channel.ID, nil
+			}
 		}
 	}
 
@@ -90,12 +110,12 @@ func getMessageText(ctx *ankh.ExecutionContext, env string) (string, error) {
 
 	// If format is set, use that
 	format := ctx.AnkhConfig.Slack.Format
-	if ctx.SlackDeploymentVersion == "rollback" {
+	if ctx.Mode == ankh.Rollback {
 		format = ctx.AnkhConfig.Slack.RollbackFormat
 	}
 
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, ctx.Chart, ctx.SlackDeploymentVersion, env)
+		message, err := util.ReplaceFormatVariables(format, ctx.Chart, ctx.DeploymentTag, env)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for message", format)
 		} else {
@@ -104,7 +124,7 @@ func getMessageText(ctx *ankh.ExecutionContext, env string) (string, error) {
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForMessageText(ctx.Chart, ctx.SlackDeploymentVersion, env)
+	message, err := promptForMessageText(ctx.Chart, ctx.DeploymentTag, env)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for message. Will use default message")
 	}
