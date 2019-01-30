@@ -127,8 +127,8 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 		if ctx.Namespace == nil {
 			if ankhFile.Namespace != nil {
 				extraLog := ""
-				if chart.ChartMeta.Namespace == nil {
-					extraLog = " (overriding namespace \"%v\" from ankh.yaml present in the chart)"
+				if chart.ChartMeta.Namespace != nil {
+					extraLog = fmt.Sprintf(" (overriding namespace \"%v\" from ankh.yaml present in the chart)", chart.ChartMeta.Namespace)
 				}
 				ctx.Logger.Infof("Using namespace \"%v\" from Ankh file "+
 					"for chart \"%v\"%v",
