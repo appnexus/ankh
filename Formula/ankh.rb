@@ -1,12 +1,19 @@
 class Ankh < Formula
   desc "Another Kubernetes Helper"
   homepage "https://github.com/appnexus/ankh"
-  version "2.0.0-beta.4"
-  url "https://github.com/appnexus/ankh/releases/download/${version}/ankh-darwin-amd64.tar.gz"
-  sha256 "7e9879a0c69ad9ae4135e9f3ab22221dd70bcec0f5e6feafaab2d4dd4a227701"
+  url "https://github.com/appnexus/ankh/archive/v2.0.0-beta.4.tar.gz"
+  sha256 "d8ff0d9c3b2c76a06b3f7e31861c97f14872e17f68db8aa5b8259461d80ee4bb"
+
+  depends_on "go" => :build
+  depends_on "kubernetes-helm"
 
   def install
-    bin.install "ankh"
+    ENV["GOPATH"] = buildpath
+    (buildpath/"src/github.com/appnexus/ankh").install buildpath.children
+    cd "src/github.com/appnexus/ankh/ankh" do
+      system "go", "build", "-ldflags", "-X main.AnkhBuildVersion=#{version}"
+      bin.install "ankh"
+    end
   end
 
   test do
