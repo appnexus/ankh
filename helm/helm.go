@@ -42,13 +42,19 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.Char
 	name := chart.Name
 	version := chart.Version
 
+	chartPath := chart.Path
 	dirErr := os.ErrNotExist
-	if version == "" && chart.Path != "" {
-		ctx.Logger.Debugf("Considering directory %v for chart %v", chart.Path, name)
-		_, dirErr = os.Stat(chart.Path)
+	if version == "" && chartPath != "" {
+		if ctx.WorkingPath != "" {
+			chartPath = filepath.Join(ctx.WorkingPath, chart.Path)
+			ctx.Logger.Debugf("Using chartPath %v since WorkingPath is %v",
+				chartPath, ctx.WorkingPath)
+		}
+		ctx.Logger.Debugf("Considering directory %v for chart %v", chartPath, name)
+		_, dirErr = os.Stat(chartPath)
 		if dirErr != nil {
 			return files, fmt.Errorf("Could not use directory %v for chart %v: %v",
-				chart.Path, name, dirErr)
+				chartPath, name, dirErr)
 		}
 	}
 
@@ -66,17 +72,22 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, chart ankh.Chart) (ankh.Char
 	// make changes to the ankh specific yaml files before passing them as `-f`
 	// args to `helm template`
 	if dirErr == nil {
-		if err := util.CopyDir(chart.Path, filepath.Join(tmpDir, name)); err != nil {
+		if err := util.CopyDir(chartPath, filepath.Join(tmpDir, name)); err != nil {
 			return files, err
 		}
 	} else {
-		// TODO: Eventually, only support the global helm registry
+		// Check for registies in the following order of precedence:
+		// - global, context, chart.
 		registry := ctx.AnkhConfig.Helm.Registry
-		if registry == "" {
+		if ctx.AnkhConfig.CurrentContext.HelmRegistryURL != "" {
+			// TODO: Deprecate me
 			registry = ctx.AnkhConfig.CurrentContext.HelmRegistryURL
 		}
+		if chart.HelmRegistry != "" {
+			registry = chart.HelmRegistry
+		}
 		if registry == "" {
-			return files, fmt.Errorf("No helm registry configured. Set `helm.registry` globally, or `See README.md on where to specify a helm registry.")
+			return files, fmt.Errorf("No helm registry configured. Set `helm.registry` globally, or see README.md on where to specify a helm registry.")
 		}
 
 		// We cannot pull down a chart without a version
@@ -622,7 +633,7 @@ func Publish(ctx *ankh.ExecutionContext) error {
 		return fmt.Errorf("error running helm command '%v': %v%v",
 			strings.Join(helmCmd.Args, " "), err, outputMsg)
 	}
-	ctx.Logger.Infof("Finished packaging '%v:%v'", chartYaml.Name, chartYaml.Version)
+	ctx.Logger.Infof("Finished packaging '%v-%v'", chartYaml.Name, chartYaml.Version)
 
 	// Open up and read the contents of the package in order to PUT it upstream
 	localTarballFile, err := os.Open(localTarballPath)

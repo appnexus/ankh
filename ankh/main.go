@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"os/signal"
 	"path"
@@ -78,67 +79,28 @@ func printContexts(ankhConfig *ankh.AnkhConfig) {
 	}
 }
 
-func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error {
-	if ctx.NoPrompt {
-		for i := 0; i < len(ankhFile.Charts); i++ {
-			chart := &ankhFile.Charts[i]
-
-			// Fetch and merge chart metadata
-			meta, err := helm.FetchChartMeta(ctx, chart)
-			if err != nil {
-				return fmt.Errorf("Error fetching chart \"%v\": %v", chart.Name, err)
-			}
-			mergo.Merge(&chart.ChartMeta, meta)
-
-			// This logic is unfortunately duplicated in this function.
-			// The gist is that if ctx.Namespace is set then we have a
-			// command line override, which we'll use later. If the namespace
-			// is set on the ChartMeta, then we'll prioritize using that.
-			if ctx.Namespace == nil && chart.ChartMeta.Namespace == nil {
-				return fmt.Errorf("Missing namespace for chart \"%v\". To use this chart "+
-					"without a namespace, use `ankh --namespace \"\" ...`",
-					chart.Name)
-			}
-		}
-		return nil
-	}
-
+func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error {
 	// Make sure that we don't use the tag argument for more than one Chart.
 	// When this happens, it is almost always an error, because a tag value
 	// is typically only valid/intended for a single chart.
 	tagArgumentUsedForChart := ""
-
-	// Prompt for a chart argument if there is no chart argument and
-	// there is no AnkhFile present on the filesystem.
-	if len(ankhFile.Charts) == 0 {
-		if _, err := os.Stat(ctx.AnkhFilePath); os.IsNotExist(err) {
-			ctx.Logger.Infof("No chart specified as an argument, and no `charts` found in an Ankh file")
-			charts, err := helm.GetChartNames(ctx)
-			if err != nil {
-				return err
-			}
-
-			selectedChart, err := util.PromptForSelection(charts, "Select a chart")
-			if err != nil {
-				return err
-			}
-
-			ankhFile.Charts = []ankh.Chart{ankh.Chart{Name: selectedChart}}
-			ctx.Logger.Infof("Using chart \"%v\" based on prompt selection", selectedChart)
-		}
-	}
 
 	// Prompt for chart versions if any are missing
 	for i := 0; i < len(ankhFile.Charts); i++ {
 		chart := &ankhFile.Charts[i]
 
 		if chart.Path == "" && chart.Version == "" {
+			ctx.Logger.Infof("Found chart \"%v\" without a version", chart.Name)
+			if ctx.NoPrompt {
+				ctx.Logger.Fatalf("Chart \"%v\" missing version (and no 'path' set either, not prompting due to --no-prompt)",
+					chart.Name)
+			}
+
 			versions, err := helm.ListVersions(ctx, chart.Name, true)
 			if err != nil {
 				return err
 			}
 
-			ctx.Logger.Infof("Found chart \"%v\" without a version", chart.Name)
 			selectedVersion, err := util.PromptForSelection(strings.Split(strings.Trim(versions, "\n "), "\n"),
 				fmt.Sprintf("Select a version for chart \"%v\"", chart.Name))
 			if err != nil {
@@ -161,14 +123,22 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 		// If namespace is set on the command line, we'll use that as an
 		// override later during executeChartsOnNamespace, so don't check
 		// for anything here.
+		// - command line override, ankh file, chart meta.
 		if ctx.Namespace == nil {
-			if ankhFile.Namespace != nil && chart.ChartMeta.Namespace == nil {
+			if ankhFile.Namespace != nil {
+				extraLog := ""
+				if chart.ChartMeta.Namespace == nil {
+					extraLog = " (overriding namespace \"%v\" from ankh.yaml present in the chart)"
+				}
 				ctx.Logger.Infof("Using namespace \"%v\" from Ankh file "+
-					"for chart \"%v\" which has no explicit namespace set",
-					*ankhFile.Namespace, chart.Name)
+					"for chart \"%v\"%v",
+					*ankhFile.Namespace, chart.Name, extraLog)
 				chart.ChartMeta.Namespace = ankhFile.Namespace
 			} else if chart.ChartMeta.Namespace == nil {
 				ctx.Logger.Infof("Found chart \"%v\" without a namespace", chart.Name)
+				if ctx.NoPrompt {
+					ctx.Logger.Fatalf("Chart \"%v\" missing namespace (not prompting due to --no-prompt)", chart.Name)
+				}
 				if len(ctx.AnkhConfig.Namespaces) > 0 {
 					selectedNamespace, err := util.PromptForSelection(ctx.AnkhConfig.Namespaces,
 						fmt.Sprintf("Select a namespace for chart '%v' (or re-run with -n/--namespace to provide your own)", chart.Name))
@@ -236,6 +206,20 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 			}
 		}
 
+		// Treat any existing `tag` in `default-values` for this chart as the next-most authoritative
+		for k, v := range chart.DefaultValues {
+			if k == tagKey {
+				ctx.Logger.Infof("Using tag value \"%v=%s\" based on default-values present in the Ankh file", tagKey, v)
+				t, ok := v.(string)
+				if !ok {
+					ctx.Logger.Fatalf("Could not use value '%+v' from default-values in chart %v "+
+						"as a string value for tagKey '%v'", v, chart.Name, tagKey)
+				}
+				chart.Tag = &t
+				break
+			}
+		}
+
 		// For certain operations, we can assume a safe `unset` value for tagKey
 		// for the sole purpose of templating the Helm chart. The value won't be used
 		// meaningfully (like it would be with apply), so we choose this method instead
@@ -266,6 +250,11 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 
 		// If we stil don't have a chart.Tag value, prompt.
 		if chart.Tag == nil {
+			if ctx.NoPrompt {
+				ctx.Logger.Fatalf("Chart \"%v\" missing value for `tagKey` (configured to be '%v',  not prompting due to --no-prompt)",
+					tagKey, chart.Name)
+			}
+
 			image := ""
 			if chart.ChartMeta.TagImage != "" {
 				// No need to prompt for an image name if we already have one in the chart metdata
@@ -297,10 +286,10 @@ func promptForMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 				ctx.Logger.Infof("Using implicit \"--set tag %v=%s\" based on prompt selection", tagKey, tag)
 				chart.Tag = &tag
 			} else if image != "" {
-				complaint := fmt.Sprintf("Could not determine a tag value, and we check for this because `tagKey` is configured to be `%v`. "+
+				complaint := fmt.Sprintf("Chart \"%v\" missing value for `tagKey` (configured to be `%v`). "+
 					"You may want to try passing a tag value explicitly using `ankh --set %v=... `, or simply ignore "+
 					"this error entirely using `ankh --ignore-config-errors ...` (not recommended)",
-					tagKey, tagKey)
+					chart.Name, tagKey, tagKey)
 				if ctx.IgnoreConfigErrors {
 					ctx.Logger.Warnf("%v", complaint)
 				} else {
@@ -520,7 +509,7 @@ func executeChartsOnNamespace(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFil
 }
 
 func executeAnkhFile(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) {
-	err := promptForMissingConfigs(ctx, ankhFile)
+	err := reconcileMissingConfigs(ctx, ankhFile)
 	check(err)
 
 	logExecuteAnkhFile(ctx, ankhFile)
@@ -594,7 +583,9 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile *ankh.AnkhFile) {
 		}
 		check(err)
 
+		ctx.WorkingPath = path.Dir(ankhFilePath)
 		executeAnkhFile(ctx, &ankhFile)
+		ctx.WorkingPath = ""
 
 		log.Infof("Finished satisfying dependency: %v", dep)
 	}
@@ -602,7 +593,22 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile *ankh.AnkhFile) {
 	if len(rootAnkhFile.Charts) > 0 {
 		executeAnkhFile(ctx, rootAnkhFile)
 	} else if len(dependencies) == 0 {
-		ctx.Logger.Fatalf("No charts nor dependencies provided, nothing to do")
+		if ctx.NoPrompt {
+			ctx.Logger.Fatalf("No charts nor dependencies provided, nothing to do")
+		} else if ctx.AnkhConfig.Helm.Registry != "" {
+			// Prompt for a chart
+			ctx.Logger.Infof("No chart specified as an argument, and no `charts` found in an Ankh file")
+			charts, err := helm.GetChartNames(ctx)
+			check(err)
+
+			selectedChart, err := util.PromptForSelection(charts, "Select a chart")
+			check(err)
+
+			rootAnkhFile.Charts = []ankh.Chart{ankh.Chart{Name: selectedChart}}
+			ctx.Logger.Infof("Using chart \"%v\" based on prompt selection", selectedChart)
+
+			executeAnkhFile(ctx, rootAnkhFile)
+		}
 	}
 }
 
@@ -688,7 +694,7 @@ func main() {
 		})
 		datadir = app.String(cli.StringOpt{
 			Name:   "datadir",
-			Value:  path.Join(os.Getenv("HOME"), ".ankh", "data"),
+			Value:  path.Join("/tmp", ".ankh", "data"),
 			Desc:   "The data directory for Ankh template history",
 			EnvVar: "ANKHDATADIR",
 		})
@@ -743,7 +749,7 @@ func main() {
 			Environment:         *environment,
 			Namespace:           namespaceOpt,
 			Tag:                 tagOpt,
-			DataDir:             path.Join(*datadir, fmt.Sprintf("%v", time.Now().Unix())),
+			DataDir:             path.Join(*datadir, fmt.Sprintf("%v-%v", time.Now().Unix(), rand.Intn(100000))),
 			Logger:              log,
 			HelmSetValues:       helmVars,
 			IgnoreContextAndEnv: ctx.IgnoreContextAndEnv,

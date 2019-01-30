@@ -38,7 +38,7 @@ charts:
   - name: theserver
     namespace: bar
     version: 0.0.1
-    
+
   - name: myservice
     namespace: foo
     version: 1.0.0
@@ -118,7 +118,7 @@ kubectl
 
 ### Contexts
 
-**Ankh** configs are driven by *contexts*, like kubectl. 
+**Ankh** configs are driven by *contexts*, like kubectl.
 
 ```
 $ cat ~/.ankh/config
@@ -161,7 +161,7 @@ include:
 
 #### Context-aware yaml config
 
-One of the primary features of Ankh is the ability to write context-aware yaml configuration for Helm charts. Often, it's necessary to have separate values for classes of operating environments, like `dev` and `production`. For example, we may want to set the log level or 
+One of the primary features of Ankh is the ability to write context-aware yaml configuration for Helm charts. Often, it's necessary to have separate values for classes of operating environments, like `dev` and `production`. For example, we may want to set the log level or
 
 ##### In a Helm chart:
 
@@ -214,13 +214,13 @@ charts:
   - name: theserver
     namespace: bar
     version: 0.0.1
-    
+
   - name: myservice
     namespace: foo
     version: 1.0.0
 ```
 
-When invoked, Ankh will operate over both the `haste-server` and `myservice` charts. 
+When invoked, Ankh will operate over both the `haste-server` and `myservice` charts.
 
 ## YAML schemas
 
@@ -266,7 +266,7 @@ When invoked, Ankh will operate over both the `haste-server` and `myservice` cha
 
 ##### `Slack Message Variables`
 | Variable | Description
-| ------------- | :---:    
+| ------------- | :---:
 | `%USER%`        | Current username |
 | `%CHART%`       | Current chart being used |
 | `%VERSION%`     | Version of the primary container |
@@ -284,7 +284,7 @@ Example format: `format: "_%USER%_ is releasing *%CHART%@%VERSION%* to *%TARGET%
 | -------------     | :---:    | :-------------:                                                                                                                                                                |
 | kube-context      | string   | The kube context to use. This must be a valid context name present in your kube config (tyipcally ~/.kube/config or $KUBECONFIG). Prefer `kube-server` instead, which is less dependent on local configuration. |
 | kube-server       | string   | The kube server to use. This must be a valid Kubernetes API server. Similar to the `server` field in kubectl's `cluster` object. This can be used in place of `kube-context`, and should be preferred. |
-| environment-class | string   | Optional. The environment class to use.                															| 
+| environment-class | string   | Optional. The environment class to use.                															|
 | resource-profile  | string   | Optional. The resource profile to use.                    															|
 | release           | string   | Optional. The release name to use. This is passed to Helm  as --release                                                                                                        |
 | helm-registry-url | string   | Optional. The URL to the Helm chart repo to use. Overrides the global Helm registry. Either this or the global registry must be defined. 					|
@@ -301,7 +301,7 @@ Example format: `format: "_%USER%_ is releasing *%CHART%@%VERSION%* to *%TARGET%
 | Field             | Type               | Description                                                          				|
 | -------------     | :---:              | :-------------:                                                      				|
 | name              | string             | The chart name. Must be the name of a chart in a Helm registry					|
-| namespace         | string             | The namespace to use when running `helm` and `kubectl`. Overrides `namespace` in an Ankh file.	| 
+| namespace         | string             | The namespace to use when running `helm` and `kubectl`. Overrides `namespace` in an Ankh file.	|
 | version           | string             | Optional. The chart version, if pulling from a Helm registry.                			|
 | path              | string             | Optional. The path to a local chart directory. Can be used instead of a remote `version` in a Helm registry.  		|
 | default-values    | RawYaml            | Optional. Values to use in all contexts.   			|

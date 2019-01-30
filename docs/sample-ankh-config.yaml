@@ -1,15 +1,40 @@
+# the helm registry instructs ankh where to pull charts from
+helm:
+  registry: https://kubernetes-charts.storage.googleapis.com/
+
+docker:
+  registry: https://registry.docker.io/
+
+# enables sending of release message to specified slack team and channel.
+slack:
+  token: foobar123
+  username: random-foobar
+  icon-url: foobar.com/myimage.jpg
+  format: "_%USER%_ is releasing *%CHART%@%VERSION%* to *%TARGET%*"
+  rollbackFormat: "_%USER%_ is rolling back *%CHART%* in *%TARGET%*"
+  pretext: Release notification
+
 # contexts are the different ways in which your ankh files can be deployed to
 # kubernetes clusters. Each key in this object is a context and the names can be
 # whatever you like.
 contexts:
   minikube:
-    # kube-context ties this context to a `kubectl` context in your local kube config
+    # kube-context ties this context to a `kubectl` context
     kube-context: minikube
+
+    # ...or use kube-server to simply use a URL for accessing Kubernetes
+    #kube-server: some-kube-server.coolcompany.net
+
+    # environment-class should be one of your `supported-environment-classes` defined above
     environment-class: dev
+
+    # resource-profile should be one of your `supported-resource-profiles` defined above
     resource-profile: natural
+
+    # release name provided to helm
     release: minikube
-    helm-registry-url: https://kubernetes-charts.storage.googleapis.com/
-    docker-registry-url: https://registry.docker.io/
-    # global can be any nested objects with values that need to be passed to every chart.
+
+    # global can be any nested objects with values that need to be passed to
+    # every chart. Arrays are not supported within `global`.
     global:
       foo: bar
