@@ -53,9 +53,12 @@ type ExecutionContext struct {
 	DataDir        string
 	HelmSetValues  map[string]string
 
-	SlackChannel           string
-	SlackMessageOverride   string
-	SlackDeploymentVersion string
+	DeploymentTag string
+
+	SlackChannel         string
+	SlackMessageOverride string
+
+	CreateJiraTicket bool
 
 	Filters []string
 
@@ -113,6 +116,16 @@ type SlackConfig struct {
 	Pretext        string `yaml:"pretext"`
 }
 
+type JiraConfig struct {
+	Queue                     string `yaml:"queue,omitempty"`
+	BaseUrl                   string `yaml:"baseUrl,omitempty"`
+	AutoClose                 bool   `yaml:"autoClose"`
+	SummaryFormat             string `yaml:"summaryFormat"`
+	RollbackSummaryFormat     string `yaml:"rollbackSummaryFormat"`
+	DescriptionFormat         string `yaml:"descriptionFormat"`
+	RollbackDescriptionFormat string `yaml:"rollbackDescriptionFormat"`
+}
+
 // AnkhConfig defines the shape of the ~/.ankh/config file used for global
 // configuration options
 type AnkhConfig struct {
@@ -130,6 +143,7 @@ type AnkhConfig struct {
 	Helm    HelmConfig    `yaml:"helm,omitempty"`
 	Docker  DockerConfig  `yaml:"docker,omitempty"`
 	Slack   SlackConfig   `yaml:"slack,omitempty"`
+	Jira    JiraConfig    `yaml:"jira,omitempty"`
 
 	// List of namespace suggestions to use if the user does not provide one when required.
 	Namespaces []string `yaml:"namespaces,omitempty"`
