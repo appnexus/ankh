@@ -264,15 +264,16 @@ When invoked, Ankh will operate over both the `haste-server` and `myservice` cha
 | rollbackFormat | string | Optional. Format of message for rollbacks that will be used. See available variables below. |
 | pretext       | string | Optional. Pretext for slack message. Default is `A new release notification has been received`. |
 
-##### `Slack Message Variables`
-| Variable | Description
-| ------------- | :---:
-| `%USER%`        | Current username |
-| `%CHART%`       | Current chart being used |
-| `%VERSION%`     | Version of the primary container |
-| `%TARGET%`      | Target environment or context |
-
-Example format: `format: "_%USER%_ is releasing *%CHART%@%VERSION%* to *%TARGET%*"`
+#### `JiraConfig`
+| Field         | Type     | Description                                                                                                          |
+| ------------- | :---:    | :-------------:                                                                                                      |
+| baseUrl              | string | Required. Url of JIRA instance                                                                                  |
+| queue                | string | Required. Queue to create the ticket in                                                                         |
+| autoClose            | bool   | Optional. Auto-Close JIRA ticket created. Defaults to false.                                                    |
+| summaryFormat        | string | Optional. Format of JIRA summary that will be used. See available format variables below.                       |
+| rollbackSumaryFormat | string | Optional. Format of JIRA summary for rollbacks that will be used. See available format variables below.         |
+| descriptionFormat        | string | Optional. Format of JIRA description that will be used. See available format variables below.               |
+| rollbacDescriptionFormat | string | Optional. Format of JIRA description for rollbacks that will be used. See available format variables below. |
 
 #### `Environment`
 | Field         | Type     | Description                                                                                                        |
@@ -308,3 +309,13 @@ Example format: `format: "_%USER%_ is releasing *%CHART%@%VERSION%* to *%TARGET%
 | values            | map[string]RawYaml | Optional. Values to use, by environment class. Any context whose `environment-class` exactly matches one of the keys in this map will use all values under that key.                              			|
 | resource-profiles | map[string]RawYaml | Optional. Values to use, by resource profile. Any context whose `resource-profile` exactly matches one of the keys in this map will use all values under that key.                                  			|
 | releases          | map[string]RawYaml | Optional. Values to use, by release. Any context whose `release` is a regular expression match for one of the keys in this map, using only the first matched going from top to bottom, will use all values under that key, eg: `staging|production:` to match either of the strings `staging` or `production`.                                         			|
+
+#### `Format Variables`
+| Variable | Description
+| ------------- | :---:    
+| `%USER%`        | Current username |
+| `%CHART%`       | Current chart being used |
+| `%VERSION%`     | Version of the primary container |
+| `%TARGET%`      | Target environment or context |
+
+ Example format: `format: "_%USER%_ is releasing *%CHART%@%VERSION%* to *%TARGET%*"`

@@ -14,6 +14,16 @@ slack:
   rollbackFormat: "_%USER%_ is rolling back *%CHART%* in *%TARGET%*"
   pretext: Release notification
 
+# enables creation of jira ticket
+jira:
+  queue: AA
+  baseUrl: https://jira.best-company-ever.com
+  autoClose: true
+  summaryFormat: "Deploy %CHART% version:%VERSION% to %TARGET%"
+  descriptionFormat: "Ticket to track the deployment of *%CHART%* version:%VERSION% to *%TARGET%*"
+  rollbackSummaryFormat: "ROLLBACK of %CHART% in %TARGET%"
+  rollbackDescriptionFormat: "Ticket to track the rollback of *%CHART%* in *%TARGET%*"
+  
 # contexts are the different ways in which your ankh files can be deployed to
 # kubernetes clusters. Each key in this object is a context and the names can be
 # whatever you like.
@@ -38,3 +48,5 @@ contexts:
     # every chart. Arrays are not supported within `global`.
     global:
       foo: bar
+
+

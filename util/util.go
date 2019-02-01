@@ -443,14 +443,14 @@ func FuzzySemVerCompare(s1, s2 string) bool {
 	return len(s1parts) <= len(s2parts)
 }
 
-func PromptForUsername() (string, error) {
+func PromptForUsernameWithLabel(label string) (string, error) {
 	current_user, err := user.Current()
 	if err != nil {
 		return "", err
 	}
 
 	user_prompt := promptui.Prompt{
-		Label:   "Username:",
+		Label:   label,
 		Default: current_user.Username,
 	}
 	username, err := user_prompt.Run()
@@ -460,9 +460,9 @@ func PromptForUsername() (string, error) {
 	return strings.Trim(username, " "), nil
 }
 
-func PromptForPassword() (string, error) {
+func PromptForPasswordWithLabel(label string) (string, error) {
 	passwordPrompt := promptui.Prompt{
-		Label: "Password:",
+		Label: label,
 		Mask:  '*',
 	}
 	password, err := passwordPrompt.Run()
@@ -610,16 +610,16 @@ func ReplaceFormatVariables(format string, chart string, version string, env str
 	}
 
 	// Replace %USER%
-	result = strings.Replace(result, "%USER%", currentUser.Username, 1)
+	result = strings.Replace(result, "%USER%", currentUser.Username, -1)
 
 	// Replace %CHART%
-	result = strings.Replace(result, "%CHART%", chart, 1)
+	result = strings.Replace(result, "%CHART%", chart, -1)
 
 	// Replace %VERSION%
-	result = strings.Replace(result, "%VERSION%", version, 1)
+	result = strings.Replace(result, "%VERSION%", version, -1)
 
 	// Replace %TARGET%
-	result = strings.Replace(result, "%TARGET%", env, 1)
+	result = strings.Replace(result, "%TARGET%", env, -1)
 
 	return result, nil
 }
