@@ -532,10 +532,12 @@ func promptForSelection(choices []string, label string) (string, error) {
 }
 
 func hasCommand(name string) bool {
-	cmd := exec.Command("sh", "-c", "command", "-v", name)
-	if err := cmd.Run(); err != nil {
+	cmd := exec.Command("command", "-v", name)
+	err := cmd.Run();
+	if err != nil {
 		return false
 	}
+	fmt.Printf("Command %v has err: %+v", name, err)
 
 	return true
 }
