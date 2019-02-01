@@ -18,6 +18,14 @@
   revision = "2efee857e7cfd4f3d0138cc3cbb1b4966962b93a"
 
 [[projects]]
+  digest = "1:84c2663ac5412a2eed8d0270c260b5b12cc8dfbc1dc7fc03ece0a7f60f169afd"
+  name = "github.com/andygrunwald/go-jira"
+  packages = ["."]
+  pruneopts = ""
+  revision = "e2a9240a5cdecd666b9e2f7b5b20343022b4d467"
+  version = "1.6.0"
+
+[[projects]]
   branch = "master"
   digest = "1:534bfc1a194affafadc94be31ac3e221de127e47c0c28b3fe8eddc7ca1656f2f"
   name = "github.com/chzyer/readline"
@@ -104,6 +112,14 @@
   revision = "aabc10ec26b754e797f9028f4589c5b7bd90dc20"
 
 [[projects]]
+  digest = "1:2defd14040b1ca18840524e9d0f9cfab0ea8d2f2d396b343d221f8bc8e21ab9d"
+  name = "github.com/fatih/structs"
+  packages = ["."]
+  pruneopts = ""
+  revision = "4966fc68f5b7593aafa6cbbba2d65ec6e1416047"
+  version = "v1.1.0"
+
+[[projects]]
   digest = "1:3fb45be023d7b0f726a3cd08bd5ca66ae840a265b0db243a97a86ffbf7c1da75"
   name = "github.com/genuinetools/reg"
   packages = ["registry"]
@@ -121,6 +137,14 @@
   ]
   pruneopts = ""
   revision = "883fe33ffc4344bad1ecd881f61afd5ec5d80e0a"
+
+[[projects]]
+  branch = "master"
+  digest = "1:cea4aa2038169ee558bf507d5ea02c94ca85bcca28a4c7bb99fd59b31e43a686"
+  name = "github.com/google/go-querystring"
+  packages = ["query"]
+  pruneopts = ""
+  revision = "44c6ddd0a2342c386950e880b658017258da92fc"
 
 [[projects]]
   branch = "master"
@@ -284,6 +308,17 @@
   version = "v1.0.4"
 
 [[projects]]
+  digest = "1:471709b37294bd0697943616565540c7f790a3399edbb4f016fc6808d42e4c52"
+  name = "github.com/trivago/tgo"
+  packages = [
+    "tcontainer",
+    "treflect",
+  ]
+  pruneopts = ""
+  revision = "315f955fa460a324c1de2f5d576a87c922c8bd93"
+  version = "v1.0.5"
+
+[[projects]]
   branch = "master"
   digest = "1:ba52e5a5fb800ce55108b7a5f181bb809aab71c16736051312b0aa969f82ad39"
   name = "github.com/tsenart/deadcode"
@@ -340,6 +375,7 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/andygrunwald/go-jira",
     "github.com/coreos/go-semver/semver",
     "github.com/docker/docker/api/types",
     "github.com/genuinetools/reg/registry",
