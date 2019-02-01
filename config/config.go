@@ -2,11 +2,12 @@ package config
 
 import (
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
+
+	"gopkg.in/yaml.v2"
 
 	"github.com/appnexus/ankh/context"
 )

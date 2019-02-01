@@ -665,7 +665,7 @@ func Publish(ctx *ankh.ExecutionContext) error {
 			if ctx.NoPrompt {
 				return fmt.Errorf("Must define ANKH_HELM_REGISTRY_USERNAME for \"basic\" auth if run with `--no-prompt`")
 			}
-			username, err = util.PromptForUsername()
+			username, err = util.PromptForUsernameWithLabel("Username: ")
 			if err != nil {
 				return fmt.Errorf("Failed to read credentials from stdin: %v", err)
 			}
@@ -679,7 +679,7 @@ func Publish(ctx *ankh.ExecutionContext) error {
 			if ctx.NoPrompt {
 				return fmt.Errorf("Must define ANKH_HELM_REGISTRY_PASSWORD for \"basic\" if run with `--no-prompt`")
 			}
-			password, err = util.PromptForPassword()
+			password, err = util.PromptForPasswordWithLabel("Password: ")
 			if err != nil {
 				return fmt.Errorf("Failed to read credentials from stdin: %v", err)
 			}
@@ -712,7 +712,7 @@ func Publish(ctx *ankh.ExecutionContext) error {
 			resp.Status, resp.StatusCode, upstreamTarballPath)
 	}
 
-	ctx.Logger.Debug("Helm registry PUT resp: %+v", resp)
+	ctx.Logger.Debugf("Helm registry PUT resp: %+v", resp)
 	ctx.Logger.Infof("Finished publishing '%v'", upstreamTarballPath)
 	return nil
 }

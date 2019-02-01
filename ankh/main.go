@@ -25,6 +25,7 @@ import (
 	"github.com/appnexus/ankh/context"
 	"github.com/appnexus/ankh/docker"
 	"github.com/appnexus/ankh/helm"
+	"github.com/appnexus/ankh/jira"
 	"github.com/appnexus/ankh/kubectl"
 	"github.com/appnexus/ankh/slack"
 	"github.com/appnexus/ankh/util"
@@ -299,9 +300,8 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 		}
 
 		// we should finally have a tag value
-		if ctx.SlackChannel != "" {
-			ctx.SlackDeploymentVersion = *chart.Tag
-		}
+		ctx.DeploymentTag = *chart.Tag
+
 	}
 
 	return nil
@@ -415,15 +415,16 @@ func execute(ctx *ankh.ExecutionContext) {
 	}
 
 	if ctx.SlackChannel != "" {
-		if ctx.Mode == ankh.Rollback {
-			ctx.SlackDeploymentVersion = "rollback"
-		}
-		err := slack.PingSlackChannel(ctx)
-		if err != nil {
+		if err := slack.PingSlackChannel(ctx); err != nil {
 			ctx.Logger.Errorf("Slack message failed with error: %v", err)
 		}
 	}
 
+	if ctx.CreateJiraTicket {
+		if err := jira.CreateJiraTicket(ctx); err != nil {
+			ctx.Logger.Errorf("Unable to create JIRA ticket. %v", err)
+		}
+	}
 }
 
 func executeChartsOnNamespace(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile,
@@ -870,7 +871,7 @@ func main() {
 	})
 
 	app.Command("apply", "Apply an Ankh file to a Kubernetes cluster", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--filter...]"
+		cmd.Spec = "[-f] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--jira-ticket] [--filter...]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually apply anything to a cluster")
@@ -878,6 +879,7 @@ func main() {
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		slackChannel := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
 		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
+		createJiraTicket := cmd.BoolOpt("j jira-ticket", false, "Create a JIRA ticket to track update")
 		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
 
 		cmd.Action = func() {
@@ -891,6 +893,7 @@ func main() {
 			ctx.Mode = ankh.Apply
 			ctx.SlackChannel = *slackChannel
 			ctx.SlackMessageOverride = *slackMessageOverride
+			ctx.CreateJiraTicket = *createJiraTicket
 			filters := []string{}
 			for _, filter := range *filter {
 				filters = append(filters, string(filter))
@@ -903,7 +906,7 @@ func main() {
 	})
 
 	app.Command("rollback", "Rollback deployments associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message]"
+		cmd.Spec = "[-f] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--jira-ticket] "
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually rollback anything to a cluster")
@@ -911,6 +914,7 @@ func main() {
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		slackChannel := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
 		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
+		createJiraTicket := cmd.BoolOpt("j jira-ticket", false, "Create a JIRA ticket to track update")
 
 		cmd.Action = func() {
 			ctx.AnkhFilePath = *ankhFilePath
@@ -923,6 +927,7 @@ func main() {
 			ctx.Mode = ankh.Rollback
 			ctx.SlackChannel = *slackChannel
 			ctx.SlackMessageOverride = *slackMessageOverride
+			ctx.CreateJiraTicket = *createJiraTicket
 			ctx.Filters = []string{"deployment", "statfulset"}
 
 			ctx.Logger.Warnf("Rollback is not a transactional operation.\n" +
