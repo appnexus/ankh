@@ -531,8 +531,8 @@ func promptForSelection(choices []string, label string) (string, error) {
 	return choice, nil
 }
 
-func hasCommand(name string) bool {
-	cmd := exec.Command("command", "-v", name)
+func hasFzf() bool {
+	cmd := exec.Command("fzf", "-h")
 	if err := cmd.Run(); err != nil {
 		return false
 	}
@@ -541,7 +541,7 @@ func hasCommand(name string) bool {
 }
 
 func PromptForSelection(choices []string, label string) (string, error) {
-	if hasCommand("fzf") {
+	if hasFzf() {
 		return promptForSelectionFzf(choices, label)
 	} else {
 		return promptForSelection(choices, label)
