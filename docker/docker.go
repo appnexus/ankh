@@ -78,6 +78,35 @@ func listTags(ctx *ankh.ExecutionContext, r *registry.Registry,
 	return tags, nil
 }
 
+func VerifyTag(ctx *ankh.ExecutionContext, image string, tagValue string) error {
+
+	ctx.Logger.Debugf("Verifying tag %v for image %v.", tagValue, image)
+
+	// Cannot verify tag without image name
+	if image == "" {
+		ctx.Logger.Debug("Cannot verify tag. Image name is not set on ankh.yaml in the chart")
+		return nil
+	}
+
+	r, err := newRegistry(ctx)
+	if err != nil {
+		return err
+	}
+
+	tags, err := listTags(ctx, r, image, 0, true)
+	if err != nil {
+		return err
+	}
+
+	for _, t := range tags {
+		if t == tagValue {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("Docker tag %v does not exist", tagValue)
+}
+
 func ListImages(ctx *ankh.ExecutionContext, numToShow int) (string, error) {
 	r, err := newRegistry(ctx)
 	if err != nil {

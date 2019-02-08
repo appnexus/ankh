@@ -191,19 +191,43 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 				}
 			}
 
-			ctx.Logger.Infof("Using tag value \"%v=%s\" based on --tag argument", tagKey, *ctx.Tag)
-			chart.Tag = ctx.Tag
-			tagArgumentUsedForChart = chart.Name
-			continue
+			// If we have a chart image name, make sure set tag exists before using it
+			image := chart.ChartMeta.TagImage
+			tag := *ctx.Tag
+			err := docker.VerifyTag(ctx, image, tag)
+			if !ctx.IgnoreConfigErrors && err != nil {
+				ctx.Logger.Errorf("Tag value %v from --tag argument is invalid. Will prompt for tag. To ignore "+
+					"this error use `ankh --ignore-config-errors ...` (not recommended)", *ctx.Tag)
+			} else {
+				if err != nil {
+					ctx.Logger.Warnf("Tag value %v from --tag argument is not found", *ctx.Tag)
+				}
+				ctx.Logger.Infof("Using tag value \"%v=%s\" based on --tag argument", tagKey, *ctx.Tag)
+				chart.Tag = ctx.Tag
+				tagArgumentUsedForChart = chart.Name
+				continue
+			}
+
 		}
 
 		// Treat any existing --set tagKey=$tag argument as authoritative
 		for k, v := range ctx.HelmSetValues {
 			if k == tagKey {
-				ctx.Logger.Infof("Using tag value \"%v=%s\" based on --set argument", tagKey, v)
 				t := v
-				chart.Tag = &t
-				break
+				// If we have a chart image name, make sure set tag exists before using it
+				image := chart.ChartMeta.TagImage
+				err := docker.VerifyTag(ctx, image, t)
+				if !ctx.IgnoreConfigErrors && err != nil {
+					ctx.Logger.Errorf("Tag value %v from --set argument is invalid. Will prompt for tag. To ignore "+
+						"this error use `ankh --ignore-config-errors ...` (not recommended)", t)
+				} else {
+					if err != nil {
+						ctx.Logger.Warnf("Tag value %v from --set argument is not found", t)
+					}
+					ctx.Logger.Infof("Using tag value \"%v=%s\" based on --set argument", tagKey, v)
+					chart.Tag = &t
+					break
+				}
 			}
 		}
 
