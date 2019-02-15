@@ -54,7 +54,7 @@ type ExecutionContext struct {
 	HelmSetValues  map[string]string
 
 	DeploymentTag   string
-	DeploymentChart string
+	DeploymentChart []string
 
 	SlackChannel         string
 	SlackMessageOverride string

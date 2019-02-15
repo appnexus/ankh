@@ -3,6 +3,7 @@ package slack
 import (
 	"fmt"
 	"os/user"
+	"strings"
 
 	ankh "github.com/appnexus/ankh/context"
 	"github.com/appnexus/ankh/util"
@@ -114,8 +115,10 @@ func getMessageText(ctx *ankh.ExecutionContext, env string) (string, error) {
 		format = ctx.AnkhConfig.Slack.RollbackFormat
 	}
 
+	chart := strings.Join(ctx.DeploymentChart, ", ")
+
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, ctx.DeploymentChart, ctx.DeploymentTag, env)
+		message, err := util.ReplaceFormatVariables(format, chart, ctx.DeploymentTag, env)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for message", format)
 		} else {
@@ -124,7 +127,7 @@ func getMessageText(ctx *ankh.ExecutionContext, env string) (string, error) {
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForMessageText(ctx.DeploymentChart, ctx.DeploymentTag, env)
+	message, err := promptForMessageText(chart, ctx.DeploymentTag, env)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for message. Will use default message")
 	}
