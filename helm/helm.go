@@ -208,6 +208,9 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, namespace strin
 		ctx.DeploymentTag = *chart.Tag
 	}
 
+	// Set chart name that is being used
+	ctx.DeploymentChart = chart.Name
+
 	files, err := findChartFiles(ctx, chart)
 
 	if err != nil {
