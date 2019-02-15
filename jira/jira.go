@@ -3,6 +3,7 @@ package jira
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	jira "github.com/andygrunwald/go-jira"
 	ankh "github.com/appnexus/ankh/context"
@@ -130,8 +131,11 @@ func getSummary(ctx *ankh.ExecutionContext, env string) (string, error) {
 		format = ctx.AnkhConfig.Jira.RollbackSummaryFormat
 	}
 
+	// Allow for multiple charts
+	chart := strings.Join(ctx.DeploymentChart, ", ")
+
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, ctx.Chart, ctx.DeploymentTag, env)
+		message, err := util.ReplaceFormatVariables(format, chart, ctx.DeploymentTag, env)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for subject", format)
 		} else {
@@ -140,7 +144,7 @@ func getSummary(ctx *ankh.ExecutionContext, env string) (string, error) {
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForSummary(ctx.Chart, ctx.DeploymentTag, env)
+	message, err := promptForSummary(chart, ctx.DeploymentTag, env)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for subject. Will use default subject")
 	}
@@ -155,8 +159,11 @@ func getDescription(ctx *ankh.ExecutionContext, env string) (string, error) {
 		format = ctx.AnkhConfig.Jira.RollbackDescriptionFormat
 	}
 
+	// Allow for multiple charts
+	chart := strings.Join(ctx.DeploymentChart, ", ")
+
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, ctx.Chart, ctx.DeploymentTag, env)
+		message, err := util.ReplaceFormatVariables(format, chart, ctx.DeploymentTag, env)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for description", format)
 		} else {
@@ -165,7 +172,7 @@ func getDescription(ctx *ankh.ExecutionContext, env string) (string, error) {
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForDescription(ctx.Chart, ctx.DeploymentTag, env)
+	message, err := promptForDescription(chart, ctx.DeploymentTag, env)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for description. Will use default description")
 	}

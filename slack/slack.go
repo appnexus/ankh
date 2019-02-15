@@ -115,6 +115,7 @@ func getMessageText(ctx *ankh.ExecutionContext, env string) (string, error) {
 		format = ctx.AnkhConfig.Slack.RollbackFormat
 	}
 
+	// Allow for multiple charts
 	chart := strings.Join(ctx.DeploymentChart, ", ")
 
 	if format != "" {
