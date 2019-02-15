@@ -299,9 +299,6 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 			}
 		}
 
-		// we should finally have a tag value
-		ctx.DeploymentTag = *chart.Tag
-
 	}
 
 	return nil

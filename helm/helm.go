@@ -205,6 +205,7 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, namespace strin
 		ctx.Logger.Debugf("Setting helm value %v=%v since chart.ChartMeta.TagKey and chart.Tag are set",
 			chart.ChartMeta.TagKey, *chart.Tag)
 		helmArgs = append(helmArgs, "--set", chart.ChartMeta.TagKey+"="+*chart.Tag)
+		ctx.DeploymentTag = *chart.Tag
 	}
 
 	files, err := findChartFiles(ctx, chart)
