@@ -55,10 +55,11 @@ type ExecutionContext struct {
 
 	DeploymentTag string
 
-	SlackChannel         string
 	SlackMessageOverride string
 
-	CreateJiraTicket bool
+	CreateJiraTicket       bool
+	SlackChannels          []string
+	SlackDeploymentVersion string
 
 	Filters []string
 

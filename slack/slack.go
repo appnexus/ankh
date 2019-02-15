@@ -52,16 +52,22 @@ func PingSlackChannel(ctx *ankh.ExecutionContext) error {
 		Username: username,
 	}
 
-	channelId, err := getSlackChannelIDByName(api, ctx.SlackChannel)
-	if err != nil {
-		return err
-	}
+        channels := make(map[string]string, len(ctx.SlackChannels))
+	for _, ch := range ctx.SlackChannels {
+		channelId, err := getSlackChannelIDByName(api, ch)
+	        if err != nil {
+		        return err
+	        }
+                channels[ch] = channelId
+        }
 
-	if !ctx.DryRun {
-		_, _, err = api.PostMessage(channelId, slack.MsgOptionAttachments(attachment), slack.MsgOptionPostMessageParameters(messageParams))
-	} else {
-		ctx.Logger.Infof("--dry-run set so not sending message '%v' to slack channel %v", messageText, ctx.SlackChannel)
-	}
+	for name, id := range channels {
+	        if !ctx.DryRun {
+		        _, _, err = api.PostMessage(id, slack.MsgOptionAttachments(attachment), slack.MsgOptionPostMessageParameters(messageParams))
+	        } else {
+		        ctx.Logger.Infof("--dry-run set so not sending message '%v' to slack channel %v", messageText, name)
+	        }
+        }
 
 	return err
 }

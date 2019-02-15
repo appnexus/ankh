@@ -320,7 +320,7 @@ func main() {
 				ctx.LocalChart = true
 			}
 			ctx.Mode = ankh.Apply
-			ctx.SlackChannel = *slackChannel
+			ctx.SlackChannels = strings.Split(*slackChannel, ",");
 			ctx.SlackMessageOverride = *slackMessageOverride
 			ctx.CreateJiraTicket = *createJiraTicket
 			filters := []string{}
@@ -355,7 +355,7 @@ func main() {
 				ctx.LocalChart = true
 			}
 			ctx.Mode = ankh.Deploy
-			ctx.SlackChannel = *slackChannel
+			ctx.SlackChannels = append(ctx.SlackChannels, *slackChannel)
 			ctx.SlackMessageOverride = *slackMessageOverride
 			ctx.CreateJiraTicket = *createJiraTicket
 			filters := []string{}
@@ -389,7 +389,7 @@ func main() {
 				ctx.LocalChart = true
 			}
 			ctx.Mode = ankh.Rollback
-			ctx.SlackChannel = *slackChannel
+			ctx.SlackChannels = append(ctx.SlackChannels, *slackChannel)
 			ctx.SlackMessageOverride = *slackMessageOverride
 			ctx.CreateJiraTicket = *createJiraTicket
 
