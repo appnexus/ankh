@@ -22,10 +22,10 @@ func newValidAnkhConfig() AnkhConfig {
 		CurrentContextName: "test",
 		Contexts: map[string]Context{
 			"test": Context{
-				EnvironmentClass: "dev",
-				ResourceProfile:  "constrained",
-				HelmRepositoryURL:  "http://localhost",
-				KubeContext:      "dev",
+				EnvironmentClass:  "dev",
+				ResourceProfile:   "constrained",
+				HelmRepositoryURL: "http://localhost",
+				KubeContext:       "dev",
 			},
 		},
 	}
