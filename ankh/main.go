@@ -354,7 +354,7 @@ func main() {
 				ctx.Chart = *chartPath
 				ctx.LocalChart = true
 			}
-			ctx.Mode = ankh.Deploy
+			ctx.Mode = ankh.Apply
 			ctx.SlackChannels = append(ctx.SlackChannels, *slackChannel)
 			ctx.SlackMessageOverride = *slackMessageOverride
 			ctx.CreateJiraTicket = *createJiraTicket
@@ -389,7 +389,7 @@ func main() {
 				ctx.LocalChart = true
 			}
 			ctx.Mode = ankh.Rollback
-			ctx.SlackChannels = append(ctx.SlackChannels, *slackChannel)
+			ctx.AnkhConfig.Slack.Channels = append(ctx.AnkhConfig.Slack.Channels, *slackChannel)
 			ctx.SlackMessageOverride = *slackMessageOverride
 			ctx.CreateJiraTicket = *createJiraTicket
 

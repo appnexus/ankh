@@ -112,12 +112,13 @@ type DockerConfig struct {
 }
 
 type SlackConfig struct {
-	Token          string `yaml:"token"`
-	Icon           string `yaml:"icon-url"`
-	Username       string `yaml:"username"`
-	Format         string `yaml:"format"`
-	RollbackFormat string `yaml:"rollbackFormat"`
-	Pretext        string `yaml:"pretext"`
+	Token          string   `yaml:"token"`
+	Icon           string   `yaml:"icon-url"`
+	Username       string   `yaml:"username"`
+	Format         string   `yaml:"format"`
+	RollbackFormat string   `yaml:"rollbackFormat"`
+	Pretext        string   `yaml:"pretext"`
+	Channels       []string `yaml:"channels"`
 }
 
 type JiraConfig struct {
