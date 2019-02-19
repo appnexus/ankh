@@ -2,11 +2,12 @@ package config
 
 import (
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
+
+	"gopkg.in/yaml.v2"
 
 	"github.com/appnexus/ankh/context"
 )
@@ -63,12 +64,19 @@ func GetAnkhConfig(ctx *ankh.ExecutionContext, configPath string) (ankh.AnkhConf
 	}
 
 	// Set default helm and kubectl commands
+	ankhConfig.Helm.Command = os.Getenv("ANKH_HELM_COMMAND")
 	if ankhConfig.Helm.Command == "" {
 		ankhConfig.Helm.Command = "helm"
 	}
 
+	ankhConfig.Kubectl.Command = os.Getenv("ANKH_KUBECTL_COMMAND")
 	if ankhConfig.Kubectl.Command == "" {
 		ankhConfig.Kubectl.Command = "kubectl"
+	}
+
+	// Support the deprecated HelmRegistry as a backup alias for HelmRepository
+	if ankhConfig.Helm.Repository == "" && ankhConfig.Helm.RegistryUnused != "" {
+		ankhConfig.Helm.Repository = ankhConfig.Helm.RegistryUnused
 	}
 
 	return ankhConfig, nil

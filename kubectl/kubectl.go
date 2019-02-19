@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -31,15 +32,20 @@ func Version(ctx *ankh.ExecutionContext) (string, error) {
 type KubeObject struct {
 	Kind     string
 	Metadata struct {
+		Name   string
 		Labels map[string]string
+	}
+	Spec struct {
+		Selector struct {
+			MatchLabels map[string]string `yaml:"matchLabels"`
+		}
 	}
 }
 
-func getSelectorArgsForPods(ctx *ankh.ExecutionContext, input string,
+func getPodMatchLabelsFromInput(ctx *ankh.ExecutionContext, input string,
 	wildCardLabels []string, showWildCardLabels bool) ([]string, error) {
 	args := []string{}
-	selectorLabels := make(map[string][]string)
-	showLabels := make(map[string]string)
+	matchLabels := make(map[string][]string)
 	decoder := yaml.NewDecoder(strings.NewReader(input))
 
 	for {
@@ -49,32 +55,31 @@ func getSelectorArgsForPods(ctx *ankh.ExecutionContext, input string,
 			break
 		}
 
-		if strings.EqualFold(obj.Kind, "deployment") ||
-			strings.EqualFold(obj.Kind, "statefulset") {
-			for k, v := range obj.Metadata.Labels {
-				if util.Contains(wildCardLabels, k) {
-					ctx.Logger.Debugf("Skipping wildcard label %v as label constraint", k)
-					showLabels[k] = k
-				} else {
-					selectorLabels[k] = append(selectorLabels[k], v)
-				}
+		if !strings.EqualFold(obj.Kind, "deployment") && !strings.EqualFold(obj.Kind, "statefulset") {
+			continue
+		}
+
+		ctx.Logger.Debugf("Using obj %+v", obj)
+		for k, v := range obj.Spec.Selector.MatchLabels {
+			if !util.Contains(wildCardLabels, k) {
+				matchLabels[k] = append(matchLabels[k], v)
 			}
 		}
 	}
 
-	if len(selectorLabels) == 0 {
+	if len(matchLabels) == 0 {
 		return []string{}, fmt.Errorf("No Deployments or StatefulSets found for input chart")
 	}
 
 	constraints := []string{}
-	for k, v := range selectorLabels {
+	for k, v := range matchLabels {
 		c := fmt.Sprintf("%v in (%v)", k, strings.Join(v, ","))
 		constraints = append(constraints, c)
 	}
 	args = append(args, []string{"-l", strings.Join(constraints, ",")}...)
 
 	if showWildCardLabels {
-		for _, label := range showLabels {
+		for _, label := range wildCardLabels {
 			ctx.Logger.Debugf("Selecting %v as a label instead", label)
 			args = append(args, []string{"-L", label}...)
 		}
@@ -84,7 +89,42 @@ func getSelectorArgsForPods(ctx *ankh.ExecutionContext, input string,
 	return args, nil
 }
 
-func getSelectorArgsForInput(ctx *ankh.ExecutionContext, input string,
+func getObjectArgsFromInput(ctx *ankh.ExecutionContext, input string,
+	wildCardLabels []string, showWildCardLabels bool) ([]string, error) {
+	args := []string{}
+	decoder := yaml.NewDecoder(strings.NewReader(input))
+
+	for {
+		obj := KubeObject{}
+		err := decoder.Decode(&obj)
+		if err == io.EOF {
+			break
+		}
+
+		ctx.Logger.Debugf("Decoded a kube object with kind '%v'", obj.Kind)
+		if obj.Kind == "" {
+			// Ignore empty documents
+			ctx.Logger.Debugf("Skipping empty document")
+			continue
+		}
+
+		ctx.Logger.Debugf("Using obj %+v", obj)
+		args = append(args, fmt.Sprintf("%v/%v", obj.Kind, obj.Metadata.Name))
+	}
+
+	if showWildCardLabels {
+		for _, label := range wildCardLabels {
+			ctx.Logger.Debugf("Selecting %v as a label instead", label)
+			args = append(args, []string{"-L", label}...)
+		}
+	}
+
+	ctx.Logger.Debugf("Decided to use args %+v", args)
+
+	return args, nil
+}
+
+func getSelectorArgsFromInput(ctx *ankh.ExecutionContext, input string,
 	wildCardLabels []string, showWildCardLabels bool) ([]string, error) {
 	args := []string{}
 	kindMap := make(map[string]string)
@@ -284,17 +324,21 @@ func Execute(ctx *ankh.ExecutionContext, input string, namespace string, wildCar
 	case ankh.Exec:
 		fallthrough
 	case ankh.Logs:
-		outputMode = []string{"-o", "go-template", "--template={{ range .items }}{{ printf \"%s|\" .metadata.name }}{{ range .spec.containers }}{{ printf \"%s,\" .name }}{{ end }}{{ printf \"\\n\" }}{{ end }}"}
+		customColumns := "custom-columns=NAME:.metadata.name,STATUS:.status.phase,CREATED:.metadata.creationTimestamp,CONTAINERS:.spec.containers[*].name"
+		for _, column := range wildCardLabels {
+			customColumns += fmt.Sprintf(",%v:.metadata.labels.%v", strings.ToUpper(column), column)
+		}
+		outputMode = []string{"-o", customColumns}
 		fallthrough
 	case ankh.Pods:
 		showWildCardLabels := false
 		if ctx.Mode == ankh.Pods {
 			// TODO: Clean this all up.
 			skipStdoutAndStderr = true
-			showWildCardLabels = true
+			showWildCardLabels = !ctx.Describe
 		}
 		kubectlArgs = append(kubectlArgs, append([]string{"pods"}, outputMode...)...)
-		args, err := getSelectorArgsForPods(ctx, input, wildCardLabels, showWildCardLabels)
+		args, err := getPodMatchLabelsFromInput(ctx, input, wildCardLabels, showWildCardLabels)
 		if err != nil {
 			return "", err
 		}
@@ -302,7 +346,7 @@ func Execute(ctx *ankh.ExecutionContext, input string, namespace string, wildCar
 		skipStdin = true
 	case ankh.Get:
 		skipStdoutAndStderr = true
-		args, err := getSelectorArgsForInput(ctx, input, wildCardLabels, !ctx.Describe)
+		args, err := getObjectArgsFromInput(ctx, input, wildCardLabels, !ctx.Describe)
 		if err != nil {
 			return "", err
 		}
@@ -352,41 +396,41 @@ func Execute(ctx *ankh.ExecutionContext, input string, namespace string, wildCar
 
 		// Split the output line by line, and then again by `|` so the user can select a pod.
 		// This works in conjunction with the `go-template` `outputMode` used when selecting pods with kubectl.
-		pods := []string{}
-		podSelection := ""
-		for _, line := range strings.Split(strings.Trim(kubectlOut, "\n "), "\n") {
-			split := strings.Split(line, "|")
-			pods = append(pods, split[0])
+		lineSelection := ""
+		lines := strings.Split(strings.Trim(kubectlOut, "\n "), "\n")
+		for i, _ := range lines {
+			lines[i] = strings.Trim(lines[i], ", ")
 		}
-		if len(pods) > 1 {
+		if len(lines) > 1 {
+			// Sort lines by CREATED column
+			sort.Slice(lines, func(i, j int) bool {
+				f1 := strings.Fields(lines[i])
+				f2 := strings.Fields(lines[j])
+
+				// We want to sort by time in decreasing order, so invert the less than operator here.
+				r := strings.Compare(f1[2], f2[2])
+				return r >= 0
+			})
 			if ctx.NoPrompt {
-				podSelection = pods[0]
+				lineSelection = lines[0]
 				ctx.Logger.Warnf("Selecting first pod (of %d) \"%v\" due to `--no-prompt`",
-					len(pods), podSelection)
+					len(lines), lineSelection)
 			} else {
-				podSelection, err = util.PromptForSelection(pods, "Select a pod")
+				lineSelection, err = util.PromptForSelection(lines, "Select a pod", true)
 				if err != nil {
 					return "", err
 				}
 			}
 		} else {
-			podSelection = pods[0]
+			lineSelection = lines[0]
 		}
 
-		// Split the output line by line, and then again by `|`, filtering on the pod selected above.
-		// If there is exactly one resulting container, use that, otherwise prompt.
-		// This works in conjunction with the `go-template` `outputMode` used when selecting pods with kubectl.
-		containers := []string{}
-		containerSelection := ""
-		for _, line := range strings.Split(strings.Trim(kubectlOut, "\n "), "\n") {
-			split := strings.Split(line, "|")
-			if split[0] == podSelection {
-				containers = strings.Split(strings.Trim(split[1], ", "), ",")
-				break
-			}
-		}
+		fields := strings.Fields(lineSelection)
+		podSelection := fields[0]
+		containers := strings.Split(fields[3], ",")
 
 		// It's possible that container was already specified via `-c` as extra args.
+		containerSelection := ""
 		containerSelected := false
 		for _, extra := range ctx.ExtraArgs {
 			if extra == "-c" {
@@ -396,9 +440,9 @@ func Execute(ctx *ankh.ExecutionContext, input string, namespace string, wildCar
 		}
 		if !containerSelected && len(containers) > 1 {
 			if ctx.NoPrompt {
-				return "", fmt.Errorf("Must pass a container via `-c` when using `ankh --noo-prompt ...`")
+				return "", fmt.Errorf("Must pass a container via `-c` when using `--no-prompt`")
 			}
-			containerSelection, err = util.PromptForSelection(containers, "Select a container")
+			containerSelection, err = util.PromptForSelection(containers, "Select a container", false)
 			if err != nil {
 				return "", err
 			}

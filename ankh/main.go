@@ -25,6 +25,7 @@ import (
 	"github.com/appnexus/ankh/context"
 	"github.com/appnexus/ankh/docker"
 	"github.com/appnexus/ankh/helm"
+	"github.com/appnexus/ankh/jira"
 	"github.com/appnexus/ankh/kubectl"
 	"github.com/appnexus/ankh/slack"
 	"github.com/appnexus/ankh/util"
@@ -96,13 +97,14 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 					chart.Name)
 			}
 
-			versions, err := helm.ListVersions(ctx, chart.Name, true)
+			repository := ctx.DetermineHelmRepository(&chart.HelmRepository)
+			versions, err := helm.ListVersions(ctx, repository, chart.Name, true)
 			if err != nil {
 				return err
 			}
 
 			selectedVersion, err := util.PromptForSelection(strings.Split(strings.Trim(versions, "\n "), "\n"),
-				fmt.Sprintf("Select a version for chart \"%v\"", chart.Name))
+				fmt.Sprintf("Select a version for chart \"%v\"", chart.Name), false)
 			if err != nil {
 				return err
 			}
@@ -114,7 +116,8 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 		}
 
 		// Now that we have either a version or a local path, fetch the chart metadata and merge it.
-		meta, err := helm.FetchChartMeta(ctx, chart)
+		repository := ctx.DetermineHelmRepository(&chart.HelmRepository)
+		meta, err := helm.FetchChartMeta(ctx, repository, chart)
 		if err != nil {
 			return fmt.Errorf("Error fetching chart \"%v\": %v", chart.Name, err)
 		}
@@ -127,11 +130,11 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 		if ctx.Namespace == nil {
 			if ankhFile.Namespace != nil {
 				extraLog := ""
-				if chart.ChartMeta.Namespace == nil {
-					extraLog = " (overriding namespace \"%v\" from ankh.yaml present in the chart)"
+				if chart.ChartMeta.Namespace != nil && *ankhFile.Namespace != *chart.ChartMeta.Namespace {
+					extraLog = fmt.Sprintf(" (overriding namespace \"%v\" from ankh.yaml present in the chart)",
+						*chart.ChartMeta.Namespace)
 				}
-				ctx.Logger.Infof("Using namespace \"%v\" from Ankh file "+
-					"for chart \"%v\"%v",
+				ctx.Logger.Infof("Using namespace \"%v\" from Ankh file for chart \"%v\"%v",
 					*ankhFile.Namespace, chart.Name, extraLog)
 				chart.ChartMeta.Namespace = ankhFile.Namespace
 			} else if chart.ChartMeta.Namespace == nil {
@@ -141,23 +144,27 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 				}
 				if len(ctx.AnkhConfig.Namespaces) > 0 {
 					selectedNamespace, err := util.PromptForSelection(ctx.AnkhConfig.Namespaces,
-						fmt.Sprintf("Select a namespace for chart '%v' (or re-run with -n/--namespace to provide your own)", chart.Name))
+						fmt.Sprintf("Select a namespace for chart '%v' (or re-run with -n/--namespace to provide your own)",
+							chart.Name), false)
 					if err != nil {
 						return err
 					}
 					chart.ChartMeta.Namespace = &selectedNamespace
 				} else {
 					providedNamespace, err := util.PromptForInput("",
-						fmt.Sprintf("Provide a namespace for chart '%v' > ", chart.Name))
+						fmt.Sprintf("Provide a namespace for chart '%v' (or enter nothing to use no explicit namespace) > ",
+							chart.Name))
 					if err != nil {
 						return err
 					}
 					chart.ChartMeta.Namespace = &providedNamespace
 
 				}
-				ctx.Logger.Infof("Using namespace \"%v\" for chart \"%v\" based on prompt selection", *chart.ChartMeta.Namespace, chart.Name)
+				ctx.Logger.Infof("Using namespace \"%v\" for chart \"%v\" based on prompt selection",
+					*chart.ChartMeta.Namespace, chart.Name)
 			} else {
-				ctx.Logger.Infof("Using namespace \"%v\" for chart \"%v\" based on ankh.yaml present in the chart", *chart.ChartMeta.Namespace, chart.Name)
+				ctx.Logger.Infof("Using namespace \"%v\" for chart \"%v\" based on ankh.yaml present in the chart",
+					*chart.ChartMeta.Namespace, chart.Name)
 			}
 		}
 
@@ -255,17 +262,24 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 					tagKey, chart.Name)
 			}
 
+			registryDomain := ctx.AnkhConfig.Docker.Registry
 			image := ""
 			if chart.ChartMeta.TagImage != "" {
 				// No need to prompt for an image name if we already have one in the chart metdata
-				image = chart.ChartMeta.TagImage
+				registryDomain, image, err = docker.ParseImage(ctx, chart.ChartMeta.TagImage)
+				check(err)
+
 				ctx.Logger.Infof("Using tagImage \"%v\" for chart \"%v\" based on ankh.yaml present in the chart", chart.ChartMeta.TagImage, chart.Name)
+				ctx.Logger.Debugf("Parsed tagImage into registryDomain '%v' and image '%v'", registryDomain, image)
 			} else {
 				ctx.Logger.Infof("Found chart \"%v\" without a value for \"%v\" ", chart.Name, tagKey)
+				if ctx.AnkhConfig.Docker.Registry == "" {
+					ctx.Logger.Fatalf("Cannot prompt for an image tag, no Docker registry configured.")
+				}
 				defaultValue := chart.Name
 				image, err = util.PromptForInput(defaultValue,
-					fmt.Sprintf("No tag specified for chart '%v'. Provide the name of an image to select a tag for, "+
-						"or nothing to skip this step > ", chart.Name))
+					fmt.Sprintf("No tag specified for chart '%v'. Provide the name of an image in registry '%v' to select a tag for, "+
+						"or nothing to skip this step > ", ctx.AnkhConfig.Docker.Registry, chart.Name))
 				check(err)
 			}
 
@@ -274,13 +288,17 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 				continue
 			}
 
-			output, err := docker.ListTags(ctx, image, true)
+			if ctx.AnkhConfig.Docker.Registry == "" {
+				ctx.Logger.Fatalf("Cannot prompt for an image tag, no Docker registry configured.")
+			}
+
+			output, err := docker.ListTags(ctx, registryDomain, image, true)
 			check(err)
 
 			trimmedOutput := strings.Trim(output, "\n ")
 			if trimmedOutput != "" {
 				tags := strings.Split(trimmedOutput, "\n")
-				tag, err := util.PromptForSelection(tags, fmt.Sprintf("Select a value for \"%v\"", tagKey))
+				tag, err := util.PromptForSelection(tags, fmt.Sprintf("Select a value for \"%v\"", tagKey), false)
 				check(err)
 
 				ctx.Logger.Infof("Using implicit \"--set tag %v=%s\" based on prompt selection", tagKey, tag)
@@ -299,9 +317,8 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 		}
 
 		// we should finally have a tag value
-		if ctx.SlackChannel != "" {
-			ctx.SlackDeploymentVersion = *chart.Tag
-		}
+		ctx.DeploymentTag = *chart.Tag
+
 	}
 
 	return nil
@@ -415,15 +432,16 @@ func execute(ctx *ankh.ExecutionContext) {
 	}
 
 	if ctx.SlackChannel != "" {
-		if ctx.Mode == ankh.Rollback {
-			ctx.SlackDeploymentVersion = "rollback"
-		}
-		err := slack.PingSlackChannel(ctx)
-		if err != nil {
+		if err := slack.PingSlackChannel(ctx); err != nil {
 			ctx.Logger.Errorf("Slack message failed with error: %v", err)
 		}
 	}
 
+	if ctx.CreateJiraTicket {
+		if err := jira.CreateJiraTicket(ctx); err != nil {
+			ctx.Logger.Errorf("Unable to create JIRA ticket. %v", err)
+		}
+	}
 }
 
 func executeChartsOnNamespace(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile,
@@ -595,13 +613,13 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile *ankh.AnkhFile) {
 	} else if len(dependencies) == 0 {
 		if ctx.NoPrompt {
 			ctx.Logger.Fatalf("No charts nor dependencies provided, nothing to do")
-		} else if ctx.AnkhConfig.Helm.Registry != "" {
+		} else if ctx.AnkhConfig.Helm.Repository != "" {
 			// Prompt for a chart
 			ctx.Logger.Infof("No chart specified as an argument, and no `charts` found in an Ankh file")
-			charts, err := helm.GetChartNames(ctx)
+			charts, err := helm.GetChartNames(ctx, ctx.AnkhConfig.Helm.Repository)
 			check(err)
 
-			selectedChart, err := util.PromptForSelection(charts, "Select a chart")
+			selectedChart, err := util.PromptForSelection(charts, "Select a chart", false)
 			check(err)
 
 			rootAnkhFile.Charts = []ankh.Chart{ankh.Chart{Name: selectedChart}}
@@ -870,7 +888,7 @@ func main() {
 	})
 
 	app.Command("apply", "Apply an Ankh file to a Kubernetes cluster", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--filter...]"
+		cmd.Spec = "[-f] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--jira-ticket] [--filter...]"
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually apply anything to a cluster")
@@ -878,6 +896,7 @@ func main() {
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		slackChannel := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
 		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
+		createJiraTicket := cmd.BoolOpt("j jira-ticket", false, "Create a JIRA ticket to track update")
 		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
 
 		cmd.Action = func() {
@@ -891,6 +910,7 @@ func main() {
 			ctx.Mode = ankh.Apply
 			ctx.SlackChannel = *slackChannel
 			ctx.SlackMessageOverride = *slackMessageOverride
+			ctx.CreateJiraTicket = *createJiraTicket
 			filters := []string{}
 			for _, filter := range *filter {
 				filters = append(filters, string(filter))
@@ -903,7 +923,7 @@ func main() {
 	})
 
 	app.Command("rollback", "Rollback deployments associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message]"
+		cmd.Spec = "[-f] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--jira-ticket] "
 
 		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
 		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually rollback anything to a cluster")
@@ -911,6 +931,7 @@ func main() {
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		slackChannel := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
 		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
+		createJiraTicket := cmd.BoolOpt("j jira-ticket", false, "Create a JIRA ticket to track update")
 
 		cmd.Action = func() {
 			ctx.AnkhFilePath = *ankhFilePath
@@ -923,6 +944,7 @@ func main() {
 			ctx.Mode = ankh.Rollback
 			ctx.SlackChannel = *slackChannel
 			ctx.SlackMessageOverride = *slackMessageOverride
+			ctx.CreateJiraTicket = *createJiraTicket
 			ctx.Filters = []string{"deployment", "statfulset"}
 
 			ctx.Logger.Warnf("Rollback is not a transactional operation.\n" +
@@ -938,7 +960,7 @@ func main() {
 				"\n" +
 				"If you already know the chart version and associated tag values (eg: `--set ...`) that you want to converge to, use `ankh --set $... apply --chart $chartName@$prevVersion` instead.\n")
 			selection, err := util.PromptForSelection([]string{"Abort", "OK"},
-				"Are you certain that you want to run `kubectl rollout undo` to rollback to a previous ReplicaSet spec? Select OK to proceed.")
+				"Are you certain that you want to run `kubectl rollout undo` to rollback to a previous ReplicaSet spec? Select OK to proceed.", false)
 			check(err)
 
 			if selection != "OK" {
@@ -1193,10 +1215,13 @@ func main() {
 
 		cmd.Command("tags", "List tags for a Docker image", func(cmd *cli.Cmd) {
 			cmd.Spec = "IMAGE"
-			image := cmd.StringArg("IMAGE", "", "The docker image to fetch tags for")
+			imageArg := cmd.StringArg("IMAGE", "", "The docker image to fetch tags for")
 
 			cmd.Action = func() {
-				output, err := docker.ListTags(ctx, *image, false)
+				registryDomain, image, err := docker.ParseImage(ctx, *imageArg)
+				check(err)
+
+				output, err := docker.ListTags(ctx, registryDomain, image, false)
 				check(err)
 				if output != "" {
 					fmt.Println(output)
@@ -1206,11 +1231,17 @@ func main() {
 		})
 
 		cmd.Command("ls", "List images for a Docker repository", func(cmd *cli.Cmd) {
-			cmd.Spec = "[-n]"
+			cmd.Spec = "[-n] [-r]"
 			numToShow := cmd.IntOpt("n num", 5, "Number of tags to show, fuzzy-sorted descending by semantic version. Pass zero to see all versions.")
+			registryArg := cmd.StringOpt("r registry", "", "The docker registry to use")
 
 			cmd.Action = func() {
-				output, err := docker.ListImages(ctx, *numToShow)
+				registryDomain := ctx.AnkhConfig.Docker.Registry
+				if registryArg != nil {
+					registryDomain = *registryArg
+				}
+
+				output, err := docker.ListImages(ctx, registryDomain, *numToShow)
 				check(err)
 				if output != "" {
 					fmt.Printf(output)
@@ -1225,21 +1256,13 @@ func main() {
 		ctx.IgnoreConfigErrors = true
 
 		cmd.Command("ls", "List Helm charts and their versions", func(cmd *cli.Cmd) {
-			cmd.Spec = "[-n]"
+			cmd.Spec = "[-n] [-r]"
 			numToShow := cmd.IntOpt("n num", 5, "Number of versions to show, sorted descending by creation date. Pass zero to see all versions.")
+			repositoryArg := cmd.StringOpt("r repository", "", "The chart repository to use")
 
 			cmd.Action = func() {
-				if ctx.AnkhConfig.Helm.Registry == "" {
-					// TODO: Registry should be a global config, not a per-context config
-					for name, x := range ctx.AnkhConfig.Contexts {
-						ctx.Logger.Infof("Using HelmRegistryURL '%v' taken from the first "+
-							"Ankh context '%v'", ctx.AnkhConfig.Helm.Registry, name)
-						ctx.AnkhConfig.Helm.Registry = x.HelmRegistryURL
-						break
-					}
-				}
-
-				helmOutput, err := helm.ListCharts(ctx, *numToShow)
+				repository := ctx.DetermineHelmRepository(repositoryArg)
+				helmOutput, err := helm.ListCharts(ctx, repository, *numToShow)
 				check(err)
 				if helmOutput != "" {
 					fmt.Printf(helmOutput)
@@ -1249,21 +1272,13 @@ func main() {
 		})
 
 		cmd.Command("versions", "List versions for a Helm chart", func(cmd *cli.Cmd) {
-			cmd.Spec = "CHART"
+			cmd.Spec = "[-r] CHART"
 			chart := cmd.StringArg("CHART", "", "The Helm chart to fetch versions for")
+			repositoryArg := cmd.StringOpt("r repository", "", "The chart repository to use")
 
 			cmd.Action = func() {
-				if ctx.AnkhConfig.Helm.Registry == "" {
-					// TODO: Registry should be a global config, not a per-context config
-					for name, x := range ctx.AnkhConfig.Contexts {
-						ctx.Logger.Infof("Using HelmRegistryURL '%v' taken from the first "+
-							"Ankh context '%v'", ctx.AnkhConfig.Helm.Registry, name)
-						ctx.AnkhConfig.Helm.Registry = x.HelmRegistryURL
-						break
-					}
-				}
-
-				helmOutput, err := helm.ListVersions(ctx, *chart, false)
+				repository := ctx.DetermineHelmRepository(repositoryArg)
+				helmOutput, err := helm.ListVersions(ctx, repository, *chart, false)
 				check(err)
 				if helmOutput != "" {
 					fmt.Println(helmOutput)
@@ -1273,21 +1288,13 @@ func main() {
 		})
 
 		cmd.Command("inspect", "Inspect a Helm chart", func(cmd *cli.Cmd) {
-			cmd.Spec = "CHART"
+			cmd.Spec = "[-r] CHART"
 			chart := cmd.StringArg("CHART", "", "The Helm chart to inspect, passed in the `CHART[@VERSION]` format.")
+			repositoryArg := cmd.StringOpt("r repository", "", "The chart repository to use")
 
 			cmd.Action = func() {
-				if ctx.AnkhConfig.Helm.Registry == "" {
-					// TODO: Registry should be a global config, not a per-context config
-					for name, x := range ctx.AnkhConfig.Contexts {
-						ctx.Logger.Infof("Using HelmRegistryURL '%v' taken from the first "+
-							"Ankh context '%v'", ctx.AnkhConfig.Helm.Registry, name)
-						ctx.AnkhConfig.Helm.Registry = x.HelmRegistryURL
-						break
-					}
-				}
-
-				helmOutput, err := helm.Inspect(ctx, *chart)
+				repository := ctx.DetermineHelmRepository(repositoryArg)
+				helmOutput, err := helm.Inspect(ctx, repository, *chart)
 				check(err)
 				if helmOutput != "" {
 					fmt.Println(helmOutput)
@@ -1297,18 +1304,12 @@ func main() {
 		})
 
 		cmd.Command("publish", "Publish a Helm chart using files from the current directory", func(cmd *cli.Cmd) {
-			cmd.Action = func() {
-				if ctx.AnkhConfig.Helm.Registry == "" {
-					// TODO: Registry should be a global config, not a per-context config
-					for name, x := range ctx.AnkhConfig.Contexts {
-						ctx.Logger.Infof("Using HelmRegistryURL '%v' taken from the first "+
-							"Ankh context '%v'", ctx.AnkhConfig.Helm.Registry, name)
-						ctx.AnkhConfig.Helm.Registry = x.HelmRegistryURL
-						break
-					}
-				}
+			cmd.Spec = "[-r]"
+			repositoryArg := cmd.StringOpt("r repository", "", "The chart repository to use")
 
-				err := helm.Publish(ctx)
+			cmd.Action = func() {
+				repository := ctx.DetermineHelmRepository(repositoryArg)
+				err := helm.Publish(ctx, repository)
 				check(err)
 				os.Exit(0)
 			}
@@ -1339,11 +1340,11 @@ func main() {
 				if len(newAnkhConfig.Contexts) == 0 {
 					newAnkhConfig.Contexts = map[string]ankh.Context{
 						"minikube": {
-							KubeContext:      "minikube",
-							EnvironmentClass: "dev",
-							ResourceProfile:  "constrained",
-							Release:          "minikube",
-							HelmRegistryURL:  "https://kubernetes-charts.storage.googleapis.com",
+							KubeContext:       "minikube",
+							EnvironmentClass:  "dev",
+							ResourceProfile:   "constrained",
+							Release:           "minikube",
+							HelmRepositoryURL: "https://kubernetes-charts.storage.googleapis.com",
 						},
 					}
 					ctx.Logger.Infof("Initializing `contexts` to a single sample context for kube-context `minikube`")

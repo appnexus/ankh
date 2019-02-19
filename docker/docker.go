@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -15,18 +14,64 @@ import (
 	"github.com/genuinetools/reg/registry"
 )
 
-func newRegistry(ctx *ankh.ExecutionContext) (*registry.Registry, error) {
-	if ctx.AnkhConfig.Docker.Registry == "" {
-		return nil, fmt.Errorf("Missing DockerRegistryURL in AnkhConfig")
+func warnAboutDockerHub(ctx *ankh.ExecutionContext, registryDomain string) {
+	if registryDomain == "docker.io" || registryDomain == "registry-1.docker.io" {
+		ctx.Logger.Warnf("The docker.io API is closed and has known, breaking deviatons "+
+		"from the open source docker registry API.")
+	}
+}
+
+func ParseImage(ctx *ankh.ExecutionContext, image string) (string, string, error) {
+	parsed, err := registry.ParseImage(image)
+	if err != nil {
+		return "", "", err
 	}
 
-	// TODO: This is an extermely not-generic assumption.
+	// We want the configured docker registry to be our default is none was passed, but
+	// we can't tell the docker API which default registry to use. So if we find that
+	// the image was parsed to contain the default domain, but the input string doesn't
+	// explicitly contain that, we rewrite the domain to our configured default.
+	if parsed.Domain == "docker.io" && !strings.HasPrefix(image, "docker.io") {
+
+		// ...then fix up the domain to be our configured default
+		parsed.Domain = ctx.AnkhConfig.Docker.Registry
+
+		// The docker image parsing code also seems to append `library/` when the image
+		// appears to come from an official domain. Strip that off unless the image provided
+		// explicitly contains `library/`.
+		if strings.HasPrefix(parsed.Path, "library/") && !strings.Contains(image, "library/") {
+			parsed.Path = strings.TrimPrefix(parsed.Path, "library/")
+		}
+	}
+
+	ctx.Logger.Debugf("ParseImage: '%v' => domain=%v Path=%v", image, parsed.Domain, parsed.Path)
+	return parsed.Domain, parsed.Path, nil
+}
+
+func newRegistry(ctx *ankh.ExecutionContext, registryDomain string) (*registry.Registry, error) {
+	if registryDomain == "" {
+		registryDomain = ctx.AnkhConfig.Docker.Registry
+	}
+	if registryDomain == "" {
+		return nil, fmt.Errorf("No registry could be determined from image, and no "+
+			"default registry configured as `docker.registry`")
+	}
+	// Rewrite http docker io
+	if strings.HasPrefix(registryDomain, "http://docker.io") {
+		registryDomain = strings.Replace(registryDomain, "http://docker.io", "http://registry-1.docker.io", 1)
+	}
+
+	// Rewrite https docker.io
+	if strings.HasPrefix(registryDomain, "https://docker.io") {
+		registryDomain = strings.Replace(registryDomain, "https://docker.io", "https://registry-1.docker.io", 1)
+	}
+
 	auth := types.AuthConfig{
-		ServerAddress: ctx.AnkhConfig.Docker.Registry,
+		ServerAddress: registryDomain,
 	}
 
 	return registry.New(auth, registry.Opt{
-		Domain:   ctx.AnkhConfig.Docker.Registry,
+		Domain:   registryDomain,
 		Insecure: false,
 		Debug:    ctx.Verbose,
 		SkipPing: false,
@@ -36,8 +81,8 @@ func newRegistry(ctx *ankh.ExecutionContext) (*registry.Registry, error) {
 }
 
 // TODO: Is descending actually descending here, or ascending?
-func ListTags(ctx *ankh.ExecutionContext, image string, descending bool) (string, error) {
-	r, err := newRegistry(ctx)
+func ListTags(ctx *ankh.ExecutionContext, registryDomain string, image string, descending bool) (string, error) {
+	r, err := newRegistry(ctx, registryDomain)
 	if err != nil {
 		return "", err
 	}
@@ -54,12 +99,13 @@ func listTags(ctx *ankh.ExecutionContext, r *registry.Registry,
 	image string, limit int, descending bool) ([]string, error) {
 	tags, err := r.Tags(image)
 	if err != nil {
+		warnAboutDockerHub(ctx, r.Domain)
 		return []string{}, err
 	}
 
 	if len(tags) == 0 {
 		ctx.Logger.Warnf("No tags for image '%v' in registry '%v'. "+
-			"Try `ankh docker images` for a list of images and tags.", image, ctx.AnkhConfig.Docker.Registry)
+			"Try `ankh image ls` for a list of images and tags.", image, r.Domain)
 		return []string{}, nil
 	}
 
@@ -78,58 +124,71 @@ func listTags(ctx *ankh.ExecutionContext, r *registry.Registry,
 	return tags, nil
 }
 
-func ListImages(ctx *ankh.ExecutionContext, numToShow int) (string, error) {
-	r, err := newRegistry(ctx)
+func ListImages(ctx *ankh.ExecutionContext, registry string, numToShow int) (string, error) {
+	r, err := newRegistry(ctx, registry)
 	if err != nil {
 		return "", err
 	}
 
 	catalog, err := r.Catalog("")
 	if err != nil {
+		warnAboutDockerHub(ctx, r.Domain)
 		return "", err
 	}
 
 	if len(catalog) == 0 {
-		ctx.Logger.Warnf("No images in catalog for registry '%v'",
-			ctx.AnkhConfig.Docker.Registry)
+		ctx.Logger.Warnf("No images in catalog for registry '%v'", r.Domain)
 		return "", nil
 	}
 	sort.Strings(catalog)
 
-	type Result struct {
+	type WorkItem struct {
 		Image string
 		Tags  []string
 	}
-	results := make([]Result, len(catalog))
 
 	// Map image names to the list of tags that we fetch from the registry
-	var mtx sync.Mutex
-	var wg sync.WaitGroup
-	for i, image := range catalog {
-		wg.Add(1)
-		go func(image string, result *Result) {
-			defer wg.Done()
-			tags, err := listTags(ctx, r, image, numToShow, true)
-			if err != nil {
-				ctx.Logger.Warnf("Could not list tags for image %v: %v", image, err)
-				return
-			}
+	concurrency := 8
+	doneChannel := make(chan(bool), concurrency)
+	workChannel := make(chan(*WorkItem), concurrency)
+	workItems := []*WorkItem{}
 
-			mtx.Lock()
-			defer mtx.Unlock()
-			*result = Result{
-				Image: image,
-				Tags:  tags,
+	for i := 0; i < concurrency; i++ {
+		go func() {
+			for {
+				work, ok := <-workChannel
+				if !ok {
+					doneChannel <- true
+					return
+				}
+
+				tags, err := listTags(ctx, r, work.Image, numToShow, true)
+				if err != nil {
+					ctx.Logger.Warnf("Could not list tags for image %v: %v", work.Image, err)
+					work.Tags = []string{"ErrorSentinel"}
+					continue
+				}
+
+				work.Tags = tags
 			}
-		}(image, &results[i])
+		}()
 	}
-	wg.Wait()
+
+	for _, image := range catalog {
+		work := &WorkItem{Image: image}
+		workItems = append(workItems, work)
+		workChannel <- work
+	}
+	close(workChannel)
+	for i := 0; i < concurrency; i++ {
+		<-doneChannel
+	}
 
 	formatted := bytes.NewBufferString("")
 	w := tabwriter.NewWriter(formatted, 0, 8, 8, ' ', 0)
 	fmt.Fprintf(w, "NAME\tTAG(S)\n")
-	for _, result := range results {
-		fmt.Fprintf(w, "%v\t%v\n", result.Image, strings.Join(result.Tags, ", "))
+	for _, work := range workItems {
+		fmt.Fprintf(w, "%v\t%v\n", work.Image, strings.Join(work.Tags, ", "))
 	}
 	w.Flush()
 

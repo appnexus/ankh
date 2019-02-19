@@ -53,9 +53,12 @@ type ExecutionContext struct {
 	DataDir        string
 	HelmSetValues  map[string]string
 
-	SlackChannel           string
-	SlackMessageOverride   string
-	SlackDeploymentVersion string
+	DeploymentTag string
+
+	SlackChannel         string
+	SlackMessageOverride string
+
+	CreateJiraTicket bool
 
 	Filters []string
 
@@ -69,16 +72,17 @@ type ExecutionContext struct {
 // Context is a struct that represents a context for applying files to a
 // Kubernetes cluster
 type Context struct {
-	Source             string                 `yaml:"-"` // private field. specifies which config file declared this.
-	KubeContext        string                 `yaml:"kube-context,omitempty"`
-	KubeServer         string                 `yaml:"kube-server,omitempty"`
-	Environment        string                 `yaml:"environment,omitempty"` // deprecated in favor of `environment-class`
-	EnvironmentClass   string                 `yaml:"environment-class"`     // omitempty until we remove `environment`
-	ResourceProfile    string                 `yaml:"resource-profile"`
-	Release            string                 `yaml:"release,omitempty"`
-	HelmRegistryURL    string                 `yaml:"helm-registry-url,omitempty"` // deprecated in favor of top-level config `helm.registry`
-	ClusterAdminUnused bool                   `yaml:"cluster-admin,omitempty"`     // deprecated
-	Global             map[string]interface{} `yaml:"global",omitempty"`
+	Source                string                 `yaml:"-"` // private field. specifies which config file declared this.
+	KubeContext           string                 `yaml:"kube-context,omitempty"`
+	KubeServer            string                 `yaml:"kube-server,omitempty"`
+	Environment           string                 `yaml:"environment,omitempty"` // deprecated in favor of `environment-class`
+	EnvironmentClass      string                 `yaml:"environment-class"`     // omitempty until we remove `environment`
+	ResourceProfile       string                 `yaml:"resource-profile"`
+	Release               string                 `yaml:"release,omitempty"`
+	HelmRegistryURLUnused string                 `yaml:"helm-registry-url,omitempty"`   // deprecated in favor of top-level config `helm.repository`
+	HelmRepositoryURL     string                 `yaml:"helm-repository-url,omitempty"` // deprecated in favor of top-level config `helm.repository`
+	ClusterAdminUnused    bool                   `yaml:"cluster-admin,omitempty"`       // deprecated
+	Global                map[string]interface{} `yaml:"global",omitempty"`
 }
 
 // An Environment is a collection of contexts over which operations should be applied
@@ -94,9 +98,10 @@ type KubectlConfig struct {
 
 type HelmConfig struct {
 	Command string `yaml:"command"`
-	// TODO: Deprecate
+	// XXX TODO: Deprecate
 	TagValueNameUnused string `yaml:"tagValueName"`
-	Registry           string `yaml:"registry"`
+	RegistryUnused     string `yaml:"registry"`
+	Repository         string `yaml:"repository"`
 	AuthType           string `yaml:"authType"`
 }
 
@@ -111,6 +116,16 @@ type SlackConfig struct {
 	Format         string `yaml:"format"`
 	RollbackFormat string `yaml:"rollbackFormat"`
 	Pretext        string `yaml:"pretext"`
+}
+
+type JiraConfig struct {
+	Queue                     string `yaml:"queue,omitempty"`
+	BaseUrl                   string `yaml:"baseUrl,omitempty"`
+	AutoClose                 bool   `yaml:"autoClose"`
+	SummaryFormat             string `yaml:"summaryFormat"`
+	RollbackSummaryFormat     string `yaml:"rollbackSummaryFormat"`
+	DescriptionFormat         string `yaml:"descriptionFormat"`
+	RollbackDescriptionFormat string `yaml:"rollbackDescriptionFormat"`
 }
 
 // AnkhConfig defines the shape of the ~/.ankh/config file used for global
@@ -130,6 +145,7 @@ type AnkhConfig struct {
 	Helm    HelmConfig    `yaml:"helm,omitempty"`
 	Docker  DockerConfig  `yaml:"docker,omitempty"`
 	Slack   SlackConfig   `yaml:"slack,omitempty"`
+	Jira    JiraConfig    `yaml:"jira,omitempty"`
 
 	// List of namespace suggestions to use if the user does not provide one when required.
 	Namespaces []string `yaml:"namespaces,omitempty"`
@@ -155,6 +171,39 @@ type KubeConfig struct {
 	Clusters             []KubeCluster `yaml:"clusters"`
 	Contexts             []KubeContext `yaml:"contexts"`
 	CurrentContextUnused string        `yaml:"current-context"` // for serialization purposes only
+}
+
+func (ctx *ExecutionContext) DetermineHelmRepository(preferredRepository *string) string {
+	// For commands that take command line arguments, the argument is the
+	// preferred value. For operations over charts, the chart-level override
+	// is the preferred value.
+	// TODO: Checking for empty string is a hack. Don't do that. Change chart.HelmRepository to a string* instead.
+	if preferredRepository != nil && *preferredRepository != "" {
+		return *preferredRepository
+	}
+
+	repository := ctx.AnkhConfig.Helm.Repository
+	if repository != "" {
+		return repository
+	}
+
+	repository = ctx.AnkhConfig.CurrentContext.HelmRepositoryURL
+	if repository != "" {
+		ctx.Logger.Infof("Using repository \"%v\" taken from the current context "+
+			"\"%v\"", repository, ctx.AnkhConfig.CurrentContextName)
+		return repository
+	}
+
+	repository = ctx.AnkhConfig.CurrentContext.HelmRegistryURLUnused
+	if repository != "" {
+		ctx.Logger.Infof("Using legacy registry config \"%v\" taken from the current context "+
+			"\"%v\"", repository, ctx.AnkhConfig.CurrentContextName)
+		return repository
+	}
+
+	ctx.Logger.Fatalf("No helm repository configured. "+
+		"Set `helm.repository` globally, pass it as an argument, or see README.md")
+	return ""
 }
 
 // ValidateAndInit ensures the AnkhConfig is internally sane and populates
@@ -272,8 +321,9 @@ type Chart struct {
 	Version string
 	Tag     *string
 	// Overrides any global Helm registry
-	HelmRegistry string
-	ChartMeta    ChartMeta `yaml:"meta"`
+	HelmRegistryUnused string
+	HelmRepository     string
+	ChartMeta          ChartMeta `yaml:"meta"`
 	// DefaultValues are values that apply unconditionally, with lower precedence than values supplied in the fields below.
 	DefaultValues map[string]interface{} `yaml:"default-values"`
 	// Values, by environment-class, resource-profile, or release. MapSlice preserves map ordering so we can regex search from top to bottom.
