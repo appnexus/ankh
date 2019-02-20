@@ -31,7 +31,7 @@ const (
 
 // Captures all of the context required to execute a single iteration of Ankh
 type ExecutionContext struct {
-	AnkhConfig, OriginalAnkhConfig AnkhConfig
+	AnkhConfig AnkhConfig
 
 	AnkhFilePath string
 	Chart        string
@@ -92,21 +92,21 @@ type Environment struct {
 }
 
 type KubectlConfig struct {
-	Command        string   `yaml:"command"`
+	Command        string   `yaml:"command,omitempty"`
 	WildCardLabels []string `yaml:"wildCardLabels,omitempty"`
 }
 
 type HelmConfig struct {
-	Command string `yaml:"command"`
+	Command string `yaml:"command,omitempty"`
 	// XXX TODO: Deprecate
-	TagValueNameUnused string `yaml:"tagValueName"`
-	RegistryUnused     string `yaml:"registry"`
-	Repository         string `yaml:"repository"`
-	AuthType           string `yaml:"authType"`
+	TagValueNameUnused string `yaml:"tagValueName,omitempty"`
+	RegistryUnused     string `yaml:"registry,omitempty"`
+	Repository         string `yaml:"repository,omitempty"`
+	AuthType           string `yaml:"authType,omitempty"`
 }
 
 type DockerConfig struct {
-	Registry string `yaml:"registry"`
+	Registry string `yaml:"registry,omitempty"`
 }
 
 type SlackConfig struct {
@@ -131,7 +131,7 @@ type JiraConfig struct {
 // AnkhConfig defines the shape of the ~/.ankh/config file used for global
 // configuration options
 type AnkhConfig struct {
-	Include                           []string               `yaml:"include"`
+	Include                           []string               `yaml:"include,omitempty"`
 	Environments                      map[string]Environment `yaml:"environments"`
 	SupportedEnvironmentsUnused       []string               `yaml:"supported-environments,omitempty"`        // deprecated
 	SupportedEnvironmentClassesUnused []string               `yaml:"supported-environment-classes,omitempty"` // deprecated
@@ -201,7 +201,7 @@ func (ctx *ExecutionContext) DetermineHelmRepository(preferredRepository *string
 		return repository
 	}
 
-	ctx.Logger.Fatalf("No helm repository configured. "+
+	ctx.Logger.Fatalf("No helm repository configured. " +
 		"Set `helm.repository` globally, pass it as an argument, or see README.md")
 	return ""
 }

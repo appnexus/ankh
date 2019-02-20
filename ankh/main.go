@@ -807,7 +807,7 @@ func main() {
 
 			log.Debugf("Using config from path %v", configPath)
 
-			ankhConfig, err := config.GetAnkhConfig(ctx, configPath)
+			ankhConfig, err := config.GetAnkhConfigWithDefaults(ctx, configPath)
 			if err != nil {
 				// TODO: this is a mess
 				if !ctx.IgnoreContextAndEnv && !ctx.IgnoreConfigErrors {
@@ -862,7 +862,6 @@ func main() {
 		}
 
 		// Save the original config, and then assume the mergedAnkhConfig as the config going forward.
-		ctx.OriginalAnkhConfig = ctx.AnkhConfig
 		ctx.AnkhConfig = mergedAnkhConfig
 	}
 
@@ -1335,7 +1334,10 @@ func main() {
 			cmd.Action = func() {
 				// Use the original, unmerged config. We want to explicitly avoid
 				// serializing the contents of any remote configs.
-				newAnkhConfig := ctx.OriginalAnkhConfig
+				newAnkhConfig, err := config.GetAnkhConfig(ctx, ctx.AnkhConfigPath)
+				if err != nil {
+					newAnkhConfig = ankh.AnkhConfig{}
+				}
 
 				if len(newAnkhConfig.Contexts) == 0 {
 					newAnkhConfig.Contexts = map[string]ankh.Context{
@@ -1348,6 +1350,102 @@ func main() {
 						},
 					}
 					ctx.Logger.Infof("Initializing `contexts` to a single sample context for kube-context `minikube`")
+				}
+
+				if len(newAnkhConfig.Environments) == 0 {
+					newAnkhConfig.Environments = map[string]ankh.Environment{
+						"minikube": {
+							Contexts: []string{"minikube"},
+						},
+					}
+					ctx.Logger.Infof("Initializing `environments` to a single sample envionment with context `minikube`'")
+				}
+
+				out, err := yaml.Marshal(newAnkhConfig)
+				check(err)
+
+				err = ioutil.WriteFile(ctx.AnkhConfigPath, out, 0644)
+				check(err)
+
+				os.Exit(0)
+			}
+		})
+
+		cmd.Command("ls", "List current Ankh configuration sources", func(cmd *cli.Cmd) {
+			cmd.Action = func() {
+				for _, i := range ctx.AnkhConfig.Include {
+					fmt.Println(i)
+				}
+
+				os.Exit(0)
+			}
+		})
+
+		cmd.Command("add", "Add an Ankh configuration sources", func(cmd *cli.Cmd) {
+			cmd.Spec = "SOURCE"
+			sourceArg := cmd.StringArg("SOURCE", "", "The configuration source to add. May be a local file or a remote HTTP resource.")
+
+			cmd.Action = func() {
+				if sourceArg == nil || *sourceArg == "" {
+					ctx.Logger.Fatalf("Must provide a configuration source")
+				}
+
+				// Use the original, unmerged config. We want to explicitly avoid
+				// serializing the contents of any remote configs.
+				newAnkhConfig, err := config.GetAnkhConfig(ctx, ctx.AnkhConfigPath)
+				check(err)
+
+				for _, include := range newAnkhConfig.Include {
+					if *sourceArg == include {
+						ctx.Logger.Infof("Configuration source \"%v\" already present in config path \"%v\", nothing to do",
+							*sourceArg, ctx.AnkhConfigPath)
+						os.Exit(0)
+					}
+				}
+
+				newAnkhConfig.Include = append(ctx.AnkhConfig.Include, *sourceArg)
+				ctx.Logger.Infof("Added configuration source \"%v\" to config path \"%v\"",
+					*sourceArg, ctx.AnkhConfigPath)
+
+				out, err := yaml.Marshal(newAnkhConfig)
+				check(err)
+
+				err = ioutil.WriteFile(ctx.AnkhConfigPath, out, 0644)
+				check(err)
+
+				os.Exit(0)
+			}
+		})
+
+		cmd.Command("rm", "Remove an Ankh configuration source.", func(cmd *cli.Cmd) {
+			cmd.Spec = "SOURCE"
+			sourceArg := cmd.StringArg("SOURCE", "", "The configuration source to remove. May be a local file or a remote HTTP resource.")
+
+			cmd.Action = func() {
+				if sourceArg == nil || *sourceArg == "" {
+					ctx.Logger.Fatalf("Must provide a configuration source")
+				}
+
+				// Use the original, unmerged config. We want to explicitly avoid
+				// serializing the contents of any remote configs.
+				newAnkhConfig, err := config.GetAnkhConfig(ctx, ctx.AnkhConfigPath)
+				check(err)
+
+				found := false
+				for i, include := range newAnkhConfig.Include {
+					if *sourceArg == include {
+						newAnkhConfig.Include = append(newAnkhConfig.Include[:i], newAnkhConfig.Include[i+1:]...)
+						ctx.Logger.Infof("Removed configuration source \"%v\" from config path \"%v\"",
+							include, ctx.AnkhConfigPath)
+						found = true
+						break
+					}
+				}
+
+				if !found {
+					ctx.Logger.Infof("Configuration source \"%v\" not found in config path \"%v\", nothing to do",
+						*sourceArg, ctx.AnkhConfigPath)
+					os.Exit(0)
 				}
 
 				out, err := yaml.Marshal(newAnkhConfig)
