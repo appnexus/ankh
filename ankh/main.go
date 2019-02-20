@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -67,6 +68,44 @@ func printEnvironments(ankhConfig *ankh.AnkhConfig) {
 	for _, name := range keys {
 		log.Infof("* %v", name)
 	}
+}
+
+func getEnvironmentTable(ankhConfig *ankh.AnkhConfig) []string {
+	buf := bytes.NewBufferString("")
+	w := tabwriter.NewWriter(buf, 0, 8, 8, ' ', 0)
+	fmt.Fprintf(w, "NAME\tCONTEXTS\tSOURCE\n")
+	keys := []string{}
+	for k, _ := range ankhConfig.Environments {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, name := range keys {
+		env, _ := ankhConfig.Environments[name]
+		fmt.Fprintf(w, "%v\t%v\t%v\n", name, strings.Join(env.Contexts, ","), env.Source)
+	}
+	w.Flush()
+	return strings.Split(buf.String(), "\n")
+}
+
+func getContextTable(ankhConfig *ankh.AnkhConfig) []string {
+	buf := bytes.NewBufferString("")
+	w := tabwriter.NewWriter(buf, 0, 8, 8, ' ', 0)
+	fmt.Fprintf(w, "NAME\tRELEASE\tENVIRONMENT-CLASS\tRESOURCE-PROFILE\tKUBE-CONTEXT/SERVER\tSOURCE\n")
+	keys := []string{}
+	for k, _ := range ankhConfig.Contexts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, name := range keys {
+		ctx, _ := ankhConfig.Contexts[name]
+		target := ctx.KubeContext
+		if target == "" {
+			target = ctx.KubeServer
+		}
+		fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\n", name, ctx.Release, ctx.EnvironmentClass, ctx.ResourceProfile, target, ctx.Source)
+	}
+	w.Flush()
+	return strings.Split(buf.String(), "\n")
 }
 
 func printContexts(ankhConfig *ankh.AnkhConfig) {
@@ -647,6 +686,7 @@ func switchContext(ctx *ankh.ExecutionContext, ankhConfig *ankh.AnkhConfig, cont
 		printContexts(ankhConfig)
 		log.Info("The following environments are available:")
 		printEnvironments(ankhConfig)
+		os.Exit(1)
 	}
 
 	checkContext(ankhConfig, context)
@@ -857,11 +897,34 @@ func main() {
 			mergedAnkhConfig.CurrentContextName = ctx.Context
 		}
 		if ctx.Environment == "" && !ctx.IgnoreContextAndEnv {
-			log.Debugf("Switching to context %v", mergedAnkhConfig.CurrentContextName)
-			switchContext(ctx, &mergedAnkhConfig, mergedAnkhConfig.CurrentContextName)
+			if ctx.Context == "" && !ctx.NoPrompt {
+				// No environment/context and we can prompt, so do that now.
+				if len(mergedAnkhConfig.Environments) > 0 {
+					selection, err := util.PromptForSelection(getEnvironmentTable(&mergedAnkhConfig),
+						"Select an environment", true)
+					check(err)
+					fields := strings.Fields(selection)
+					ctx.Environment = fields[0]
+				} else if len(mergedAnkhConfig.Contexts) > 0 {
+					// No context and we can prompt, so do that now.
+					selection, err := util.PromptForSelection(getContextTable(&mergedAnkhConfig),
+						"Select a context", true)
+					check(err)
+					fields := strings.Fields(selection)
+					ctx.Context = fields[0]
+					mergedAnkhConfig.CurrentContextName = ctx.Context
+					log.Debugf("Switching to context %v", mergedAnkhConfig.CurrentContextName)
+					switchContext(ctx, &mergedAnkhConfig, mergedAnkhConfig.CurrentContextName)
+				}
+			} else {
+				// We either have a context or we're not willing to prompt fo rone.
+				// Let it happen.
+				log.Debugf("Switching to context %v", mergedAnkhConfig.CurrentContextName)
+				switchContext(ctx, &mergedAnkhConfig, mergedAnkhConfig.CurrentContextName)
+			}
 		}
 
-		// Save the original config, and then assume the mergedAnkhConfig as the config going forward.
+		// Use the merged config going forward
 		ctx.AnkhConfig = mergedAnkhConfig
 	}
 
@@ -1470,40 +1533,16 @@ func main() {
 
 		cmd.Command("get-contexts", "Get available contexts", func(cmd *cli.Cmd) {
 			cmd.Action = func() {
-				w := tabwriter.NewWriter(os.Stdout, 0, 8, 8, ' ', 0)
-				fmt.Fprintf(w, "NAME\tRELEASE\tENVIRONMENT-CLASS\tRESOURCE-PROFILE\tKUBE-CONTEXT/SERVER\tSOURCE\n")
-				keys := []string{}
-				for k, _ := range ctx.AnkhConfig.Contexts {
-					keys = append(keys, k)
-				}
-				sort.Strings(keys)
-				for _, name := range keys {
-					ctx, _ := ctx.AnkhConfig.Contexts[name]
-					target := ctx.KubeContext
-					if target == "" {
-						target = ctx.KubeServer
-					}
-					fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\n", name, ctx.Release, ctx.EnvironmentClass, ctx.ResourceProfile, target, ctx.Source)
-				}
-				w.Flush()
+				s := getContextTable(&ctx.AnkhConfig)
+				fmt.Printf(strings.Join(s, "\n"))
 				os.Exit(0)
 			}
 		})
 
 		cmd.Command("get-environments", "Get available environments", func(cmd *cli.Cmd) {
 			cmd.Action = func() {
-				w := tabwriter.NewWriter(os.Stdout, 0, 8, 8, ' ', 0)
-				fmt.Fprintf(w, "NAME\tCONTEXTS\n")
-				keys := []string{}
-				for k, _ := range ctx.AnkhConfig.Environments {
-					keys = append(keys, k)
-				}
-				sort.Strings(keys)
-				for _, name := range keys {
-					env, _ := ctx.AnkhConfig.Environments[name]
-					fmt.Fprintf(w, "%v\t%v\t%v\n", name, strings.Join(env.Contexts, ","), env.Source)
-				}
-				w.Flush()
+				s := getEnvironmentTable(&ctx.AnkhConfig)
+				fmt.Printf(strings.Join(s, "\n"))
 				os.Exit(0)
 			}
 		})
