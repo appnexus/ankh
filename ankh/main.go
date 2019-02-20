@@ -191,7 +191,7 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 					chart.ChartMeta.Namespace = &selectedNamespace
 				} else {
 					providedNamespace, err := util.PromptForInput("",
-						fmt.Sprintf("Provide a namespace for chart '%v' (or enter nothing to use no explicit namespace) > ",
+						fmt.Sprintf("Provide a namespace for chart '%v' (or enter nothing to denote no explicit namespace) > ",
 							chart.Name))
 					if err != nil {
 						return err
@@ -650,9 +650,9 @@ func executeContext(ctx *ankh.ExecutionContext, rootAnkhFile *ankh.AnkhFile) {
 	if len(rootAnkhFile.Charts) > 0 {
 		executeAnkhFile(ctx, rootAnkhFile)
 	} else if len(dependencies) == 0 {
-		if ctx.NoPrompt {
+		if ctx.AnkhConfig.Helm.Repository == "" || ctx.NoPrompt {
 			ctx.Logger.Fatalf("No charts nor dependencies provided, nothing to do")
-		} else if ctx.AnkhConfig.Helm.Repository != "" {
+		} else {
 			// Prompt for a chart
 			ctx.Logger.Infof("No chart specified as an argument, and no `charts` found in an Ankh file")
 			charts, err := helm.GetChartNames(ctx, ctx.AnkhConfig.Helm.Repository)
