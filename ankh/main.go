@@ -1381,7 +1381,7 @@ func main() {
 			}
 		})
 
-		cmd.Command("add", "Add an Ankh configuration sources", func(cmd *cli.Cmd) {
+		cmd.Command("add", "Add an Ankh configuration source", func(cmd *cli.Cmd) {
 			cmd.Spec = "SOURCE"
 			sourceArg := cmd.StringArg("SOURCE", "", "The configuration source to add. May be a local file or a remote HTTP resource.")
 
@@ -1417,7 +1417,7 @@ func main() {
 			}
 		})
 
-		cmd.Command("rm", "Remove an Ankh configuration source.", func(cmd *cli.Cmd) {
+		cmd.Command("rm", "Remove an Ankh configuration source", func(cmd *cli.Cmd) {
 			cmd.Spec = "SOURCE"
 			sourceArg := cmd.StringArg("SOURCE", "", "The configuration source to remove. May be a local file or a remote HTTP resource.")
 
