@@ -812,6 +812,7 @@ func main() {
 			HelmSetValues:       helmVars,
 			IgnoreContextAndEnv: ctx.IgnoreContextAndEnv,
 			IgnoreConfigErrors:  ctx.IgnoreConfigErrors || *ignoreConfigErrors,
+			SkipConfig:          ctx.SkipConfig,
 			NoPrompt:            *noPrompt,
 		}
 
@@ -829,6 +830,11 @@ func main() {
 
 		// Default to info level logging
 		setLogLevel(ctx, logrus.InfoLevel)
+
+		if ctx.SkipConfig {
+			log.Debugf("ctx.SkipConfig set, not parsing config before running commands")
+			return
+		}
 
 		log.Debugf("Using KubeConfigPath %v (KUBECONFIG = '%v')", ctx.KubeConfigPath, os.Getenv("KUBECONFIG"))
 		log.Debugf("Using AnkhConfigPath %v (ANKHCONFIG = '%v')", ctx.AnkhConfigPath, os.Getenv("ANKHCONFIG"))
@@ -1392,6 +1398,7 @@ func main() {
 	app.Command("config", "Manage Ankh configuration", func(cmd *cli.Cmd) {
 		ctx.IgnoreContextAndEnv = true
 		ctx.IgnoreConfigErrors = true
+		ctx.SkipConfig = true
 
 		cmd.Command("init", "Initialize Ankh configuration", func(cmd *cli.Cmd) {
 			cmd.Action = func() {

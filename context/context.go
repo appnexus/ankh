@@ -42,7 +42,7 @@ type ExecutionContext struct {
 	Mode Mode
 
 	Verbose, Quiet, ShouldCatchSignals, CatchSignals, DryRun, Describe, WarnOnConfigError,
-	IgnoreContextAndEnv, IgnoreConfigErrors, NoPrompt bool
+	IgnoreContextAndEnv, IgnoreConfigErrors, SkipConfig, NoPrompt bool
 
 	WorkingPath    string
 	AnkhConfigPath string
