@@ -233,8 +233,17 @@ func kubectlExec(ctx *ankh.ExecutionContext, kubectlCmd *exec.Cmd, input string,
 
 	var kubectlOut, kubectlErr []byte
 	if !skipStdoutAndStderr {
-		kubectlOut, _ = ioutil.ReadAll(kubectlStdoutPipe)
+		// Read stdout and stderr simultaneously to prevent blocking when
+		// os.Stdout buffer is full
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			kubectlOut, _ = ioutil.ReadAll(kubectlStdoutPipe)
+			wg.Done()
+		}()
 		kubectlErr, _ = ioutil.ReadAll(kubectlStderrPipe)
+
+		wg.Wait()
 	}
 
 	ctx.Logger.Debugf("Running kubectl cmd %+v", kubectlCmd)
