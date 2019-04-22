@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/appnexus/ankh/context"
