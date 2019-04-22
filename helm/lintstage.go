@@ -6,9 +6,11 @@ import (
 	"strings"
 
 	"github.com/appnexus/ankh/context"
+	"github.com/appnexus/ankh/plan"
 	"gopkg.in/yaml.v2"
 )
 
+// TODO: Share this code with kubectl
 type KubeObject struct {
 	Kind     string
 	Metadata struct {
@@ -26,7 +28,35 @@ type KubeObject struct {
 	}
 }
 
-func LintObject(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, obj KubeObject) []error {
+type LintStage struct {
+}
+
+func NewLintStage() plan.Stage {
+	return LintStage{}
+}
+
+func (stage LintStage) Execute(ctx *ankh.ExecutionContext, input *string, namespace string, wildCardLabels []string) (string, error) {
+	if ctx.Explain {
+		panic("don't know how to explain lint yet")
+		return "", nil
+	}
+
+	if input == nil {
+		panic("Cannot lint nil input")
+	}
+
+	errors := helmLint(ctx, *input)
+	if len(errors) == 0 {
+		return "", nil
+	}
+
+	for _, err := range errors {
+		ctx.Logger.Warningf("%v", err)
+	}
+	return "", fmt.Errorf("Lint found %d errors", len(errors))
+}
+
+func lintObject(ctx *ankh.ExecutionContext, obj KubeObject) []error {
 	release := ctx.AnkhConfig.CurrentContext.Release
 	if release == "" {
 		return []error{}
@@ -72,11 +102,10 @@ func LintObject(ctx *ankh.ExecutionContext, ankhFile ankh.AnkhFile, obj KubeObje
 	return errors
 }
 
-func Lint(ctx *ankh.ExecutionContext, helmOutput string, ankhFile ankh.AnkhFile) []error {
+func helmLint(ctx *ankh.ExecutionContext, helmOutput string) []error {
 	decoder := yaml.NewDecoder(strings.NewReader(helmOutput))
 
 	allErrors := []error{}
-	ctx.Logger.Debugf("Linting %v", ankhFile.Path)
 	for {
 		obj := KubeObject{}
 		err := decoder.Decode(&obj)
@@ -91,11 +120,10 @@ func Lint(ctx *ankh.ExecutionContext, helmOutput string, ankhFile ankh.AnkhFile)
 			continue
 		}
 
-		errors := LintObject(ctx, ankhFile, obj)
+		errors := lintObject(ctx, obj)
 		if len(errors) > 0 {
 			allErrors = append(allErrors, errors...)
 		}
 	}
-	ctx.Logger.Debugf("Finished linting %v - found %v errors", ankhFile.Path, len(allErrors))
 	return allErrors
 }

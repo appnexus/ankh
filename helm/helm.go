@@ -18,6 +18,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/appnexus/ankh/context"
+	"github.com/appnexus/ankh/plan"
 	"github.com/appnexus/ankh/util"
 )
 
@@ -178,206 +179,12 @@ func FetchChartMeta(ctx *ankh.ExecutionContext, repository string, chart *ankh.C
 	return meta, nil
 }
 
-func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, namespace string) (string, error) {
-	currentContext := ctx.AnkhConfig.CurrentContext
-	helmArgs := []string{ctx.AnkhConfig.Helm.Command, "template"}
-
-	if namespace != "" {
-		helmArgs = append(helmArgs, []string{"--namespace", namespace}...)
-	}
-
-	if currentContext.Release != "" {
-		helmArgs = append(helmArgs, []string{"--name", currentContext.Release}...)
-	}
-
-	for key, val := range ctx.HelmSetValues {
-		helmArgs = append(helmArgs, "--set", key+"="+val)
-	}
-
-	// Set tagKey=tagValue, if configured and present
-	if chart.ChartMeta.TagKey != "" && chart.Tag != nil {
-		ctx.Logger.Debugf("Setting helm value %v=%v since chart.ChartMeta.TagKey and chart.Tag are set",
-			chart.ChartMeta.TagKey, *chart.Tag)
-		helmArgs = append(helmArgs, "--set", chart.ChartMeta.TagKey+"="+*chart.Tag)
-	}
-
-	repository := ctx.DetermineHelmRepository(&chart.HelmRepository)
-	files, err := findChartFiles(ctx, repository, chart)
-
-	if err != nil {
-		return "", err
-	}
-
-	// Load `values` from chart
-	_, valuesErr := os.Stat(files.AnkhValuesPath)
-	if valuesErr == nil {
-		if _, err := util.CreateReducedYAMLFile(files.AnkhValuesPath, currentContext.EnvironmentClass, true); err != nil {
-			return "", fmt.Errorf("unable to process ankh-values.yaml file for chart '%s': %v", chart.Name, err)
-		}
-		helmArgs = append(helmArgs, "-f", files.AnkhValuesPath)
-	}
-
-	// Load `resource-profiles` from chart
-	_, resourceProfilesError := os.Stat(files.AnkhResourceProfilesPath)
-	if resourceProfilesError == nil {
-		if _, err := util.CreateReducedYAMLFile(files.AnkhResourceProfilesPath, currentContext.ResourceProfile, true); err != nil {
-			return "", fmt.Errorf("unable to process ankh-resource-profiles.yaml file for chart '%s': %v", chart.Name, err)
-		}
-		helmArgs = append(helmArgs, "-f", files.AnkhResourceProfilesPath)
-	}
-
-	// Load `releases` from chart
-	if currentContext.Release != "" {
-		_, releasesError := os.Stat(files.AnkhReleasesPath)
-		if releasesError == nil {
-			out, err := util.CreateReducedYAMLFile(files.AnkhReleasesPath, currentContext.Release, false)
-			if err != nil {
-				return "", fmt.Errorf("unable to process ankh-releases.yaml file for chart '%s': %v", chart.Name, err)
-			}
-			if len(out) > 0 {
-				helmArgs = append(helmArgs, "-f", files.AnkhReleasesPath)
-			}
-		}
-	}
-
-	// Load `default-values`
-	if chart.DefaultValues != nil {
-		defaultValuesPath := filepath.Join(files.Dir, "default-values.yaml")
-		defaultValuesBytes, err := yaml.Marshal(chart.DefaultValues)
-		if err != nil {
-			return "", err
-		}
-
-		if err := ioutil.WriteFile(defaultValuesPath, defaultValuesBytes, 0644); err != nil {
-			return "", err
-		}
-
-		helmArgs = append(helmArgs, "-f", defaultValuesPath)
-	}
-
-	// Load `values`
-	if chart.Values != nil {
-		values, err := util.MapSliceRegexMatch(chart.Values, currentContext.EnvironmentClass)
-		if err != nil {
-			return "", fmt.Errorf("Failed to load `values` for chart %v: %v", chart.Name, err)
-		}
-		if values != nil {
-			valuesPath := filepath.Join(files.Dir, "values.yaml")
-			valuesBytes, err := yaml.Marshal(values)
-			if err != nil {
-				return "", err
-			}
-
-			if err := ioutil.WriteFile(valuesPath, valuesBytes, 0644); err != nil {
-				return "", err
-			}
-
-			helmArgs = append(helmArgs, "-f", valuesPath)
-		}
-	}
-
-	// Load `resource-profiles`
-	if chart.ResourceProfiles != nil {
-		values, err := util.MapSliceRegexMatch(chart.ResourceProfiles, currentContext.ResourceProfile)
-		if err != nil {
-			return "", fmt.Errorf("Failed to load `resource-profiles` for chart %v: %v", chart.Name, err)
-		}
-		if values != nil {
-			resourceProfilesPath := filepath.Join(files.Dir, "resource-profiles.yaml")
-			resourceProfilesBytes, err := yaml.Marshal(values)
-
-			if err != nil {
-				return "", err
-			}
-
-			if err := ioutil.WriteFile(resourceProfilesPath, resourceProfilesBytes, 0644); err != nil {
-				return "", err
-			}
-
-			helmArgs = append(helmArgs, "-f", resourceProfilesPath)
-		}
-	}
-
-	// Load `releases`
-	if chart.Releases != nil {
-		values, err := util.MapSliceRegexMatch(chart.Releases, currentContext.Release)
-		if err != nil {
-			return "", fmt.Errorf("Failed to load `releases` for chart %v: %v", chart.Name, err)
-		}
-		if values != nil {
-			releasesPath := filepath.Join(files.Dir, "releases.yaml")
-			releasesBytes, err := yaml.Marshal(values)
-
-			if err != nil {
-				return "", err
-			}
-
-			if err := ioutil.WriteFile(releasesPath, releasesBytes, 0644); err != nil {
-				return "", err
-			}
-
-			helmArgs = append(helmArgs, "-f", releasesPath)
-		}
-	}
-
-	// Check if Global contains anything and append them
-	if currentContext.Global != nil {
-		ctx.Logger.Debugf("found global values for the current context")
-
-		globalYamlBytes, err := yaml.Marshal(map[string]interface{}{
-			"global": currentContext.Global,
-		})
-		if err != nil {
-			return "", err
-		}
-
-		ctx.Logger.Debugf("writing global values to %s", files.GlobalPath)
-
-		if err := ioutil.WriteFile(files.GlobalPath, globalYamlBytes, 0644); err != nil {
-			return "", err
-		}
-
-		helmArgs = append(helmArgs, "-f", files.GlobalPath)
-	}
-
-	helmArgs = append(helmArgs, files.ChartDir)
-
-	ctx.Logger.Debugf("running helm command %s", strings.Join(helmArgs, " "))
-
-	helmCmd := execContext(helmArgs[0], helmArgs[1:]...)
-
-	if ctx.Mode == ankh.Explain {
-		return explain(helmCmd.Args), nil
-	}
-	var stdout, stderr bytes.Buffer
-	helmCmd.Stdout = &stdout
-	helmCmd.Stderr = &stderr
-
-	err = helmCmd.Run()
-	var helmOutput, helmError = string(stdout.Bytes()), string(stderr.Bytes())
-	if err != nil {
-		outputMsg := ""
-		if len(helmError) > 0 {
-			outputMsg = fmt.Sprintf(" -- the helm process had the following output on stderr:\n%s", helmError)
-		}
-		return "", fmt.Errorf("error running the helm command: %v%v", err, outputMsg)
-	}
-
-	return string(helmOutput), nil
-}
-
 func Version(ctx *ankh.ExecutionContext) (string, error) {
-	helmArgs := []string{ctx.AnkhConfig.Helm.Command, "version", "--client"}
-	helmCmd := exec.Command(helmArgs[0], helmArgs[1:]...)
-	helmOutput, err := helmCmd.CombinedOutput()
-	if err != nil {
-		outputMsg := ""
-		if len(helmOutput) > 0 {
-			outputMsg = fmt.Sprintf(" -- the helm process had the following output on stdout/stderr:\n%s", helmOutput)
-		}
-		return "", fmt.Errorf("%v%v", err, outputMsg)
-	}
-	return string(helmOutput), nil
+	cmd := plan.NewCommand(ctx.AnkhConfig.Helm.Command)
+	cmd.AddArguments([]string{"version", "--client"})
+	// We want to return the output of the version command in Run, so use a pipe
+	cmd.PipeStdoutAndStderr = plan.PIPE_TYPE_PIPE
+	return cmd.Run(ctx, nil)
 }
 
 type HelmReducedEntry struct {
@@ -707,34 +514,6 @@ func Publish(ctx *ankh.ExecutionContext, repository string) error {
 	return nil
 }
 
-func Template(ctx *ankh.ExecutionContext, charts []ankh.Chart, namespace string) (string, error) {
-	finalOutput := ""
-	if len(charts) > 0 {
-		for _, chart := range charts {
-			extraString := ""
-			if chart.Version != "" {
-				extraString = fmt.Sprintf(" at version \"%v\"", chart.Version)
-			} else if chart.Path != "" {
-				extraString = fmt.Sprintf(" from path \"%v\"", chart.Path)
-			}
-			ctx.Logger.Infof("Templating chart \"%s\"%s", chart.Name, extraString)
-			chartOutput, err := templateChart(ctx, chart, namespace)
-			if err != nil {
-				return finalOutput, err
-			}
-			finalOutput += chartOutput
-		}
-		if namespace != "" {
-			ctx.Logger.Infof("Finished templating charts for namespace %v", namespace)
-		} else {
-			ctx.Logger.Info("Finished templating charts with an explicit empty namespace")
-		}
-	} else {
-		ctx.Logger.Info("Does not contain any charts. Nothing to do.")
-	}
-	return finalOutput, nil
-}
-
 func inspectFile(relativeDir string, file string) (string, error) {
 	result := fmt.Sprintf("\n---\n# Source: %s/%s\n", relativeDir, path.Base(file))
 	bytes, err := ioutil.ReadFile(file)
@@ -842,4 +621,38 @@ func Bump(ctx *ankh.ExecutionContext, semVerType string) error {
 	}
 
 	return nil
+}
+
+func filterOutput(ctx *ankh.ExecutionContext, helmOutput string) string {
+	ctx.Logger.Debugf("Filtering with inclusive list `%v`", ctx.Filters)
+
+	// The golang yaml library doesn't actually support whitespace/comment
+	// preserving round-trip parsing. So, we're going to filter the "hard way".
+	filtered := []string{}
+	// This is actually broken because it splits even when `---` is somewhere
+	// in the middle of the line. That's very problematic when chart templates
+	// put yaml literals inside of annotations on objects.
+	objs := strings.Split(helmOutput, "---")
+	for _, obj := range objs {
+		lines := strings.Split(obj, "\n")
+		for _, line := range lines {
+			if !strings.HasPrefix(line, "kind:") {
+				continue
+			}
+			matched := false
+			for _, s := range ctx.Filters {
+				kind := strings.Trim(line[5:], " ")
+				if strings.EqualFold(kind, s) {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				filtered = append(filtered, obj)
+				break
+			}
+		}
+	}
+
+	return "---" + strings.Join(filtered, "---")
 }

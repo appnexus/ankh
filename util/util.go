@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"gopkg.in/yaml.v2"
 
@@ -425,7 +426,23 @@ func compareTokens(t1, t2 string) int {
 }
 
 // Loosely fits the best-effot semver sort implemented by `sort -V`
+// Force all tag names that do not begin with a number to be less
+// than anything that does start with a number. This prevents
+// tags that aren't even close to semver from sorting to the top.
 func FuzzySemVerCompare(s1, s2 string) bool {
+	s1Number := len(s1) > 0 && unicode.IsNumber(rune(s1[0]))
+	s2Number := len(s2) > 0 && unicode.IsNumber(rune(s2[0]))
+	if !s1Number && !s2Number {
+		// just string compare anything that does not start with a number
+		return strings.Compare(s1, s2) < 0
+	} else if s1Number && !s2Number {
+		// s1 starts with a number, s2 does not. so, s1 is not less than.
+		return false
+	} else if !s1Number && s2Number {
+		// s1 does not start with a number, and s2 does, so s1 is lesser
+		return true
+	}
+
 	s1parts := strings.Split(s1, ".")
 	s2parts := strings.Split(s2, ".")
 
