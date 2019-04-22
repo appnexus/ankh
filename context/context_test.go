@@ -24,7 +24,7 @@ func newValidAnkhConfig() AnkhConfig {
 			"test": Context{
 				EnvironmentClass: "dev",
 				ResourceProfile:  "constrained",
-				HelmRegistryURL:  "http://localhost",
+				HelmRepositoryURL:  "http://localhost",
 				KubeContext:      "dev",
 			},
 		},

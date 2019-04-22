@@ -294,7 +294,7 @@ When invoked, Ankh will operate over both the `haste-server` and `myservice` cha
 #### `AnkhFile`
 | Field              | Type     | Description                                                                                           						|
 | -------------      | :---:    | :-------------:                                                                                       						|
-| namespace          | string   | The namespace to use when running `helm` and `kubectl`. May be overriden at the Chart level.          						|
+| namespace          | string   | The namespace to use when running `helm` and `kubectl`. Overrides all namespaces at the Chart level. DEPRECATED - will be removed in Ankh 2.0         |
 | charts 	     | Chart    | The set of charts to operate over. All charts within a namespace are applied with a single `kubectl` invocation. Namespaces are applied in alphabetical order. Charts with an empty namespace are applied first. Use `dependencies` to achieve a custom `execution ordering. |
 | dependencies       | []string | Optional. Paths to dependent Ankh files (eg: an ankh.yaml) that should be executed first, in order. May be a local file or an HTTP resource to GET.	|
 
@@ -302,13 +302,21 @@ When invoked, Ankh will operate over both the `haste-server` and `myservice` cha
 | Field             | Type               | Description                                                          				|
 | -------------     | :---:              | :-------------:                                                      				|
 | name              | string             | The chart name. Must be the name of a chart in a Helm registry					|
-| namespace         | string             | The namespace to use when running `helm` and `kubectl`. Overrides `namespace` in an Ankh file.	|
 | version           | string             | Optional. The chart version, if pulling from a Helm registry.                			|
 | path              | string             | Optional. The path to a local chart directory. Can be used instead of a remote `version` in a Helm registry.  		|
+| meta              | ChartMeta          | The chart metadata to use. Overrides any metadata in `ankh.yaml` present in the Chart.               |
 | default-values    | RawYaml            | Optional. Values to use in all contexts.   			|
 | values            | map[string]RawYaml | Optional. Values to use, by environment class. Any context whose `environment-class` exactly matches one of the keys in this map will use all values under that key.                              			|
 | resource-profiles | map[string]RawYaml | Optional. Values to use, by resource profile. Any context whose `resource-profile` exactly matches one of the keys in this map will use all values under that key.                                  			|
 | releases          | map[string]RawYaml | Optional. Values to use, by release. Any context whose `release` is a regular expression match for one of the keys in this map, using only the first matched going from top to bottom, will use all values under that key, eg: `staging|production:` to match either of the strings `staging` or `production`.                                         			|
+
+#### `Chart`
+| Field             | Type               | Description                                                          				|
+| -------------     | :---:              | :-------------:                                                      				|
+| namespace         | string             | The namespace to use when templating the Helm chart and applying with kubectl.                       |
+| tagKey            | string             | The name of the helm variable associated with the image tag for the primary container. Used for tag prompt behavior. |
+| tagImage          | string             | The docker image reference for the primary container. If no registry is present on the reference, it defaults to `docker.registry`.
+| wildCardLabels    | string             | For read opeations, the labels that should be shown as columns instead of used as selectors.         |
 
 #### `Format Variables`
 | Variable | Description

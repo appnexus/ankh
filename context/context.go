@@ -18,10 +18,10 @@ type Mode string
 
 const (
 	Apply    Mode = "apply"
+	Deploy   Mode = "deploy"
 	Rollback Mode = "rollback"
 	Diff     Mode = "diff"
 	Exec     Mode = "exec"
-	Explain  Mode = "explain"
 	Get      Mode = "get"
 	Pods     Mode = "pods"
 	Lint     Mode = "lint"
@@ -41,7 +41,7 @@ type ExecutionContext struct {
 
 	Mode Mode
 
-	Verbose, Quiet, ShouldCatchSignals, CatchSignals, DryRun, Describe, WarnOnConfigError,
+	Verbose, Explain, Quiet, ShouldCatchSignals, CatchSignals, DryRun, Describe, WarnOnConfigError,
 	IgnoreContextAndEnv, IgnoreConfigErrors, SkipConfig, NoPrompt bool
 
 	WorkingPath    string
@@ -75,6 +75,7 @@ type Context struct {
 	Source                string                 `yaml:"-"` // private field. specifies which config file declared this.
 	KubeContext           string                 `yaml:"kube-context,omitempty"`
 	KubeServer            string                 `yaml:"kube-server,omitempty"`
+	KubeConfig            string                 `yaml:"kube-config,omitempty"`
 	Environment           string                 `yaml:"environment,omitempty"` // deprecated in favor of `environment-class`
 	EnvironmentClass      string                 `yaml:"environment-class"`     // omitempty until we remove `environment`
 	ResourceProfile       string                 `yaml:"resource-profile"`
@@ -206,6 +207,28 @@ func (ctx *ExecutionContext) DetermineHelmRepository(preferredRepository *string
 	return ""
 }
 
+// This function is so bad
+func useKubeConfig(ctx *ExecutionContext, currentContext *Context, name string, kubeConfigBytes []byte) error {
+	kubeConfigDir := path.Join(ctx.DataDir, "kubeconfig",
+	// Extra forward slashes for the scheme seems wrong. So change them
+	// to underscores, or whatever.
+	strings.Replace(currentContext.KubeServer, "/", "_", -1))
+	if err := os.MkdirAll(kubeConfigDir, 0755); err != nil {
+		return err
+	}
+
+	kubeConfigPath := path.Join(kubeConfigDir, "kubeconfig.yaml")
+
+	ctx.Logger.Debugf("Using kubeConfigPath %v", kubeConfigPath)
+	if err := ioutil.WriteFile(kubeConfigPath, kubeConfigBytes, 0644); err != nil {
+		return err
+	}
+
+	currentContext.KubeContext = name
+	ctx.KubeConfigPath = kubeConfigPath
+	return nil
+}
+
 // ValidateAndInit ensures the AnkhConfig is internally sane and populates
 // special fields if necessary.
 func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context string) []error {
@@ -231,6 +254,8 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context str
 
 		if selectedContext.KubeContext == "" && selectedContext.KubeServer == "" {
 			errors = append(errors, fmt.Errorf("Current context '%s' has missing or empty `kube-context` or `kube-server`", ankhConfig.CurrentContextName))
+		} else if selectedContext.KubeServer != "" && selectedContext.KubeConfig != "" {
+			errors = append(errors, fmt.Errorf("Cannot specify both `kube-server` and `kube-config`"))
 		} else if selectedContext.KubeServer != "" {
 			kubeCluster := KubeCluster{
 				Cluster: struct {
@@ -252,27 +277,35 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context str
 				CurrentContextUnused: kubeContext.Name,
 			}
 
-			kubeConfigDir := path.Join(ctx.DataDir, "kubeconfig",
-				// Extra forward slashes for the scheme seems wrong. So change them
-				// to underscores, or whatever.
-				strings.Replace(selectedContext.KubeServer, "/", "_", -1))
-			if err := os.MkdirAll(kubeConfigDir, 0755); err != nil {
-				return []error{err}
-			}
-
-			kubeConfigPath := path.Join(kubeConfigDir, "kubeconfig.yaml")
 			kubeConfigBytes, err := yaml.Marshal(kubeConfig)
 			if err != nil {
 				return []error{err}
 			}
 
-			ctx.Logger.Debugf("Using kubeConfigPath %v", kubeConfigPath)
-			if err := ioutil.WriteFile(kubeConfigPath, kubeConfigBytes, 0644); err != nil {
-				return []error{err}
+			useKubeConfig(ctx, &selectedContext, kubeContext.Name, kubeConfigBytes)
+		} else if selectedContext.KubeConfig != "" {
+			u, err := url.Parse(selectedContext.KubeConfig)
+			if err != nil {
+				return []error{fmt.Errorf("Could not parse current context kube-config '%v' as a URL: %v", selectedContext.KubeConfig, err)}
 			}
 
-			selectedContext.KubeContext = kubeContext.Name
-			ctx.KubeConfigPath = kubeConfigPath
+			if u.Scheme == "http" || u.Scheme == "https" {
+				resp, err := http.Get(selectedContext.KubeConfig)
+				if err != nil {
+					return []error{fmt.Errorf("Unable to fetch ankh file from URL '%s': %v", selectedContext.KubeConfig, err)}
+				}
+				defer resp.Body.Close()
+				if resp.StatusCode != 200 {
+					return []error{fmt.Errorf("Non-200 status code when fetching ankh file from URL '%s': %v", selectedContext.KubeConfig, resp.Status)}
+				}
+				body, err := ioutil.ReadAll(resp.Body)
+				if err != nil {
+					return []error{err}
+				}
+				useKubeConfig(ctx, &selectedContext, selectedContext.KubeContext, body)
+			} else {
+				ctx.KubeConfigPath = selectedContext.KubeConfig
+			}
 		}
 
 		if selectedContext.EnvironmentClass == "" {
