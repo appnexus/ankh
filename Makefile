@@ -11,8 +11,7 @@ all: ankh
 
 .PHONY: ankh
 ankh:
-	@echo "GOPATH is ${GOPATH}"
-	cd $(REPOROOT)/ankh && $(GOCMD) build -ldflags "-X main.AnkhBuildVersion=$(VERSION)"
+	$(GOCMD) build -o ankh/ankh -ldflags "-X main.AnkhBuildVersion=$(VERSION)" ./ankh
 
 .PHONY: clean
 clean:
@@ -20,8 +19,7 @@ clean:
 
 .PHONY: install
 install:
-	@echo "GOPATH is ${GOPATH}"
-	cd $(REPOROOT)/ankh && $(GOCMD) install -ldflags "-X main.AnkhBuildVersion=$(VERSION)"
+	$(GOCMD) install -ldflags "-X main.AnkhBuildVersion=$(VERSION)" ./ankh
 
 .PHONY: release
 release:

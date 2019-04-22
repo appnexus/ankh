@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/appnexus/ankh/context"
@@ -77,12 +78,23 @@ func (cmd *Command) Run(ctx *ankh.ExecutionContext, input *string) (string, erro
 		stdinPipe.Write([]byte(*input))
 		stdinPipe.Close()
 	}
+	var wg sync.WaitGroup
 	if stdoutPipe != nil {
-		stdout, _ = ioutil.ReadAll(stdoutPipe)
+		wg.Add(1)
+		go func() {
+			stdout, _ = ioutil.ReadAll(stdoutPipe)
+			wg.Done()
+		}()
 	}
 	if stderrPipe != nil {
-		stderr, _ = ioutil.ReadAll(stderrPipe)
+		wg.Add(1)
+		go func() {
+			stderr, _ = ioutil.ReadAll(stderrPipe)
+			wg.Done()
+		}()
 	}
+
+	wg.Wait()
 
 	// Catch signals while running the command, if our context demands it.
 	if ctx.ShouldCatchSignals {
