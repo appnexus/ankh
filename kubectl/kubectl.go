@@ -1,17 +1,6 @@
 package kubectl
 
 import (
-	"fmt"
-	"gopkg.in/yaml.v2"
-	"io"
-	"io/ioutil"
-	"os"
-	"os/exec"
-	"sort"
-	"strings"
-	"sync"
-	"syscall"
-
 	"github.com/appnexus/ankh/context"
 	"github.com/appnexus/ankh/plan"
 )

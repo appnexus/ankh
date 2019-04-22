@@ -4,7 +4,7 @@ go:
   - 1.11.x
 
 script:
-  - make cover
+  - env GO111MODULE=on make cover
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)
