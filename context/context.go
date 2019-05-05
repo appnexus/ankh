@@ -18,6 +18,7 @@ type Mode string
 
 const (
 	Apply    Mode = "apply"
+	Explain  Mode = "explain"
 	Deploy   Mode = "deploy"
 	Rollback Mode = "rollback"
 	Diff     Mode = "diff"
@@ -41,7 +42,7 @@ type ExecutionContext struct {
 
 	Mode Mode
 
-	Verbose, Explain, Quiet, ShouldCatchSignals, CatchSignals, DryRun, Describe, WarnOnConfigError,
+	Verbose, Quiet, ShouldCatchSignals, CatchSignals, DryRun, Describe, WarnOnConfigError,
 	IgnoreContextAndEnv, IgnoreConfigErrors, SkipConfig, NoPrompt bool
 
 	WorkingPath    string

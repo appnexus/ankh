@@ -30,10 +30,8 @@ func (stage TemplateStage) Execute(ctx *ankh.ExecutionContext, input *string, na
 		return "", err
 	}
 
-	if !ctx.Explain {
-		if len(ctx.Filters) > 0 {
-			helmOutput = filterOutput(ctx, helmOutput)
-		}
+	if len(ctx.Filters) > 0 {
+		helmOutput = filterOutput(ctx, helmOutput)
 	}
 	return helmOutput, nil
 }
@@ -286,7 +284,7 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, namespace strin
 	ctx.Logger.Debugf("running helm command: '%s'", strings.Join(helmArgs, " "))
 	helmCmd := execContext(helmArgs[0], helmArgs[1:]...)
 
-	if ctx.Explain {
+	if ctx.Mode == ankh.Explain {
 		out := explain(helmCmd.Args)
 
 		// Need to strip off the final bit of the 'and chain'. Weird, but fine.
