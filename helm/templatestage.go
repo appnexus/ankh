@@ -38,39 +38,82 @@ func (stage TemplateStage) Execute(ctx *ankh.ExecutionContext, input *string, na
 	return helmOutput, nil
 }
 
-func getValuesFromChartFiles(currentContext ankh.Context, chart ankh.Chart, files ankh.ChartFiles) ([]string, error) {
+func getDirectoryFile(ctx *ankh.ExecutionContext, chart ankh.Chart, files ankh.ChartFiles, kind string, match string) string {
+	// This should be determined elsewhere.
+	directory := chart.ChartMeta.ConfigMeta.Paths[kind]
+	if directory == "" {
+		directory = fmt.Sprintf("ankh/%v", kind)
+	}
+
+	path := filepath.Join(files.ChartDir, directory, fmt.Sprintf("%v.yaml", match))
+	ctx.Logger.Debugf("* Checking for %v file %v", kind, path)
+	_, err := os.Stat(path)
+	if err != nil {
+		ctx.Logger.Debugf("-- not found, skipping...")
+		return ""
+	}
+
+	ctx.Logger.Debugf("-- Found %v file %v", kind, path)
+	return path
+
+}
+
+func getValuesFromChartFiles(ctx *ankh.ExecutionContext, chart ankh.Chart, files ankh.ChartFiles) ([]string, error) {
+	currentContext := ctx.AnkhConfig.CurrentContext
 	helmArgs := []string{}
 
-	useDirectory := chart.ChartMeta.TagKey.Type == "directory"
+	useDirectory := chart.ChartMeta.ConfigMeta.Type == "directory"
 
 	// Load `values` from ankh-values.yaml
-	_, valuesErr := os.Stat(files.AnkhValuesPath)
-	if valuesErr == nil {
-		if _, err := util.CreateReducedYAMLFile(files.AnkhValuesPath, currentContext.EnvironmentClass, true); err != nil {
-			return []string{}, fmt.Errorf("unable to process ankh-values.yaml file for chart '%s': %v", chart.Name, err)
+	if useDirectory {
+		path := getDirectoryFile(ctx, chart, files, "values", currentContext.EnvironmentClass)
+		if path != "" {
+			helmArgs = append(helmArgs, "-f", path)
 		}
-		helmArgs = append(helmArgs, "-f", files.AnkhValuesPath)
+	} else {
+		ctx.Logger.Debugf("Checking for environment-class file %v", files.AnkhValuesPath)
+		_, valuesErr := os.Stat(files.AnkhValuesPath)
+		if valuesErr == nil {
+			if _, err := util.CreateReducedYAMLFile(files.AnkhValuesPath, currentContext.EnvironmentClass, true); err != nil {
+				return []string{}, fmt.Errorf("unable to process ankh-values.yaml file for chart '%s': %v", chart.Name, err)
+			}
+			helmArgs = append(helmArgs, "-f", files.AnkhValuesPath)
+		}
 	}
 
 	// Load `resource-profiles` from ankh-resource-profiles.yaml
-	_, resourceProfilesError := os.Stat(files.AnkhResourceProfilesPath)
-	if resourceProfilesError == nil {
-		if _, err := util.CreateReducedYAMLFile(files.AnkhResourceProfilesPath, currentContext.ResourceProfile, true); err != nil {
-			return []string{}, fmt.Errorf("unable to process ankh-resource-profiles.yaml file for chart '%s': %v", chart.Name, err)
+	if useDirectory {
+		path := getDirectoryFile(ctx, chart, files, "resource-profiles", currentContext.ResourceProfile)
+		if path != "" {
+			helmArgs = append(helmArgs, "-f", path)
 		}
-		helmArgs = append(helmArgs, "-f", files.AnkhResourceProfilesPath)
+	} else {
+		_, resourceProfilesError := os.Stat(files.AnkhResourceProfilesPath)
+		if resourceProfilesError == nil {
+			if _, err := util.CreateReducedYAMLFile(files.AnkhResourceProfilesPath, currentContext.ResourceProfile, true); err != nil {
+				return []string{}, fmt.Errorf("unable to process ankh-resource-profiles.yaml file for chart '%s': %v", chart.Name, err)
+			}
+			helmArgs = append(helmArgs, "-f", files.AnkhResourceProfilesPath)
+		}
 	}
 
 	// Load `releases` from ankh-releases.yaml
 	if currentContext.Release != "" {
-		_, releasesError := os.Stat(files.AnkhReleasesPath)
-		if releasesError == nil {
-			out, err := util.CreateReducedYAMLFile(files.AnkhReleasesPath, currentContext.Release, false)
-			if err != nil {
-				return []string{}, fmt.Errorf("unable to process ankh-releases.yaml file for chart '%s': %v", chart.Name, err)
+		if useDirectory {
+			path := getDirectoryFile(ctx, chart, files, "releases", currentContext.Release)
+			if path != "" {
+				helmArgs = append(helmArgs, "-f", path)
 			}
-			if len(out) > 0 {
-				helmArgs = append(helmArgs, "-f", files.AnkhReleasesPath)
+		} else {
+			_, releasesError := os.Stat(files.AnkhReleasesPath)
+			if releasesError == nil {
+				out, err := util.CreateReducedYAMLFile(files.AnkhReleasesPath, currentContext.Release, false)
+				if err != nil {
+					return []string{}, fmt.Errorf("unable to process ankh-releases.yaml file for chart '%s': %v", chart.Name, err)
+				}
+				if len(out) > 0 {
+					helmArgs = append(helmArgs, "-f", files.AnkhReleasesPath)
+				}
 			}
 		}
 	}
@@ -217,14 +260,14 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, namespace strin
 	}
 
 	// Chart files first...
-	chartFileArgs, err := getValuesFromChartFiles(currentContext, chart, files)
+	chartFileArgs, err := getValuesFromChartFiles(ctx, chart, files)
 	if err != nil {
 		return "", err
 	}
 	helmArgs = append(helmArgs, chartFileArgs...)
 
 	// ...and then chart object. Values from the chart object take precedence.
-	chartObjectArgs, err := getValuesFromChartObject(currentContext, chart, files.Dir)
+	chartObjectArgs, err := getValuesFromChartObject(currentContext, chart, files.TmpDir)
 	if err != nil {
 		return "", err
 	}
@@ -240,7 +283,7 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, namespace strin
 	// Construct the final helm command and run it
 	helmArgs = append(helmArgs, files.ChartDir)
 
-	ctx.Logger.Debugf("running helm command %s", strings.Join(helmArgs, " "))
+	ctx.Logger.Debugf("running helm command: '%s'", strings.Join(helmArgs, " "))
 	helmCmd := execContext(helmArgs[0], helmArgs[1:]...)
 
 	if ctx.Explain {

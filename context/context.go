@@ -209,10 +209,9 @@ func (ctx *ExecutionContext) DetermineHelmRepository(preferredRepository *string
 
 // This function is so bad
 func useKubeConfig(ctx *ExecutionContext, currentContext *Context, name string, kubeConfigBytes []byte) error {
-	kubeConfigDir := path.Join(ctx.DataDir, "kubeconfig",
 	// Extra forward slashes for the scheme seems wrong. So change them
 	// to underscores, or whatever.
-	strings.Replace(currentContext.KubeServer, "/", "_", -1))
+	kubeConfigDir := path.Join(ctx.DataDir, "kubeconfig", strings.Replace(currentContext.KubeServer, "/", "_", -1))
 	if err := os.MkdirAll(kubeConfigDir, 0755); err != nil {
 		return err
 	}
@@ -329,16 +328,21 @@ func (ankhConfig *AnkhConfig) ValidateAndInit(ctx *ExecutionContext, context str
 	return errors
 }
 
-type ChartMeta struct {
-	Namespace      *string   `yaml:"namespace"`
-	TagImage       string    `yaml:"tagImage"`
-	TagKey         string    `yaml:"tagKey"`
-	WildCardLabels *[]string `yaml:"wildCardLabels"`
+type ConfigMeta struct {
+	Type  string            `yaml:"type"`
+	Paths map[string]string `yaml:"paths"`
 }
 
-// TODO: Rename me to target?
+type ChartMeta struct {
+	Namespace      *string    `yaml:"namespace"`
+	TagImage       string     `yaml:"tagImage"`
+	TagKey         string     `yaml:"tagKey"`
+	WildCardLabels *[]string  `yaml:"wildCardLabels"`
+	ConfigMeta     ConfigMeta `yaml:"config"`
+}
+
 type ChartFiles struct {
-	Dir                      string
+	TmpDir                   string
 	ChartDir                 string
 	GlobalPath               string
 	MetaPath                 string
