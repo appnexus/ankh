@@ -38,6 +38,153 @@ func (stage TemplateStage) Execute(ctx *ankh.ExecutionContext, input *string, na
 	return helmOutput, nil
 }
 
+func getValuesFromChartFiles(currentContext ankh.Context, chart ankh.Chart, files ankh.ChartFiles) ([]string, error) {
+	helmArgs := []string{}
+
+	useDirectory := chart.ChartMeta.TagKey.Type == "directory"
+
+	// Load `values` from ankh-values.yaml
+	_, valuesErr := os.Stat(files.AnkhValuesPath)
+	if valuesErr == nil {
+		if _, err := util.CreateReducedYAMLFile(files.AnkhValuesPath, currentContext.EnvironmentClass, true); err != nil {
+			return []string{}, fmt.Errorf("unable to process ankh-values.yaml file for chart '%s': %v", chart.Name, err)
+		}
+		helmArgs = append(helmArgs, "-f", files.AnkhValuesPath)
+	}
+
+	// Load `resource-profiles` from ankh-resource-profiles.yaml
+	_, resourceProfilesError := os.Stat(files.AnkhResourceProfilesPath)
+	if resourceProfilesError == nil {
+		if _, err := util.CreateReducedYAMLFile(files.AnkhResourceProfilesPath, currentContext.ResourceProfile, true); err != nil {
+			return []string{}, fmt.Errorf("unable to process ankh-resource-profiles.yaml file for chart '%s': %v", chart.Name, err)
+		}
+		helmArgs = append(helmArgs, "-f", files.AnkhResourceProfilesPath)
+	}
+
+	// Load `releases` from ankh-releases.yaml
+	if currentContext.Release != "" {
+		_, releasesError := os.Stat(files.AnkhReleasesPath)
+		if releasesError == nil {
+			out, err := util.CreateReducedYAMLFile(files.AnkhReleasesPath, currentContext.Release, false)
+			if err != nil {
+				return []string{}, fmt.Errorf("unable to process ankh-releases.yaml file for chart '%s': %v", chart.Name, err)
+			}
+			if len(out) > 0 {
+				helmArgs = append(helmArgs, "-f", files.AnkhReleasesPath)
+			}
+		}
+	}
+
+	return helmArgs, nil
+}
+
+func getValuesFromChartObject(currentContext ankh.Context, chart ankh.Chart, outputDir string) ([]string, error) {
+	helmArgs := []string{}
+
+	// Load `default-values`
+	if chart.DefaultValues != nil {
+		defaultValuesPath := filepath.Join(outputDir, "default-values.yaml")
+		defaultValuesBytes, err := yaml.Marshal(chart.DefaultValues)
+		if err != nil {
+			return []string{}, err
+		}
+
+		if err := ioutil.WriteFile(defaultValuesPath, defaultValuesBytes, 0644); err != nil {
+			return []string{}, err
+		}
+
+		helmArgs = append(helmArgs, "-f", defaultValuesPath)
+	}
+
+	// Load `values`
+	if chart.Values != nil {
+		values, err := util.MapSliceRegexMatch(chart.Values, currentContext.EnvironmentClass)
+		if err != nil {
+			return []string{}, fmt.Errorf("Failed to load `values` for chart %v: %v", chart.Name, err)
+		}
+		if values != nil {
+			valuesPath := filepath.Join(outputDir, "values.yaml")
+			valuesBytes, err := yaml.Marshal(values)
+			if err != nil {
+				return []string{}, err
+			}
+
+			if err := ioutil.WriteFile(valuesPath, valuesBytes, 0644); err != nil {
+				return []string{}, err
+			}
+
+			helmArgs = append(helmArgs, "-f", valuesPath)
+		}
+	}
+
+	// Load `resource-profiles`
+	if chart.ResourceProfiles != nil {
+		values, err := util.MapSliceRegexMatch(chart.ResourceProfiles, currentContext.ResourceProfile)
+		if err != nil {
+			return []string{}, fmt.Errorf("Failed to load `resource-profiles` for chart %v: %v", chart.Name, err)
+		}
+		if values != nil {
+			resourceProfilesPath := filepath.Join(outputDir, "resource-profiles.yaml")
+			resourceProfilesBytes, err := yaml.Marshal(values)
+
+			if err != nil {
+				return []string{}, err
+			}
+
+			if err := ioutil.WriteFile(resourceProfilesPath, resourceProfilesBytes, 0644); err != nil {
+				return []string{}, err
+			}
+
+			helmArgs = append(helmArgs, "-f", resourceProfilesPath)
+		}
+	}
+
+	// Load `releases`
+	if chart.Releases != nil {
+		values, err := util.MapSliceRegexMatch(chart.Releases, currentContext.Release)
+		if err != nil {
+			return []string{}, fmt.Errorf("Failed to load `releases` for chart %v: %v", chart.Name, err)
+		}
+		if values != nil {
+			releasesPath := filepath.Join(outputDir, "releases.yaml")
+			releasesBytes, err := yaml.Marshal(values)
+
+			if err != nil {
+				return []string{}, err
+			}
+
+			if err := ioutil.WriteFile(releasesPath, releasesBytes, 0644); err != nil {
+				return []string{}, err
+			}
+
+			helmArgs = append(helmArgs, "-f", releasesPath)
+		}
+	}
+
+	return helmArgs, nil
+}
+
+func getValuesFromGlobal(currentContext ankh.Context, files ankh.ChartFiles) ([]string, error) {
+	helmArgs := []string{}
+
+	// Check if Global exists on the current context
+	if currentContext.Global != nil {
+		globalYamlBytes, err := yaml.Marshal(map[string]interface{}{
+			"global": currentContext.Global,
+		})
+		if err != nil {
+			return []string{}, err
+		}
+
+		if err := ioutil.WriteFile(files.GlobalPath, globalYamlBytes, 0644); err != nil {
+			return []string{}, err
+		}
+
+		helmArgs = append(helmArgs, "-f", files.GlobalPath)
+	}
+
+	return helmArgs, nil
+}
 
 func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, namespace string) (string, error) {
 	currentContext := ctx.AnkhConfig.CurrentContext
@@ -69,142 +216,31 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, namespace strin
 		return "", err
 	}
 
-	// Load `values` from chart
-	_, valuesErr := os.Stat(files.AnkhValuesPath)
-	if valuesErr == nil {
-		if _, err := util.CreateReducedYAMLFile(files.AnkhValuesPath, currentContext.EnvironmentClass, true); err != nil {
-			return "", fmt.Errorf("unable to process ankh-values.yaml file for chart '%s': %v", chart.Name, err)
-		}
-		helmArgs = append(helmArgs, "-f", files.AnkhValuesPath)
+	// Chart files first...
+	chartFileArgs, err := getValuesFromChartFiles(currentContext, chart, files)
+	if err != nil {
+		return "", err
 	}
+	helmArgs = append(helmArgs, chartFileArgs...)
 
-	// Load `resource-profiles` from chart
-	_, resourceProfilesError := os.Stat(files.AnkhResourceProfilesPath)
-	if resourceProfilesError == nil {
-		if _, err := util.CreateReducedYAMLFile(files.AnkhResourceProfilesPath, currentContext.ResourceProfile, true); err != nil {
-			return "", fmt.Errorf("unable to process ankh-resource-profiles.yaml file for chart '%s': %v", chart.Name, err)
-		}
-		helmArgs = append(helmArgs, "-f", files.AnkhResourceProfilesPath)
+	// ...and then chart object. Values from the chart object take precedence.
+	chartObjectArgs, err := getValuesFromChartObject(currentContext, chart, files.Dir)
+	if err != nil {
+		return "", err
 	}
+	helmArgs = append(helmArgs, chartObjectArgs...)
 
-	// Load `releases` from chart
-	if currentContext.Release != "" {
-		_, releasesError := os.Stat(files.AnkhReleasesPath)
-		if releasesError == nil {
-			out, err := util.CreateReducedYAMLFile(files.AnkhReleasesPath, currentContext.Release, false)
-			if err != nil {
-				return "", fmt.Errorf("unable to process ankh-releases.yaml file for chart '%s': %v", chart.Name, err)
-			}
-			if len(out) > 0 {
-				helmArgs = append(helmArgs, "-f", files.AnkhReleasesPath)
-			}
-		}
+	// ...and finally from global sources. These have the highest precedence.
+	globalArgs, err := getValuesFromGlobal(currentContext, files)
+	if err != nil {
+		return "", err
 	}
+	helmArgs = append(helmArgs, globalArgs...)
 
-	// Load `default-values`
-	if chart.DefaultValues != nil {
-		defaultValuesPath := filepath.Join(files.Dir, "default-values.yaml")
-		defaultValuesBytes, err := yaml.Marshal(chart.DefaultValues)
-		if err != nil {
-			return "", err
-		}
-
-		if err := ioutil.WriteFile(defaultValuesPath, defaultValuesBytes, 0644); err != nil {
-			return "", err
-		}
-
-		helmArgs = append(helmArgs, "-f", defaultValuesPath)
-	}
-
-	// Load `values`
-	if chart.Values != nil {
-		values, err := util.MapSliceRegexMatch(chart.Values, currentContext.EnvironmentClass)
-		if err != nil {
-			return "", fmt.Errorf("Failed to load `values` for chart %v: %v", chart.Name, err)
-		}
-		if values != nil {
-			valuesPath := filepath.Join(files.Dir, "values.yaml")
-			valuesBytes, err := yaml.Marshal(values)
-			if err != nil {
-				return "", err
-			}
-
-			if err := ioutil.WriteFile(valuesPath, valuesBytes, 0644); err != nil {
-				return "", err
-			}
-
-			helmArgs = append(helmArgs, "-f", valuesPath)
-		}
-	}
-
-	// Load `resource-profiles`
-	if chart.ResourceProfiles != nil {
-		values, err := util.MapSliceRegexMatch(chart.ResourceProfiles, currentContext.ResourceProfile)
-		if err != nil {
-			return "", fmt.Errorf("Failed to load `resource-profiles` for chart %v: %v", chart.Name, err)
-		}
-		if values != nil {
-			resourceProfilesPath := filepath.Join(files.Dir, "resource-profiles.yaml")
-			resourceProfilesBytes, err := yaml.Marshal(values)
-
-			if err != nil {
-				return "", err
-			}
-
-			if err := ioutil.WriteFile(resourceProfilesPath, resourceProfilesBytes, 0644); err != nil {
-				return "", err
-			}
-
-			helmArgs = append(helmArgs, "-f", resourceProfilesPath)
-		}
-	}
-
-	// Load `releases`
-	if chart.Releases != nil {
-		values, err := util.MapSliceRegexMatch(chart.Releases, currentContext.Release)
-		if err != nil {
-			return "", fmt.Errorf("Failed to load `releases` for chart %v: %v", chart.Name, err)
-		}
-		if values != nil {
-			releasesPath := filepath.Join(files.Dir, "releases.yaml")
-			releasesBytes, err := yaml.Marshal(values)
-
-			if err != nil {
-				return "", err
-			}
-
-			if err := ioutil.WriteFile(releasesPath, releasesBytes, 0644); err != nil {
-				return "", err
-			}
-
-			helmArgs = append(helmArgs, "-f", releasesPath)
-		}
-	}
-
-	// Check if Global contains anything and append them
-	if currentContext.Global != nil {
-		ctx.Logger.Debugf("found global values for the current context")
-
-		globalYamlBytes, err := yaml.Marshal(map[string]interface{}{
-			"global": currentContext.Global,
-		})
-		if err != nil {
-			return "", err
-		}
-
-		ctx.Logger.Debugf("writing global values to %s", files.GlobalPath)
-
-		if err := ioutil.WriteFile(files.GlobalPath, globalYamlBytes, 0644); err != nil {
-			return "", err
-		}
-
-		helmArgs = append(helmArgs, "-f", files.GlobalPath)
-	}
-
+	// Construct the final helm command and run it
 	helmArgs = append(helmArgs, files.ChartDir)
 
 	ctx.Logger.Debugf("running helm command %s", strings.Join(helmArgs, " "))
-
 	helmCmd := execContext(helmArgs[0], helmArgs[1:]...)
 
 	if ctx.Explain {
