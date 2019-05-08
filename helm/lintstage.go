@@ -36,11 +36,6 @@ func NewLintStage() plan.Stage {
 }
 
 func (stage LintStage) Execute(ctx *ankh.ExecutionContext, input *string, namespace string, wildCardLabels []string) (string, error) {
-	if ctx.Explain {
-		panic("don't know how to explain lint yet")
-		return "", nil
-	}
-
 	if input == nil {
 		panic("Cannot lint nil input")
 	}

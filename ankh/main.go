@@ -62,11 +62,10 @@ func signalHandler(ctx *ankh.ExecutionContext, sigs chan os.Signal) {
 
 func main() {
 	app := cli.App("ankh", "Another Kubernetes Helper")
-	app.Spec = "[--verbose] [--explain] [--quiet] [--no-prompt] [--ignore-config-errors] [--ankhconfig] [--kubeconfig] [--datadir] [--release] [--context] [--environment] [--namespace] [--tag] [--set...]"
+	app.Spec = "[--verbose] [--quiet] [--no-prompt] [--ignore-config-errors] [--ankhconfig] [--kubeconfig] [--datadir] [--release] [--context] [--environment] [--namespace] [--tag] [--set...]"
 
 	var (
 		verbose            = app.BoolOpt("v verbose", false, "Verbose debug mode")
-		explain            = app.BoolOpt("explain", false, "Explain mode")
 		quiet              = app.BoolOpt("q quiet", false, "Quiet mode. Critical logging only. The quiet option overrides the verbose option.")
 		noPrompt           = app.BoolOpt("no-prompt", false, "Do not prompt for missing required configuration. Exit with non-zero status and a fatal log message instead.")
 		ignoreConfigErrors = app.BoolOpt("ignore-config-errors", false, "Ignore certain configuration errors that have defined, but potentially dangerous behavior.")
@@ -163,7 +162,6 @@ func main() {
 
 		ctx = &ankh.ExecutionContext{
 			Verbose:             *verbose,
-			Explain:             *explain,
 			Quiet:               *quiet,
 			AnkhConfigPath:      *ankhconfig,
 			KubeConfigPath:      *kubeconfig,
@@ -328,6 +326,27 @@ func main() {
 				filters = append(filters, string(filter))
 			}
 			ctx.Filters = filters
+
+			execute(ctx)
+			os.Exit(0)
+		}
+	})
+
+	app.Command("explain", "Explain how an Ankh file would be applied to a Kubernetes cluster", func(cmd *cli.Cmd) {
+		cmd.Spec = "[-f] [--chart] [--chart-path]"
+
+		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
+		chart := cmd.StringOpt("chart", "", "Limits the explain command to only the specified chart")
+		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
+
+		cmd.Action = func() {
+			ctx.AnkhFilePath = *ankhFilePath
+			ctx.Chart = *chart
+			if *chartPath != "" {
+				ctx.Chart = *chartPath
+				ctx.LocalChart = true
+			}
+			ctx.Mode = ankh.Explain
 
 			execute(ctx)
 			os.Exit(0)

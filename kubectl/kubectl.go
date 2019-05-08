@@ -3,6 +3,9 @@ package kubectl
 import (
 	"github.com/appnexus/ankh/context"
 	"github.com/appnexus/ankh/plan"
+
+	"fmt"
+	"strings"
 )
 
 type KubectlStage interface {
@@ -46,8 +49,10 @@ func (stage *KubectlRunner) Execute(ctx *ankh.ExecutionContext, input *string, n
 	finalArgs := stage.kubectl.GetFinalArgs(ctx)
 	cmd.AddArguments(finalArgs)
 
-	if ctx.Explain {
-		return cmd.Explain(), nil
+	if ctx.Mode == ankh.Explain {
+		// Sweet string badnesss.
+		in := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(*input), "&& \\"))
+		return fmt.Sprintf("(%s) | \\\n%s", in, cmd.Explain()), nil
 	}
 
 	ctx.Logger.Debugf("Running stage %+v with cmd: %+v", stage, cmd)

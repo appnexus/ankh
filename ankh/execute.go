@@ -232,6 +232,8 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 		// meaningfully (like it would be with apply), so we choose this method instead
 		// of prompting the user for a value that isn't meaningful.
 		switch ctx.Mode {
+		case ankh.Explain:
+			fallthrough
 		case ankh.Rollback:
 			fallthrough
 		case ankh.Get:
@@ -329,6 +331,8 @@ func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) {
 	switch ctx.Mode {
 	case ankh.Apply:
 		action = "Applying chart"
+	case ankh.Explain:
+		action = "Explaining chart"
 	case ankh.Deploy:
 		action = "Running multi-stage deployment on chart"
 	case ankh.Rollback:
@@ -357,7 +361,7 @@ func logExecuteAnkhFile(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) {
 	dryLog := ""
 	if ctx.DryRun {
 		dryLog = " (dry run)"
-	} else if ctx.Explain {
+	} else if ctx.Mode == ankh.Explain {
 		dryLog = " (explaining)"
 	}
 
@@ -419,15 +423,6 @@ func executeChartsOnNamespace(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFil
 	// Only pass wildcard labels for "get"-oriented operations.
 	useWildCardLabels := false
 	switch ctx.Mode {
-	//case ankh.Explain:
-	/*
-		if ctx.Mode == ankh.Explain {
-			// Sweet string badnesss.
-			helmOutput = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(helmOutput), "&& \\"))
-			fmt.Println(fmt.Sprintf("(%s) | \\\n%s", helmOutput, kubectlOutput))
-		} else if kubectlOutput != "" {
-			fmt.Println(kubectlOutput)
-	*/
 	case ankh.Diff:
 		fallthrough
 	case ankh.Get:
@@ -667,6 +662,8 @@ func planAndExecute(ctx *ankh.ExecutionContext, charts []ankh.Chart, namespace s
 				plan.PlanStage{Stage: kubectl.NewDiffStage()},
 			},
 		})
+	case ankh.Explain:
+		fallthrough
 	case ankh.Apply:
 		return plan.Execute(ctx, namespace, wildCardLabels, &plan.Plan{
 			PlanStages: []plan.PlanStage{

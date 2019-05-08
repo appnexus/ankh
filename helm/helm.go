@@ -130,7 +130,7 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, repository string, chart ank
 
 	chartDir := filepath.Join(tmpDir, name)
 	files = ankh.ChartFiles{
-		Dir:                      tmpDir,
+		TmpDir:                   tmpDir,
 		ChartDir:                 chartDir,
 		GlobalPath:               filepath.Join(tmpDir, "global.yaml"),
 		MetaPath:                 filepath.Join(chartDir, "ankh.yaml"),
