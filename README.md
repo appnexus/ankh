@@ -46,8 +46,9 @@ charts:
 
 ...or a single chart
 
+
 ```
-$ ankh -n mynamespace ... --chart haste-server@0.0.1
+$ ankh apply --chart haste-server@0.0.1
 ```
 
 ## Operations

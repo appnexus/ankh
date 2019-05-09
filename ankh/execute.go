@@ -705,7 +705,7 @@ func planAndExecute(ctx *ankh.ExecutionContext, charts []ankh.Chart, namespace s
 				plan.PlanStage{Stage: kubectl.NewPodStage(), Opts: plan.StageOpts{
 					PreExecute: func() bool {
 						// Evil hack
-						ctx.Logger.Infof("Watching pods...")
+						ctx.Logger.Infof("Watching pods... (press control-C to stop watching and continue)")
 						ctx.ExtraArgs = append(ctx.ExtraArgs, "-w")
 						ctx.ShouldCatchSignals = true
 						return true
@@ -718,15 +718,15 @@ func planAndExecute(ctx *ankh.ExecutionContext, charts []ankh.Chart, namespace s
 						ctx.ShouldCatchSignals = false
 						ctx.ExtraArgs = []string{}
 
-						selection, err := util.PromptForSelection([]string{"Rollback", "OK"},
-							"Finished watching pods. Select OK to continue, or Rollback to rollback.", false)
+						selection, err := util.PromptForSelection([]string{"OK", "Rollback"},
+							"Finished. Select OK to continue, or Rollback to rollback.", false)
 						check(err)
 
 						if selection == "OK" {
 							return false
 						}
 
-						ctx.Logger.Warnf("Rolling back...")
+						ctx.Logger.Warnf("Rolling back... (kubectl output below may be terse)")
 						return true
 					},
 				}},
