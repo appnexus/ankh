@@ -103,7 +103,7 @@ func main() {
 		namespace    = app.String(cli.StringOpt{
 			Name:      "n namespace",
 			Value:     "",
-			Desc:      "The namespace to use with kubectl. Optional. Overrides any namespace provided in an Ankh file.",
+			Desc:      "The namespace to use with kubectl. Optional. Overrides any other ways to set a namespace.",
 			SetByUser: &namespaceSet,
 		})
 		tagSet = false
@@ -297,12 +297,12 @@ func main() {
 		ctx.AnkhConfig = mergedAnkhConfig
 	}
 
-	app.Command("apply", "Apply an Ankh file to a Kubernetes cluster", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--jira-ticket] [--filter...]"
+	app.Command("apply", "Apply one or more charts to Kubernetes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[--ankhfile] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--jira-ticket] [--filter...]"
 
-		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
-		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually apply anything to a cluster")
-		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
+		ankhFilePath := cmd.StringOpt("ankhfile", "", "Path to an Ankh file for managing multiple charts")
+		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually apply anything")
+		chart := cmd.StringOpt("chart", "", "The chart to use")
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		slackChannel := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
 		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
@@ -332,11 +332,11 @@ func main() {
 		}
 	})
 
-	app.Command("explain", "Explain how an Ankh file would be applied to a Kubernetes cluster", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--chart] [--chart-path]"
+	app.Command("explain", "Explain how one or more charts would be applied to Kubernetes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[--ankhfile] [--chart] [--chart-path]"
 
-		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
-		chart := cmd.StringOpt("chart", "", "Limits the explain command to only the specified chart")
+		ankhFilePath := cmd.StringOpt("ankhfile", "", "Path to an Ankh file for managing multiple charts")
+		chart := cmd.StringOpt("chart", "", "The chart to use")
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 
 		cmd.Action = func() {
@@ -353,12 +353,10 @@ func main() {
 		}
 	})
 
-	app.Command("deploy", "Run a multi-stage deployment of an Ankh file to a Kubernetes cluster", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--jira-ticket] [--filter...]"
+	app.Command("deploy", "(experimental) Run a multi-stage deployment of a chart to Kubernetes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[--chart] [--chart-path] [--slack] [--slack-message] [--jira-ticket] [--filter...]"
 
-		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
-		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually deploy anything to a cluster")
-		chart := cmd.StringOpt("chart", "", "Limits the deploy command to only the specified chart")
+		chart := cmd.StringOpt("chart", "", "The chart to use")
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		slackChannel := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
 		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
@@ -366,8 +364,6 @@ func main() {
 		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
 
 		cmd.Action = func() {
-			ctx.AnkhFilePath = *ankhFilePath
-			ctx.DryRun = *dryRun
 			ctx.Chart = *chart
 			if *chartPath != "" {
 				ctx.Chart = *chartPath
@@ -383,17 +379,18 @@ func main() {
 			}
 			ctx.Filters = filters
 
+			ctx.Logger.Warnf("\"deploy\" is an experimental command.")
 			execute(ctx)
 			os.Exit(0)
 		}
 	})
 
-	app.Command("rollback", "Rollback deployments associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--jira-ticket] "
+	app.Command("rollback", "Rollback deployments associated with one or more charts from Kubernetes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[--ankhfile] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--jira-ticket] "
 
-		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
-		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually rollback anything to a cluster")
-		chart := cmd.StringOpt("chart", "", "Limits the rollback command to only the specified chart")
+		ankhFilePath := cmd.StringOpt("ankhfile", "", "Path to an Ankh file for managing multiple charts")
+		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually rollback anything")
+		chart := cmd.StringOpt("chart", "", "The chart to use")
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		slackChannel := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
 		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
@@ -437,11 +434,11 @@ func main() {
 		}
 	})
 
-	app.Command("diff", "Diff against live objects associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--chart] [--chart-path] [--filter...]"
+	app.Command("diff", "Diff against live objects associated with one or more charts from Kubernetes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[--ankhfile] [--chart] [--chart-path] [--filter...]"
 
-		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
-		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
+		ankhFilePath := cmd.StringOpt("ankhfile", "", "Path to an Ankh file for managing multiple charts")
+		chart := cmd.StringOpt("chart", "", "The chart to use")
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
 
@@ -466,18 +463,16 @@ func main() {
 		}
 	})
 
-	app.Command("get", "Get objects associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--chart] [--chart-path] [--filter...] [EXTRA...]"
+	app.Command("get", "Get objects associated with a chart from Kubernetes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[--chart] [--chart-path] [--filter...] [EXTRA...]"
 
-		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
-		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
+		chart := cmd.StringOpt("chart", "", "The chart to use")
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
 		extra := cmd.StringsArg("EXTRA", []string{}, "Extra arguments to pass to `kubectl`, which can be specified after `--` eg: `ankh ... get -- -o json`")
 
 		cmd.Action = func() {
 			setLogLevel(ctx, logrus.InfoLevel)
-			ctx.AnkhFilePath = *ankhFilePath
 			ctx.DryRun = false
 			ctx.Chart = *chart
 			if *chartPath != "" {
@@ -500,11 +495,10 @@ func main() {
 		}
 	})
 
-	app.Command("pods", "Get pods associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [-w] [-d] [--chart] [--chart-path] [EXTRA...]"
+	app.Command("pods", "Get pods associated with a chart from Kubernetes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[-w] [-d] [--chart] [--chart-path] [EXTRA...]"
 
-		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
-		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
+		chart := cmd.StringOpt("chart", "", "The chart to use")
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		watch := cmd.BoolOpt("w watch", false, "Watch for updates (ie: pass -w to kubectl)")
 		describe := cmd.BoolOpt("d describe", false, "Use `kubectl describe ...` instead of `kubectl get -o wide ...` for pods")
@@ -512,7 +506,6 @@ func main() {
 
 		cmd.Action = func() {
 			setLogLevel(ctx, logrus.InfoLevel)
-			ctx.AnkhFilePath = *ankhFilePath
 			ctx.DryRun = false
 			ctx.Describe = *describe
 			ctx.Chart = *chart
@@ -536,21 +529,19 @@ func main() {
 		}
 	})
 
-	app.Command("logs", "Get logs for pods associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-c] [-f] [--filename] [--previous] [--tail] [--chart] [--chart-path] [CONTAINER]"
+	app.Command("logs", "Get logs for a pod associated with a chart from Kubernetes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[-c] [-f] [--previous] [--tail] [--chart] [--chart-path] [CONTAINER]"
 
-		ankhFilePath := cmd.StringOpt("filename", "ankh.yaml", "Config file name")
 		numTailLines := cmd.IntOpt("t tail", 10, "The number of most recent log lines to see. Pass 0 to receive all log lines available from Kubernetes, which is subject to its own retential policy.")
 		follow := cmd.BoolOpt("f", false, "Follow logs")
 		previous := cmd.BoolOpt("p previous", false, "Get logs for the previously terminated container, if any")
-		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
+		chart := cmd.StringOpt("chart", "", "The chart to use")
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
-		container := cmd.StringOpt("c container", "", "The container to exec on. Required when there is more than one container running in the pods associated with the templated Ankh file.")
-		containerArg := cmd.StringArg("CONTAINER", "", "The container to get logs for. Required when there is more than one container running in the pods associated with the templated Ankh file.")
+		container := cmd.StringOpt("c container", "", "The container to exec on.")
+		containerArg := cmd.StringArg("CONTAINER", "", "The container to get logs for.")
 
 		cmd.Action = func() {
 			setLogLevel(ctx, logrus.InfoLevel)
-			ctx.AnkhFilePath = *ankhFilePath
 			ctx.DryRun = false
 			ctx.Chart = *chart
 			if *chartPath != "" {
@@ -585,18 +576,16 @@ func main() {
 		}
 	})
 
-	app.Command("exec", "Exec a command on pods associated with a templated Ankh file from Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-c] [--filename] [--chart] [--chart-path] [PASSTHROUGH...]"
+	app.Command("exec", "Exec a command on a pod associated with a chart in Kubernetes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[-c] [--chart] [--chart-path] [PASSTHROUGH...]"
 
-		ankhFilePath := cmd.StringOpt("filename", "ankh.yaml", "Config file name")
-		chart := cmd.StringOpt("chart", "", "Limits the apply command to only the specified chart")
+		chart := cmd.StringOpt("chart", "", "The chart to use")
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
-		container := cmd.StringOpt("c container", "", "The container to exec on. Required when there is more than one container running in the pods associated with the templated Ankh file.")
+		container := cmd.StringOpt("c container", "", "The container to exec the command on")
 		extra := cmd.StringsArg("PASSTHROUGH", []string{}, "Pass-through arguments to provide to `kubectl` after `exec`, which can be specified after `--` eg: `ankh ... get -- -o json`")
 
 		cmd.Action = func() {
 			setLogLevel(ctx, logrus.InfoLevel)
-			ctx.AnkhFilePath = *ankhFilePath
 			ctx.DryRun = false
 			ctx.Chart = *chart
 			if *chartPath != "" {
@@ -620,11 +609,11 @@ func main() {
 		}
 	})
 
-	app.Command("lint", "Lint an Ankh file, checking for possible errors or mistakes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--chart] [--chart-path] [--filter...]"
+	app.Command("lint", "Lint one or more charts, checking for possible errors or mistakes", func(cmd *cli.Cmd) {
+		cmd.Spec = "[--ankhfile] [--chart] [--chart-path] [--filter...]"
 
-		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
-		chart := cmd.StringOpt("chart", "", "Limits the lint command to only the specified chart")
+		ankhFilePath := cmd.StringOpt("ankhfile", "", "Path to an Ankh file for managing multiple charts")
+		chart := cmd.StringOpt("chart", "", "The chart to use")
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
 
@@ -647,11 +636,11 @@ func main() {
 		}
 	})
 
-	app.Command("template", "Output the results of templating an Ankh file", func(cmd *cli.Cmd) {
-		cmd.Spec = "[-f] [--chart] [--chart-path] [--filter...]"
+	app.Command("template", "Output the results of templating one or more charts.", func(cmd *cli.Cmd) {
+		cmd.Spec = "[--ankhfile] [--chart] [--chart-path] [--filter...]"
 
-		ankhFilePath := cmd.StringOpt("f filename", "ankh.yaml", "Config file name")
-		chart := cmd.StringOpt("chart", "", "Limits the template command to only the specified chart")
+		ankhFilePath := cmd.StringOpt("ankhfile", "", "Path to an Ankh file for managing multiple charts")
+		chart := cmd.StringOpt("chart", "", "The chart to use")
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
 
@@ -873,7 +862,7 @@ func main() {
 					}
 				}
 
-				newAnkhConfig.Include = append(ctx.AnkhConfig.Include, *sourceArg)
+				newAnkhConfig.Include = append(newAnkhConfig.Include, *sourceArg)
 				ctx.Logger.Infof("Added configuration source \"%v\" to config path \"%v\"",
 					*sourceArg, ctx.AnkhConfigPath)
 

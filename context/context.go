@@ -426,6 +426,10 @@ func ParseAnkhFile(ankhFilePath string) (AnkhFile, error) {
 
 func GetAnkhFile(ctx *ExecutionContext) (AnkhFile, error) {
 	if ctx.Chart == "" {
+		if ctx.AnkhFilePath == "" {
+			// No ankhfile.
+			return AnkhFile{}, nil
+		}
 		ctx.Logger.Infof("Reading Ankh file %v", ctx.AnkhFilePath)
 		ankhFile, err := ParseAnkhFile(ctx.AnkhFilePath)
 		if err == nil {

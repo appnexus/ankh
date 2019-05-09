@@ -29,7 +29,6 @@ func Execute(ctx *ankh.ExecutionContext, namespace string, wildCardLabels []stri
 			ok := ps.Opts.PreExecute()
 			if !ok {
 				// TODO this is sloppy and bad
-				ctx.Logger.Infof("Skipping stage.")
 				if !ps.Opts.PassThroughInput {
 					input = ""
 				}
