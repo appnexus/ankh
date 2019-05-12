@@ -623,16 +623,12 @@ func Bump(ctx *ankh.ExecutionContext, semVerType string) error {
 	return nil
 }
 
-func filterOutput(ctx *ankh.ExecutionContext, helmOutput string) string {
-	ctx.Logger.Debugf("Filtering with inclusive list `%v`", ctx.Filters)
+func filterOutput(filters []string, helmOutput string) string {
 
 	// The golang yaml library doesn't actually support whitespace/comment
 	// preserving round-trip parsing. So, we're going to filter the "hard way".
 	filtered := []string{}
-	// This is actually broken because it splits even when `---` is somewhere
-	// in the middle of the line. That's very problematic when chart templates
-	// put yaml literals inside of annotations on objects.
-	objs := strings.Split(helmOutput, "---")
+	objs := strings.Split(helmOutput, "\n---")
 	for _, obj := range objs {
 		lines := strings.Split(obj, "\n")
 		for _, line := range lines {
@@ -640,7 +636,7 @@ func filterOutput(ctx *ankh.ExecutionContext, helmOutput string) string {
 				continue
 			}
 			matched := false
-			for _, s := range ctx.Filters {
+			for _, s := range filters {
 				kind := strings.Trim(line[5:], " ")
 				if strings.EqualFold(kind, s) {
 					matched = true

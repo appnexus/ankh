@@ -31,7 +31,8 @@ func (stage TemplateStage) Execute(ctx *ankh.ExecutionContext, input *string, na
 	}
 
 	if len(ctx.Filters) > 0 {
-		helmOutput = filterOutput(ctx, helmOutput)
+		ctx.Logger.Debugf("Filtering with inclusive list `%v`", ctx.Filters)
+		helmOutput = filterOutput(ctx.Filters, helmOutput)
 	}
 	return helmOutput, nil
 }
