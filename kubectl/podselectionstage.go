@@ -31,7 +31,9 @@ func getPodAndContainerSelection(ctx *ankh.ExecutionContext, kubectlOut string) 
 	for i, _ := range lines {
 		lines[i] = strings.Trim(lines[i], ", ")
 	}
-	if len(lines) > 2 {
+	if len(lines) <= 1 {
+		return []string{}, fmt.Errorf("No pods found for input chart")
+	} else if len(lines) > 2 {
 		// Sort lines by CREATED column
 		sort.Slice(lines, func(i, j int) bool {
 			f1 := strings.Fields(lines[i])
