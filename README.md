@@ -24,6 +24,12 @@ make install # installs to $GOPATH/bin
 go get github.com/appnexus/ankh/ankh
 ```
 
+### Using Homebrew
+```sh
+brew tap appnexus/ankh git@github.com:appnexus/ankh.git
+brew install ankh
+```
+
 ## Introduction
 
 Ankh helps manage application deployments across various Kubernetes clusters and namespaces. Users manage their deployments using Helm charts, but without the additional complexity of running Tiller.
