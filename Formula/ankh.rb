@@ -8,7 +8,6 @@ class Ankh < Formula
   depends_on "kubernetes-helm"
 
   def install
-    ENV["GOPATH"] = buildpath
     (buildpath/"src/github.com/appnexus/ankh").install buildpath.children
     cd "src/github.com/appnexus/ankh/ankh" do
       system "go", "build", "-ldflags", "-X main.AnkhBuildVersion=#{version}"
