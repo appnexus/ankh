@@ -650,5 +650,9 @@ func filterOutput(filters []string, helmOutput string) string {
 		}
 	}
 
-	return "---" + strings.Join(filtered, "---")
+	output := ""
+	for _, s := range filtered {
+		output += fmt.Sprintf("---\n%v\n", strings.Trim(s, "\n"))
+	}
+	return output
 }
