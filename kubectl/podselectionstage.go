@@ -45,7 +45,8 @@ func getPodAndContainerSelection(ctx *ankh.ExecutionContext, kubectlOut string) 
 		})
 		var err error
 		if ctx.NoPrompt {
-			lineSelection = lines[0]
+			// The first line is the header, so the "pod" is lines[1].
+			lineSelection = lines[1]
 			ctx.Logger.Warnf("Selecting first pod (of %d) \"%v\" due to `--no-prompt`",
 				len(lines), lineSelection)
 		} else {
