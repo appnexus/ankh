@@ -407,7 +407,7 @@ func execute(ctx *ankh.ExecutionContext) {
 	}
 
 	if ctx.SlackChannel != "" {
-		if err := slack.PingSlackChannel(ctx); err != nil {
+		if err := slack.PingSlackChannel(ctx, &rootAnkhFile); err != nil {
 			ctx.Logger.Errorf("Slack message failed with error: %v", err)
 		}
 	}

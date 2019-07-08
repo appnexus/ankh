@@ -14,14 +14,14 @@ const DEFAULT_USERNAME = "ankh"
 
 // Send out a release message based on the chart, version and environment
 // supplied by the user
-func PingSlackChannel(ctx *ankh.ExecutionContext) error {
+func PingSlackChannel(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error {
 
 	// attempt the connection
 	api := slack.New(ctx.AnkhConfig.Slack.Token)
 
 	// get environment from env vs. context
 	envOrContext := util.GetEnvironmentOrContext(ctx.Environment, ctx.Context)
-	messageText, err := getMessageText(ctx, envOrContext)
+	messageText, err := getMessageText(ctx, &ankhFile.Charts[0], envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for slack message. Using default value. Error: %v", err)
 	}
@@ -101,7 +101,7 @@ func getSlackChannelIDByName(api *slack.Client, channelName string) (string, err
 	return "", fmt.Errorf("channel %v not found", channelName)
 }
 
-func getMessageText(ctx *ankh.ExecutionContext, envOrContext string) (string, error) {
+func getMessageText(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext string) (string, error) {
 
 	// Override takes precedence
 	if ctx.SlackMessageOverride != "" {
@@ -114,8 +114,10 @@ func getMessageText(ctx *ankh.ExecutionContext, envOrContext string) (string, er
 		format = ctx.AnkhConfig.Slack.RollbackFormat
 	}
 
+	chartName := fmt.Sprintf("%v@%v", chart.Name, chart.Version)
+
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, ctx.Chart, ctx.DeploymentTag, envOrContext)
+		message, err := util.ReplaceFormatVariables(format, chartName, ctx.DeploymentTag, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for message", format)
 		} else {
@@ -124,7 +126,7 @@ func getMessageText(ctx *ankh.ExecutionContext, envOrContext string) (string, er
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForMessageText(ctx.Chart, ctx.DeploymentTag, envOrContext)
+	message, err := promptForMessageText(chartName, ctx.DeploymentTag, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for message. Will use default message")
 	}
