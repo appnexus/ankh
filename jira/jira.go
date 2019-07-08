@@ -149,10 +149,13 @@ func getSummary(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext stri
 		format = ctx.AnkhConfig.Jira.RollbackSummaryFormat
 	}
 
-	chartName := fmt.Sprintf("%v@%v", chart.Name, chart.Version)
+	chartString, err := util.GetChartString(chart)
+	if err != nil {
+		return "", err
+	}
 
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, chartName, *chart.Tag, envOrContext)
+		message, err := util.ReplaceFormatVariables(format, chartString, *chart.Tag, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for subject", format)
 		} else {
@@ -161,7 +164,7 @@ func getSummary(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext stri
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForSummary(chartName, *chart.Tag, envOrContext)
+	message, err := promptForSummary(chartString, *chart.Tag, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for subject. Will use default subject")
 	}
@@ -176,10 +179,13 @@ func getDescription(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 		format = ctx.AnkhConfig.Jira.RollbackDescriptionFormat
 	}
 
-	chartName := fmt.Sprintf("%v@%v", chart.Name, chart.Version)
+	chartString, err := util.GetChartString(chart)
+	if err != nil {
+		return "", err
+	}
 
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, chartName, *chart.Tag, envOrContext)
+		message, err := util.ReplaceFormatVariables(format, chartString, *chart.Tag, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for description", format)
 		} else {
@@ -188,7 +194,7 @@ func getDescription(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForDescription(chartName, *chart.Tag, envOrContext)
+	message, err := promptForDescription(chartString, *chart.Tag, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for description. Will use default description")
 	}
