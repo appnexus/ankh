@@ -20,8 +20,8 @@ func PingSlackChannel(ctx *ankh.ExecutionContext) error {
 	api := slack.New(ctx.AnkhConfig.Slack.Token)
 
 	// get environment from env vs. context
-	deploymentEnvironment := util.GetEnvironmentOrContext(ctx.Environment, ctx.Context)
-	messageText, err := getMessageText(ctx, deploymentEnvironment)
+	envOrContext := util.GetEnvironmentOrContext(ctx.Environment, ctx.Context)
+	messageText, err := getMessageText(ctx, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for slack message. Using default value. Error: %v", err)
 	}
@@ -101,7 +101,7 @@ func getSlackChannelIDByName(api *slack.Client, channelName string) (string, err
 	return "", fmt.Errorf("channel %v not found", channelName)
 }
 
-func getMessageText(ctx *ankh.ExecutionContext, env string) (string, error) {
+func getMessageText(ctx *ankh.ExecutionContext, envOrContext string) (string, error) {
 
 	// Override takes precedence
 	if ctx.SlackMessageOverride != "" {
@@ -115,7 +115,7 @@ func getMessageText(ctx *ankh.ExecutionContext, env string) (string, error) {
 	}
 
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, ctx.Chart, ctx.DeploymentTag, env)
+		message, err := util.ReplaceFormatVariables(format, ctx.Chart, ctx.DeploymentTag, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for message", format)
 		} else {
@@ -124,7 +124,7 @@ func getMessageText(ctx *ankh.ExecutionContext, env string) (string, error) {
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForMessageText(ctx.Chart, ctx.DeploymentTag, env)
+	message, err := promptForMessageText(ctx.Chart, ctx.DeploymentTag, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for message. Will use default message")
 	}
@@ -132,14 +132,14 @@ func getMessageText(ctx *ankh.ExecutionContext, env string) (string, error) {
 	return message, nil
 }
 
-func promptForMessageText(chart string, version string, env string) (string, error) {
+func promptForMessageText(chart string, version string, envOrContext string) (string, error) {
 	currentUser, err := user.Current()
 	if err != nil {
 		return "", err
 	}
-	defaultMessage := fmt.Sprintf("%v is releasing %v@%v to *%v*", currentUser.Username, chart, version, env)
-	if env == "rollback" {
-		defaultMessage = fmt.Sprintf("%v is rolling back %v in *%v*", currentUser, chart, env)
+	defaultMessage := fmt.Sprintf("%v is releasing %v@%v to *%v*", currentUser.Username, chart, version, envOrContext)
+	if envOrContext == "rollback" {
+		defaultMessage = fmt.Sprintf("%v is rolling back %v in *%v*", currentUser, chart, envOrContext)
 	}
 
 	message, err := util.PromptForInput(defaultMessage, "Slack Message")
