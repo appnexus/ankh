@@ -117,7 +117,7 @@ func getMessageText(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 	chartName := fmt.Sprintf("%v@%v", chart.Name, chart.Version)
 
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, chartName, ctx.DeploymentTag, envOrContext)
+		message, err := util.ReplaceFormatVariables(format, chartName, *chart.Tag, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for message", format)
 		} else {
@@ -126,7 +126,7 @@ func getMessageText(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForMessageText(chartName, ctx.DeploymentTag, envOrContext)
+	message, err := promptForMessageText(chartName, *chart.Tag, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for message. Will use default message")
 	}
