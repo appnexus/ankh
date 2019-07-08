@@ -413,7 +413,7 @@ func execute(ctx *ankh.ExecutionContext) {
 	}
 
 	if ctx.CreateJiraTicket {
-		if err := jira.CreateJiraTicket(ctx); err != nil {
+		if err := jira.CreateJiraTicket(ctx, &rootAnkhFile); err != nil {
 			ctx.Logger.Errorf("Unable to create JIRA ticket. %v", err)
 		}
 	}

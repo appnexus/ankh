@@ -9,7 +9,7 @@ import (
 	"github.com/appnexus/ankh/util"
 )
 
-func CreateJiraTicket(ctx *ankh.ExecutionContext) error {
+func CreateJiraTicket(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error {
 	base := ctx.AnkhConfig.Jira.BaseUrl
 	if base == "" {
 		return fmt.Errorf("No Jira base url provided. Unable to create ticket.")
@@ -30,8 +30,8 @@ func CreateJiraTicket(ctx *ankh.ExecutionContext) error {
 	}
 
 	envOrContext := util.GetEnvironmentOrContext(ctx.Environment, ctx.Context)
-	summary, err := getSummary(ctx, envOrContext)
-	description, err := getDescription(ctx, envOrContext)
+	summary, err := getSummary(ctx, &ankhFile.Charts[0], envOrContext)
+	description, err := getDescription(ctx, &ankhFile.Charts[0], envOrContext)
 
 	jiraClient, err := jira.NewClient(tp.Client(), base)
 	if err != nil {
@@ -123,15 +123,17 @@ func promptForAuth(ctx *ankh.ExecutionContext, retryCount int) (string, string, 
 	return providedUsername, providedPassword, nil
 }
 
-func getSummary(ctx *ankh.ExecutionContext, envOrContext string) (string, error) {
+func getSummary(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext string) (string, error) {
 	// If format is set, use that
 	format := ctx.AnkhConfig.Jira.SummaryFormat
 	if ctx.Mode == ankh.Rollback {
 		format = ctx.AnkhConfig.Jira.RollbackSummaryFormat
 	}
 
+	chartName := fmt.Sprintf("%v@%v", chart.Name, chart.Version)
+
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, ctx.Chart, ctx.DeploymentTag, envOrContext)
+		message, err := util.ReplaceFormatVariables(format, chartName, ctx.DeploymentTag, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for subject", format)
 		} else {
@@ -140,7 +142,7 @@ func getSummary(ctx *ankh.ExecutionContext, envOrContext string) (string, error)
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForSummary(ctx.Chart, ctx.DeploymentTag, envOrContext)
+	message, err := promptForSummary(chartName, ctx.DeploymentTag, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for subject. Will use default subject")
 	}
@@ -148,15 +150,17 @@ func getSummary(ctx *ankh.ExecutionContext, envOrContext string) (string, error)
 	return message, nil
 }
 
-func getDescription(ctx *ankh.ExecutionContext, envOrContext string) (string, error) {
+func getDescription(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext string) (string, error) {
 	// If format is set, use that
 	format := ctx.AnkhConfig.Jira.DescriptionFormat
 	if ctx.DeploymentTag == "rollback" {
 		format = ctx.AnkhConfig.Jira.RollbackDescriptionFormat
 	}
 
+	chartName := fmt.Sprintf("%v@%v", chart.Name, chart.Version)
+
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, ctx.Chart, ctx.DeploymentTag, envOrContext)
+		message, err := util.ReplaceFormatVariables(format, chartName, ctx.DeploymentTag, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for description", format)
 		} else {
@@ -165,7 +169,7 @@ func getDescription(ctx *ankh.ExecutionContext, envOrContext string) (string, er
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForDescription(ctx.Chart, ctx.DeploymentTag, envOrContext)
+	message, err := promptForDescription(chartName, ctx.DeploymentTag, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for description. Will use default description")
 	}
