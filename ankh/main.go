@@ -304,7 +304,7 @@ func main() {
 		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually apply anything")
 		chart := cmd.StringOpt("chart", "", "The chart to use")
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
-		slackChannel := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
+		slackChannels := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
 		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
 		createJiraTicket := cmd.BoolOpt("j jira-ticket", false, "Create a JIRA ticket to track update")
 		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
@@ -318,7 +318,7 @@ func main() {
 				ctx.LocalChart = true
 			}
 			ctx.Mode = ankh.Apply
-			ctx.SlackChannel = *slackChannel
+			ctx.SlackChannels = strings.Split(*slackChannels, ",");
 			ctx.SlackMessageOverride = *slackMessageOverride
 			ctx.CreateJiraTicket = *createJiraTicket
 			filters := []string{}
@@ -358,7 +358,7 @@ func main() {
 
 		chart := cmd.StringOpt("chart", "", "The chart to use")
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
-		slackChannel := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
+		slackChannels := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel(s) about application update")
 		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
 		createJiraTicket := cmd.BoolOpt("j jira-ticket", false, "Create a JIRA ticket to track update")
 		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
@@ -369,8 +369,8 @@ func main() {
 				ctx.Chart = *chartPath
 				ctx.LocalChart = true
 			}
-			ctx.Mode = ankh.Deploy
-			ctx.SlackChannel = *slackChannel
+			ctx.Mode = ankh.Apply
+			ctx.SlackChannels = append(ctx.SlackChannels, strings.Split(*slackChannels, ",")...)
 			ctx.SlackMessageOverride = *slackMessageOverride
 			ctx.CreateJiraTicket = *createJiraTicket
 			filters := []string{}
@@ -392,7 +392,7 @@ func main() {
 		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually rollback anything")
 		chart := cmd.StringOpt("chart", "", "The chart to use")
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
-		slackChannel := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
+		slackChannels := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
 		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
 		createJiraTicket := cmd.BoolOpt("j jira-ticket", false, "Create a JIRA ticket to track update")
 
@@ -405,7 +405,7 @@ func main() {
 				ctx.LocalChart = true
 			}
 			ctx.Mode = ankh.Rollback
-			ctx.SlackChannel = *slackChannel
+			ctx.AnkhConfig.Slack.Channels = append(ctx.AnkhConfig.Slack.Channels, strings.Split(*slackChannels, ",")...)
 			ctx.SlackMessageOverride = *slackMessageOverride
 			ctx.CreateJiraTicket = *createJiraTicket
 

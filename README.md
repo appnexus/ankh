@@ -270,6 +270,7 @@ When invoked, Ankh will operate over both the `haste-server` and `myservice` cha
 | format        | string | Optional. Format of slack message that will be used. See available variables below. |
 | rollbackFormat | string | Optional. Format of message for rollbacks that will be used. See available variables below. |
 | pretext       | string | Optional. Pretext for slack message. Default is `A new release notification has been received`. |
+| channels       | []string | Optional. Channel[s} to post the message to. |
 
 #### `JiraConfig`
 | Field         | Type     | Description                                                                                                          |
