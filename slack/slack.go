@@ -3,6 +3,7 @@ package slack
 import (
 	"fmt"
 	"os/user"
+	"strings"
 
 	ankh "github.com/appnexus/ankh/context"
 	"github.com/appnexus/ankh/util"
@@ -21,10 +22,19 @@ func PingSlackChannel(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error
 
 	// get environment from env vs. context
 	envOrContext := util.GetEnvironmentOrContext(ctx.Environment, ctx.Context)
-	messageText, err := getMessageText(ctx, &ankhFile.Charts[0], envOrContext)
-	if err != nil {
-		ctx.Logger.Infof("Unable to prompt for slack message. Using default value. Error: %v", err)
+
+	var messages []string
+	for i := 0; i < len(ankhFile.Charts); i++ {
+		chart := &ankhFile.Charts[i]
+		message, err := getMessageText(ctx, chart, envOrContext)
+		if err != nil {
+			ctx.Logger.Infof("Unable to prompt for slack message. Using default value. Error: %v", err)
+			return err
+		} else {
+			messages = append(messages, message)
+		}
 	}
+	messageText := strings.Join(messages, "\n")
 
 	pretext := ctx.AnkhConfig.Slack.Pretext
 	if pretext == "" {
@@ -59,11 +69,12 @@ func PingSlackChannel(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error
 		}
 
 		_, _, err = api.PostMessage(channelId, slack.MsgOptionAttachments(attachment), slack.MsgOptionPostMessageParameters(messageParams))
+		return err
 	} else {
 		ctx.Logger.Infof("--dry-run set so not sending message '%v' to slack channel %v", messageText, ctx.SlackChannel)
 	}
 
-	return err
+	return nil
 }
 
 func getSlackChannelIDByName(api *slack.Client, channelName string) (string, error) {

@@ -3,6 +3,7 @@ package jira
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	jira "github.com/andygrunwald/go-jira"
 	ankh "github.com/appnexus/ankh/context"
@@ -30,8 +31,26 @@ func CreateJiraTicket(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error
 	}
 
 	envOrContext := util.GetEnvironmentOrContext(ctx.Environment, ctx.Context)
-	summary, err := getSummary(ctx, &ankhFile.Charts[0], envOrContext)
-	description, err := getDescription(ctx, &ankhFile.Charts[0], envOrContext)
+
+	var summaries []string
+	var descriptions []string
+	for i := 0; i < len(ankhFile.Charts); i++ {
+		chart := &ankhFile.Charts[i]
+		summary, err := getSummary(ctx, chart, envOrContext)
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			summaries = append(summaries, summary)
+		}
+		description, err := getDescription(ctx, chart, envOrContext)
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			descriptions = append(descriptions, description)
+		}
+	}
+	summaryText := strings.Join(summaries, ", ")
+	descriptionText := strings.Join(descriptions, "\n")
 
 	jiraClient, err := jira.NewClient(tp.Client(), base)
 	if err != nil {
@@ -45,7 +64,7 @@ func CreateJiraTicket(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error
 			Reporter: &jira.User{
 				Name: username,
 			},
-			Summary: summary,
+			Summary: summaryText,
 			// TODO: Should this be defined in ankh config?
 			Type: jira.IssueType{
 				Name: "Task",
@@ -53,7 +72,7 @@ func CreateJiraTicket(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error
 			Project: jira.Project{
 				Key: queue,
 			},
-			Description: description,
+			Description: descriptionText,
 		},
 	}
 
@@ -74,7 +93,7 @@ func CreateJiraTicket(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error
 		ctx.Logger.Infof("Created JIRA Ticket: %v", issue.Key)
 		return nil
 	} else {
-		ctx.Logger.Infof("--dry-run set, not creating JIRA Ticket for %v queue with summary '%v' and description '%v'", queue, summary, description)
+		ctx.Logger.Infof("--dry-run set, not creating JIRA Ticket for %v queue with summary '%v' and description '%v'", queue, summaryText, descriptionText)
 		return nil
 	}
 }
