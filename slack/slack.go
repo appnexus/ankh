@@ -28,8 +28,7 @@ func PingSlackChannel(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error
 		chart := &ankhFile.Charts[i]
 		message, err := getMessageText(ctx, chart, envOrContext)
 		if err != nil {
-			ctx.Logger.Infof("Unable to prompt for slack message. Using default value. Error: %v", err)
-			return err
+			return fmt.Errorf("Unable to prompt for slack message. Using default value. Error: %v", err)
 		} else {
 			messages = append(messages, message)
 		}
