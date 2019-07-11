@@ -3,6 +3,7 @@ package slack
 import (
 	"fmt"
 	"os/user"
+	"strings"
 
 	ankh "github.com/appnexus/ankh/context"
 	"github.com/appnexus/ankh/util"
@@ -14,17 +15,25 @@ const DEFAULT_USERNAME = "ankh"
 
 // Send out a release message based on the chart, version and environment
 // supplied by the user
-func PingSlackChannel(ctx *ankh.ExecutionContext) error {
+func PingSlackChannel(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error {
 
 	// attempt the connection
 	api := slack.New(ctx.AnkhConfig.Slack.Token)
 
 	// get environment from env vs. context
-	deploymentEnvironment := util.GetEnvironmentOrContext(ctx.Environment, ctx.Context)
-	messageText, err := getMessageText(ctx, deploymentEnvironment)
-	if err != nil {
-		ctx.Logger.Infof("Unable to prompt for slack message. Using default value. Error: %v", err)
+	envOrContext := util.GetEnvironmentOrContext(ctx.Environment, ctx.Context)
+
+	var messages []string
+	for i := 0; i < len(ankhFile.Charts); i++ {
+		chart := &ankhFile.Charts[i]
+		message, err := getMessageText(ctx, chart, envOrContext)
+		if err != nil {
+			return fmt.Errorf("Unable to prompt for slack message. Using default value. Error: %v", err)
+		} else {
+			messages = append(messages, message)
+		}
 	}
+	messageText := strings.Join(messages, "\n")
 
 	pretext := ctx.AnkhConfig.Slack.Pretext
 	if pretext == "" {
@@ -52,18 +61,19 @@ func PingSlackChannel(ctx *ankh.ExecutionContext) error {
 		Username: username,
 	}
 
-	channelId, err := getSlackChannelIDByName(api, ctx.SlackChannel)
-	if err != nil {
-		return err
-	}
-
 	if !ctx.DryRun {
+		channelId, err := getSlackChannelIDByName(api, ctx.SlackChannel)
+		if err != nil {
+			return err
+		}
+
 		_, _, err = api.PostMessage(channelId, slack.MsgOptionAttachments(attachment), slack.MsgOptionPostMessageParameters(messageParams))
+		return err
 	} else {
 		ctx.Logger.Infof("--dry-run set so not sending message '%v' to slack channel %v", messageText, ctx.SlackChannel)
 	}
 
-	return err
+	return nil
 }
 
 func getSlackChannelIDByName(api *slack.Client, channelName string) (string, error) {
@@ -101,7 +111,7 @@ func getSlackChannelIDByName(api *slack.Client, channelName string) (string, err
 	return "", fmt.Errorf("channel %v not found", channelName)
 }
 
-func getMessageText(ctx *ankh.ExecutionContext, env string) (string, error) {
+func getMessageText(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext string) (string, error) {
 
 	// Override takes precedence
 	if ctx.SlackMessageOverride != "" {
@@ -114,8 +124,13 @@ func getMessageText(ctx *ankh.ExecutionContext, env string) (string, error) {
 		format = ctx.AnkhConfig.Slack.RollbackFormat
 	}
 
+	chartString, err := util.GetChartString(chart)
+	if err != nil {
+		return "", err
+	}
+
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, ctx.Chart, ctx.DeploymentTag, env)
+		message, err := util.ReplaceFormatVariables(format, chartString, *chart.Tag, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for message", format)
 		} else {
@@ -124,7 +139,7 @@ func getMessageText(ctx *ankh.ExecutionContext, env string) (string, error) {
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForMessageText(ctx.Chart, ctx.DeploymentTag, env)
+	message, err := promptForMessageText(chartString, *chart.Tag, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for message. Will use default message")
 	}
@@ -132,14 +147,14 @@ func getMessageText(ctx *ankh.ExecutionContext, env string) (string, error) {
 	return message, nil
 }
 
-func promptForMessageText(chart string, version string, env string) (string, error) {
+func promptForMessageText(chart string, version string, envOrContext string) (string, error) {
 	currentUser, err := user.Current()
 	if err != nil {
 		return "", err
 	}
-	defaultMessage := fmt.Sprintf("%v is releasing %v@%v to *%v*", currentUser.Username, chart, version, env)
-	if env == "rollback" {
-		defaultMessage = fmt.Sprintf("%v is rolling back %v in *%v*", currentUser, chart, env)
+	defaultMessage := fmt.Sprintf("%v is releasing %v@%v to *%v*", currentUser.Username, chart, version, envOrContext)
+	if envOrContext == "rollback" {
+		defaultMessage = fmt.Sprintf("%v is rolling back %v in *%v*", currentUser, chart, envOrContext)
 	}
 
 	message, err := util.PromptForInput(defaultMessage, "Slack Message")

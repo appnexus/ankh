@@ -407,13 +407,13 @@ func execute(ctx *ankh.ExecutionContext) {
 	}
 
 	if ctx.SlackChannel != "" {
-		if err := slack.PingSlackChannel(ctx); err != nil {
+		if err := slack.PingSlackChannel(ctx, &rootAnkhFile); err != nil {
 			ctx.Logger.Errorf("Slack message failed with error: %v", err)
 		}
 	}
 
 	if ctx.CreateJiraTicket {
-		if err := jira.CreateJiraTicket(ctx); err != nil {
+		if err := jira.CreateJiraTicket(ctx, &rootAnkhFile); err != nil {
 			ctx.Logger.Errorf("Unable to create JIRA ticket. %v", err)
 		}
 	}

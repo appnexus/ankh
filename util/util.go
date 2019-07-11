@@ -621,11 +621,16 @@ func GetEnvironmentOrContext(environment string, context string) string {
 	return ""
 }
 
-func GetAppVersion(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) string {
-
-	chart := &ankhFile.Charts[0]
-
-	return *chart.Tag
+func GetChartString(chart *ankh.Chart) (string, error) {
+	if chart.Path != "" {
+		absChartPath, err := filepath.Abs(chart.Path)
+		if err != nil {
+			return "", nil
+		}
+		return fmt.Sprintf("%v (local)", absChartPath), nil
+	} else {
+		return fmt.Sprintf("%v@%v", chart.Name, chart.Version), nil
+	}
 }
 
 func ReplaceFormatVariables(format string, chart string, version string, env string) (string, error) {

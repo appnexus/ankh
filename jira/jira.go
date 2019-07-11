@@ -3,13 +3,14 @@ package jira
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	jira "github.com/andygrunwald/go-jira"
 	ankh "github.com/appnexus/ankh/context"
 	"github.com/appnexus/ankh/util"
 )
 
-func CreateJiraTicket(ctx *ankh.ExecutionContext) error {
+func CreateJiraTicket(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error {
 	base := ctx.AnkhConfig.Jira.BaseUrl
 	if base == "" {
 		return fmt.Errorf("No Jira base url provided. Unable to create ticket.")
@@ -29,9 +30,27 @@ func CreateJiraTicket(ctx *ankh.ExecutionContext) error {
 		Password: password,
 	}
 
-	deploymentEnvironment := util.GetEnvironmentOrContext(ctx.Environment, ctx.Context)
-	summary, err := getSummary(ctx, deploymentEnvironment)
-	description, err := getDescription(ctx, deploymentEnvironment)
+	envOrContext := util.GetEnvironmentOrContext(ctx.Environment, ctx.Context)
+
+	var summaries []string
+	var descriptions []string
+	for i := 0; i < len(ankhFile.Charts); i++ {
+		chart := &ankhFile.Charts[i]
+		summary, err := getSummary(ctx, chart, envOrContext)
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			summaries = append(summaries, summary)
+		}
+		description, err := getDescription(ctx, chart, envOrContext)
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			descriptions = append(descriptions, description)
+		}
+	}
+	summaryText := strings.Join(summaries, ", ")
+	descriptionText := strings.Join(descriptions, "\n")
 
 	jiraClient, err := jira.NewClient(tp.Client(), base)
 	if err != nil {
@@ -45,7 +64,7 @@ func CreateJiraTicket(ctx *ankh.ExecutionContext) error {
 			Reporter: &jira.User{
 				Name: username,
 			},
-			Summary: summary,
+			Summary: summaryText,
 			// TODO: Should this be defined in ankh config?
 			Type: jira.IssueType{
 				Name: "Task",
@@ -53,7 +72,7 @@ func CreateJiraTicket(ctx *ankh.ExecutionContext) error {
 			Project: jira.Project{
 				Key: queue,
 			},
-			Description: description,
+			Description: descriptionText,
 		},
 	}
 
@@ -74,7 +93,7 @@ func CreateJiraTicket(ctx *ankh.ExecutionContext) error {
 		ctx.Logger.Infof("Created JIRA Ticket: %v", issue.Key)
 		return nil
 	} else {
-		ctx.Logger.Infof("--dry-run set, not creating JIRA Ticket for %v queue with summary '%v' and description '%v'", queue, summary, description)
+		ctx.Logger.Infof("--dry-run set, not creating JIRA Ticket for %v queue with summary '%v' and description '%v'", queue, summaryText, descriptionText)
 		return nil
 	}
 }
@@ -123,15 +142,20 @@ func promptForAuth(ctx *ankh.ExecutionContext, retryCount int) (string, string, 
 	return providedUsername, providedPassword, nil
 }
 
-func getSummary(ctx *ankh.ExecutionContext, env string) (string, error) {
+func getSummary(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext string) (string, error) {
 	// If format is set, use that
 	format := ctx.AnkhConfig.Jira.SummaryFormat
 	if ctx.Mode == ankh.Rollback {
 		format = ctx.AnkhConfig.Jira.RollbackSummaryFormat
 	}
 
+	chartString, err := util.GetChartString(chart)
+	if err != nil {
+		return "", err
+	}
+
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, ctx.Chart, ctx.DeploymentTag, env)
+		message, err := util.ReplaceFormatVariables(format, chartString, *chart.Tag, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for subject", format)
 		} else {
@@ -140,7 +164,7 @@ func getSummary(ctx *ankh.ExecutionContext, env string) (string, error) {
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForSummary(ctx.Chart, ctx.DeploymentTag, env)
+	message, err := promptForSummary(chartString, *chart.Tag, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for subject. Will use default subject")
 	}
@@ -148,15 +172,20 @@ func getSummary(ctx *ankh.ExecutionContext, env string) (string, error) {
 	return message, nil
 }
 
-func getDescription(ctx *ankh.ExecutionContext, env string) (string, error) {
+func getDescription(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext string) (string, error) {
 	// If format is set, use that
 	format := ctx.AnkhConfig.Jira.DescriptionFormat
-	if ctx.DeploymentTag == "rollback" {
+	if *chart.Tag == "rollback" {
 		format = ctx.AnkhConfig.Jira.RollbackDescriptionFormat
 	}
 
+	chartString, err := util.GetChartString(chart)
+	if err != nil {
+		return "", err
+	}
+
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, ctx.Chart, ctx.DeploymentTag, env)
+		message, err := util.ReplaceFormatVariables(format, chartString, *chart.Tag, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for description", format)
 		} else {
@@ -165,7 +194,7 @@ func getDescription(ctx *ankh.ExecutionContext, env string) (string, error) {
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForDescription(ctx.Chart, ctx.DeploymentTag, env)
+	message, err := promptForDescription(chartString, *chart.Tag, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for description. Will use default description")
 	}
@@ -173,10 +202,10 @@ func getDescription(ctx *ankh.ExecutionContext, env string) (string, error) {
 	return message, nil
 }
 
-func promptForSummary(chart string, version string, env string) (string, error) {
-	defaultSubject := fmt.Sprintf("Deployment of %v verson:%v to *%v*", chart, version, env)
-	if env == "rollback" {
-		defaultSubject = fmt.Sprintf("Rollback of %v in *%v*", chart, env)
+func promptForSummary(chart string, version string, envOrContext string) (string, error) {
+	defaultSubject := fmt.Sprintf("Deployment of %v verson:%v to *%v*", chart, version, envOrContext)
+	if envOrContext == "rollback" {
+		defaultSubject = fmt.Sprintf("Rollback of %v in *%v*", chart, envOrContext)
 	}
 
 	message, err := util.PromptForInput(defaultSubject, "Jira Summary")
@@ -187,10 +216,10 @@ func promptForSummary(chart string, version string, env string) (string, error) 
 	return message, nil
 }
 
-func promptForDescription(chart string, version string, env string) (string, error) {
-	defaultSubject := fmt.Sprintf("Ticket to track the deployment of %v verson:%v to *%v*", chart, version, env)
-	if env == "rollback" {
-		defaultSubject = fmt.Sprintf("Ticket to track the rollback of %v in *%v*", chart, env)
+func promptForDescription(chart string, version string, envOrContext string) (string, error) {
+	defaultSubject := fmt.Sprintf("Ticket to track the deployment of %v verson:%v to *%v*", chart, version, envOrContext)
+	if envOrContext == "rollback" {
+		defaultSubject = fmt.Sprintf("Ticket to track the rollback of %v in *%v*", chart, envOrContext)
 	}
 
 	message, err := util.PromptForInput(defaultSubject, "Jira Description")
