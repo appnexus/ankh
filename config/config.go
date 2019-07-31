@@ -69,7 +69,7 @@ func GetAnkhConfig(ctx *ankh.ExecutionContext, configPath string) (ankh.AnkhConf
 func GetAnkhConfigWithDefaults(ctx *ankh.ExecutionContext, configPath string) (ankh.AnkhConfig, error) {
 	ankhConfig, err := GetAnkhConfig(ctx, configPath)
 	if err != nil {
-		return ankh.AnkhConfig{}, nil
+		return ankh.AnkhConfig{}, err
 	}
 
 	// Set default helm and kubectl commands
