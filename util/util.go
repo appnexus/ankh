@@ -331,9 +331,12 @@ func MapSliceRegexMatch(mapSlice yaml.MapSlice, key string) (interface{}, error)
 		if !ok {
 			return nil, fmt.Errorf("Could not parse key as string: %v", item.Key)
 		}
-		matched, err := regexp.MatchString(regex, key)
+		// We definitely do not want to match substrings, so we anchor the provided
+		// regex with ^ at the front and $ at the back.
+		wholeRegex := fmt.Sprintf("^%v$", regex)
+		matched, err := regexp.MatchString(wholeRegex, key)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to evaluate regex %v over key %v: %v", key, regex, err)
+			return nil, fmt.Errorf("Failed to evaluate regex %v over key %v: %v", key, wholeRegex, err)
 		}
 
 		if !matched {
