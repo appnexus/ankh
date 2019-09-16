@@ -709,6 +709,19 @@ func main() {
 		ctx.IgnoreContextAndEnv = true
 		ctx.IgnoreConfigErrors = true
 
+		cmd.Command("create", "Creates a chart directory along with the common files and directories used in a Helm chart", func(cmd *cli.Cmd) {
+			cmd.Spec = "[--chart-path] [--starter-chart] [--tag-image] [--app-name]"
+			chartPath := cmd.StringOpt("chart-path", "", "The location to create the helm chart, defaults to helm/<appname> based on directory")
+			appName := cmd.StringOpt("app-name", "", "The name to be used for the chart, chart-path overrides this value if both are set")
+			starterChart := cmd.StringOpt("starter-chart", "ankh-charts", "The name of the chart in ~/.helm/starters/")
+			tagImage := cmd.StringOpt("tag-image", "", "The name of the docker image, defaults to <appname> based on directory")
+			cmd.Action = func() {
+				err := helm.CreateChart(ctx, *chartPath, *appName, *starterChart, *tagImage)
+				check(err)
+				os.Exit(0)
+			}
+		})
+
 		cmd.Command("ls", "List Helm charts and their versions", func(cmd *cli.Cmd) {
 			cmd.Spec = "[-n] [-r]"
 			numToShow := cmd.IntOpt("n num", 5, "Number of versions to show, sorted descending by creation date. Pass zero to see all versions.")

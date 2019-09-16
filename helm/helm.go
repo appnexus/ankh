@@ -656,3 +656,80 @@ func filterOutput(filters []string, helmOutput string) string {
 	}
 	return output
 }
+
+// CreateChart via helm create that is ankh compatible
+func CreateChart(ctx *ankh.ExecutionContext, chartPath string, appName string, starterChart string, tagImage string) error {
+	var err error
+
+	// Setup Defaults
+	chartRoot := "helm"
+	appName = util.GenerateName(ctx, appName)
+	chartDir := fmt.Sprintf("%v/%v", chartRoot, appName)
+
+	// Evaluate params passed in
+	if chartPath != "" {
+		chartRoot = chartPath
+		chartDir = chartPath
+		if idx := strings.Index(chartPath, "/"); idx != -1 {
+			chartRoot = chartPath[:idx]
+			appName = chartPath[idx+1:]
+			ctx.Logger.Info("Using chart name from chart path")
+		}
+	}
+
+	ctx.Logger.Infof("Creating chart with name: %v", appName)
+
+	// Only create chart if the root directory does not already exist
+	if _, err := os.Stat(chartRoot); !os.IsNotExist(err) {
+		ctx.Logger.Infof("Chart directory %v already exists. Ready to go!", chartRoot)
+		return nil
+	}
+
+	// Create the root directory before adding chart
+	os.Mkdir(chartRoot, os.ModePerm)
+
+	helmArgs := []string{ctx.AnkhConfig.Helm.Command, "create", chartDir, "--starter", starterChart}
+	helmCmd := execContext(helmArgs[0], helmArgs[1:]...)
+
+	var stderr bytes.Buffer
+	helmCmd.Stderr = &stderr
+
+	// run helm to create chart
+	err = helmCmd.Run()
+	var helmError = string(stderr.Bytes())
+	if err != nil {
+		outputMsg := ""
+		if len(helmError) > 0 {
+			outputMsg = fmt.Sprintf(" -- the helm process had the following output on stderr:\n%s", helmError)
+		}
+		return fmt.Errorf("error running helm command '%v': %v%v",
+			strings.Join(helmCmd.Args, " "), err, outputMsg)
+	}
+	ctx.Logger.Infof("Finished creating chart")
+
+	// Make updates to ankh.yaml based on app and flags
+	if ctx.Namespace != nil {
+		ctx.Logger.Infof("Updating Namespace in ankh.yaml to %v", *ctx.Namespace)
+		originalString := "namespace: default"
+		namespaceString := fmt.Sprintf("namespace: %v", *ctx.Namespace)
+		filename := fmt.Sprintf("%v/%v", chartDir, "ankh.yaml")
+		if err = util.UpdateFile(filename, namespaceString, originalString); err != nil {
+			return err
+		}
+	}
+
+	imageName := appName
+	if tagImage != "" {
+		imageName = tagImage
+	}
+
+	ctx.Logger.Infof("Updating tag image in ankh.yaml to %v", imageName)
+	originalImage := "tagImage: appname"
+	updatedImage := fmt.Sprintf("tagImage: %v", imageName)
+	filename := fmt.Sprintf("%v/%v", chartDir, "ankh.yaml")
+	if err = util.UpdateFile(filename, updatedImage, originalImage); err != nil {
+		return err
+	}
+
+	return nil
+}
