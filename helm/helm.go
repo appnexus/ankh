@@ -658,7 +658,7 @@ func filterOutput(filters []string, helmOutput string) string {
 }
 
 // CreateChart via helm create that is ankh compatible
-func CreateChart(ctx *ankh.ExecutionContext, chartPath string, appName string, starterChart string, tagImage string) error {
+func CreateChart(ctx *ankh.ExecutionContext, chartPath string, appName string, tagImage string, repositoryArg string) error {
 	var err error
 
 	// Setup Defaults
@@ -687,8 +687,78 @@ func CreateChart(ctx *ankh.ExecutionContext, chartPath string, appName string, s
 
 	// Create the root directory before adding chart
 	os.Mkdir(chartRoot, os.ModePerm)
+	helmArgs := []string{}
+	repository := ctx.DetermineHelmRepository(&repositoryArg)
 
-	helmArgs := []string{ctx.AnkhConfig.Helm.Command, "create", chartDir, "--starter", starterChart}
+	// Make sure we have a chart to look for
+	if ctx.Chart == "" {
+		if repository == "" || ctx.NoPrompt {
+			return fmt.Errorf("No starter chart specified, unable to create chart")
+		}
+		// Prompt for a chart
+		ctx.Logger.Infof("No starter-chart specified as an argument")
+		charts, err := GetChartNames(ctx, repository)
+		if err != nil {
+			return err
+		}
+
+		selectedChart, err := util.PromptForSelection(charts, "Select a chart", false)
+		if err != nil {
+			return err
+		}
+
+		ctx.Chart = selectedChart
+	}
+
+	// Currently the only way to add a chart to $HELM_HOME/starters (and therefore use it) is to manually copy it there.
+	// Only copy if the chart does not already exist
+	chartStarterPath := path.Join(ctx.HelmDir, "starters/", ctx.Chart)
+	if _, err := os.Stat(chartStarterPath); os.IsNotExist(err) {
+
+		tokens := strings.Split(ctx.Chart, "@")
+		if len(tokens) > 2 {
+			ctx.Logger.Fatalf("Invalid chart '%v'. Too many `@` characters found. Chart must either be a name with no `@`, or in the combined `name@version` format", ctx.Chart)
+		}
+		if len(tokens) == 1 {
+			versions, err := ListVersions(ctx, repository, ctx.Chart, true)
+			if err != nil {
+				return err
+			}
+			selectedVersion, err := util.PromptForSelection(strings.Split(strings.Trim(versions, "\n "), "\n"),
+				fmt.Sprintf("Select a version for chart \"%v\"", ctx.Chart), false)
+			if err != nil {
+				return err
+			}
+			ctx.Chart = fmt.Sprintf("%v@%v", ctx.Chart, selectedVersion)
+		}
+
+		// Check existence again with version number
+		chartStarterPath = path.Join(ctx.HelmDir, "starters/", ctx.Chart)
+		if _, err := os.Stat(chartStarterPath); !os.IsNotExist(err) {
+
+			// Get chart from remote repository
+			ankhFile, err := ankh.GetAnkhFile(ctx)
+			if err != nil {
+				return err
+			}
+			chart := &ankhFile.Charts[0]
+
+			files, err := findChartFiles(ctx, repository, *chart)
+			if err != nil {
+				return err
+			}
+
+			err = util.CopyDir(files.ChartDir, chartStarterPath)
+
+			ctx.Logger.Infof("The chart was pulled from the repository and stored at %v", chartStarterPath)
+		}
+	}
+
+	ctx.Logger.Infof("Here we go, creating chart based on: %v", ctx.Chart)
+
+	// $HELM_HOME must be set for helm create to work, make sure this is set before continuting
+	os.Setenv("HELM_HOME", ctx.HelmDir)
+	helmArgs = []string{ctx.AnkhConfig.Helm.Command, "create", chartDir, "--starter", ctx.Chart}
 	helmCmd := execContext(helmArgs[0], helmArgs[1:]...)
 
 	var stderr bytes.Buffer
@@ -705,7 +775,6 @@ func CreateChart(ctx *ankh.ExecutionContext, chartPath string, appName string, s
 		return fmt.Errorf("error running helm command '%v': %v%v",
 			strings.Join(helmCmd.Args, " "), err, outputMsg)
 	}
-	ctx.Logger.Infof("Finished creating chart")
 
 	// Make updates to ankh.yaml based on app and flags
 	if ctx.Namespace != nil {
@@ -730,6 +799,8 @@ func CreateChart(ctx *ankh.ExecutionContext, chartPath string, appName string, s
 	if err = util.UpdateFile(filename, updatedImage, originalImage); err != nil {
 		return err
 	}
+
+	ctx.Logger.Infof("Finished creating chart")
 
 	return nil
 }

@@ -22,6 +22,7 @@ require (
 	github.com/pelletier/go-toml v1.2.0 // indirect
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/sirupsen/logrus v1.0.6
+	github.com/technosophos/moniker v0.0.0-20180509230615-a5dbd03a2245
 	github.com/trivago/tgo v1.0.5 // indirect
 	golang.org/x/tools v0.0.0-20181218194233-bbbd9518e88c // indirect
 	gopkg.in/alecthomas/kingpin.v3-unstable v3.0.0-20180810215634-df19058c872c // indirect
