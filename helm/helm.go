@@ -665,6 +665,8 @@ func CreateChart(ctx *ankh.ExecutionContext, chartPath string, appName string, t
 	chartRoot := "helm"
 	appName = util.GenerateName(ctx, appName)
 	chartDir := fmt.Sprintf("%v/%v", chartRoot, appName)
+	helmArgs := []string{}
+	repository := ctx.DetermineHelmRepository(&repositoryArg)
 
 	// Evaluate params passed in
 	if chartPath != "" {
@@ -673,7 +675,7 @@ func CreateChart(ctx *ankh.ExecutionContext, chartPath string, appName string, t
 		if idx := strings.Index(chartPath, "/"); idx != -1 {
 			chartRoot = chartPath[:idx]
 			appName = chartPath[idx+1:]
-			ctx.Logger.Info("Using chart name from chart path")
+			ctx.Logger.Infof("Using chart name (%v) from chart path", appName)
 		}
 	}
 
@@ -687,14 +689,13 @@ func CreateChart(ctx *ankh.ExecutionContext, chartPath string, appName string, t
 
 	// Create the root directory before adding chart
 	os.Mkdir(chartRoot, os.ModePerm)
-	helmArgs := []string{}
-	repository := ctx.DetermineHelmRepository(&repositoryArg)
 
 	// Make sure we have a chart to look for
 	if ctx.Chart == "" {
 		if repository == "" || ctx.NoPrompt {
 			return fmt.Errorf("No starter chart specified, unable to create chart")
 		}
+
 		// Prompt for a chart
 		ctx.Logger.Infof("No starter-chart specified as an argument")
 		charts, err := GetChartNames(ctx, repository)
@@ -714,7 +715,6 @@ func CreateChart(ctx *ankh.ExecutionContext, chartPath string, appName string, t
 	// Only copy if the chart does not already exist
 	chartStarterPath := path.Join(ctx.HelmDir, "starters/", ctx.Chart)
 	if _, err := os.Stat(chartStarterPath); os.IsNotExist(err) {
-
 		tokens := strings.Split(ctx.Chart, "@")
 		if len(tokens) > 2 {
 			ctx.Logger.Fatalf("Invalid chart '%v'. Too many `@` characters found. Chart must either be a name with no `@`, or in the combined `name@version` format", ctx.Chart)
@@ -734,7 +734,7 @@ func CreateChart(ctx *ankh.ExecutionContext, chartPath string, appName string, t
 
 		// Check existence again with version number
 		chartStarterPath = path.Join(ctx.HelmDir, "starters/", ctx.Chart)
-		if _, err := os.Stat(chartStarterPath); !os.IsNotExist(err) {
+		if _, err := os.Stat(chartStarterPath); os.IsNotExist(err) {
 
 			// Get chart from remote repository
 			ankhFile, err := ankh.GetAnkhFile(ctx)
