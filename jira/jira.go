@@ -154,8 +154,13 @@ func getSummary(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext stri
 		return "", err
 	}
 
+	versionString := ""
+	if chart.Tag != nil {
+		versionString = *chart.Tag
+	}
+
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, chartString, *chart.Tag, envOrContext)
+		message, err := util.ReplaceFormatVariables(format, chartString, versionString, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for subject", format)
 		} else {
@@ -164,7 +169,7 @@ func getSummary(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext stri
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForSummary(chartString, *chart.Tag, envOrContext)
+	message, err := promptForSummary(chartString, versionString, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for subject. Will use default subject")
 	}
@@ -173,9 +178,14 @@ func getSummary(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext stri
 }
 
 func getDescription(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext string) (string, error) {
+	versionString := ""
+	if chart.Tag != nil {
+		versionString = *chart.Tag
+	}
+
 	// If format is set, use that
 	format := ctx.AnkhConfig.Jira.DescriptionFormat
-	if *chart.Tag == "rollback" {
+	if versionString == "rollback" {
 		format = ctx.AnkhConfig.Jira.RollbackDescriptionFormat
 	}
 
@@ -185,7 +195,7 @@ func getDescription(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 	}
 
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, chartString, *chart.Tag, envOrContext)
+		message, err := util.ReplaceFormatVariables(format, chartString, versionString, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for description", format)
 		} else {
@@ -194,7 +204,7 @@ func getDescription(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForDescription(chartString, *chart.Tag, envOrContext)
+	message, err := promptForDescription(chartString, versionString, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for description. Will use default description")
 	}

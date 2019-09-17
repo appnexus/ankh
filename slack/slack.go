@@ -124,13 +124,18 @@ func getMessageText(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 		format = ctx.AnkhConfig.Slack.RollbackFormat
 	}
 
+	versionString := ""
+	if chart.Tag != nil {
+		versionString = *chart.Tag
+	}
+
 	chartString, err := util.GetChartString(chart)
 	if err != nil {
 		return "", err
 	}
 
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, chartString, *chart.Tag, envOrContext)
+		message, err := util.ReplaceFormatVariables(format, chartString, versionString, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for message", format)
 		} else {
@@ -139,7 +144,7 @@ func getMessageText(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForMessageText(chartString, *chart.Tag, envOrContext)
+	message, err := promptForMessageText(chartString, versionString, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for message. Will use default message")
 	}
