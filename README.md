@@ -77,6 +77,8 @@ Ankh provides a few commands for managing key artifacts: Helm charts and Docker 
 
 **chart** lets you view and publish chart artifacts in a remote registry.
 
+**create** lets you create a new helm chart based on a starter chart.
+
 ## Behavior
 
 ### Chart version prompt

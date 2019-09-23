@@ -656,3 +656,151 @@ func filterOutput(filters []string, helmOutput string) string {
 	}
 	return output
 }
+
+// CreateChart via helm create that is ankh compatible
+func CreateChart(ctx *ankh.ExecutionContext, chartPath string, appName string, tagImage string, repositoryArg string) error {
+	var err error
+
+	// Setup Defaults
+	chartRoot := "helm"
+	appName = util.GenerateName(ctx, appName)
+	chartDir := fmt.Sprintf("%v/%v", chartRoot, appName)
+	helmArgs := []string{}
+	repository := ctx.DetermineHelmRepository(&repositoryArg)
+
+	// Evaluate params passed in
+	if chartPath != "" {
+		chartRoot = chartPath
+		chartDir = chartPath
+		if idx := strings.Index(chartPath, "/"); idx != -1 {
+			chartRoot = chartPath[:idx]
+			appName = chartPath[idx+1:]
+			ctx.Logger.Infof("Using chart name (%v) from chart path", appName)
+		}
+	}
+
+	ctx.Logger.Infof("Creating chart with name: %v", appName)
+
+	// Only create chart if the root directory does not already exist
+	if _, err := os.Stat(chartRoot); !os.IsNotExist(err) {
+		ctx.Logger.Infof("Chart directory %v already exists. Ready to go!", chartRoot)
+		return nil
+	}
+
+	// Create the root directory before adding chart
+	os.Mkdir(chartRoot, os.ModePerm)
+
+	// Make sure we have a chart to look for
+	if ctx.Chart == "" {
+		if repository == "" || ctx.NoPrompt {
+			return fmt.Errorf("No starter chart specified, unable to create chart")
+		}
+
+		// Prompt for a chart
+		ctx.Logger.Infof("No starter-chart specified as an argument")
+		charts, err := GetChartNames(ctx, repository)
+		if err != nil {
+			return err
+		}
+
+		selectedChart, err := util.PromptForSelection(charts, "Select a chart", false)
+		if err != nil {
+			return err
+		}
+
+		ctx.Chart = selectedChart
+	}
+
+	// Currently the only way to add a chart to $HELM_HOME/starters (and therefore use it) is to manually copy it there.
+	// Only copy if the chart does not already exist
+	chartStarterPath := path.Join(ctx.HelmDir, "starters/", ctx.Chart)
+	if _, err := os.Stat(chartStarterPath); os.IsNotExist(err) {
+		tokens := strings.Split(ctx.Chart, "@")
+		if len(tokens) > 2 {
+			ctx.Logger.Fatalf("Invalid chart '%v'. Too many `@` characters found. Chart must either be a name with no `@`, or in the combined `name@version` format", ctx.Chart)
+		}
+		if len(tokens) == 1 {
+			versions, err := ListVersions(ctx, repository, ctx.Chart, true)
+			if err != nil {
+				return err
+			}
+			selectedVersion, err := util.PromptForSelection(strings.Split(strings.Trim(versions, "\n "), "\n"),
+				fmt.Sprintf("Select a version for chart \"%v\"", ctx.Chart), false)
+			if err != nil {
+				return err
+			}
+			ctx.Chart = fmt.Sprintf("%v@%v", ctx.Chart, selectedVersion)
+		}
+
+		// Check existence again with version number
+		chartStarterPath = path.Join(ctx.HelmDir, "starters/", ctx.Chart)
+		if _, err := os.Stat(chartStarterPath); os.IsNotExist(err) {
+
+			// Get chart from remote repository
+			ankhFile, err := ankh.GetAnkhFile(ctx)
+			if err != nil {
+				return err
+			}
+			chart := &ankhFile.Charts[0]
+
+			files, err := findChartFiles(ctx, repository, *chart)
+			if err != nil {
+				return err
+			}
+
+			err = util.CopyDir(files.ChartDir, chartStarterPath)
+
+			ctx.Logger.Infof("The chart was pulled from the repository and stored at %v", chartStarterPath)
+		}
+	}
+
+	ctx.Logger.Infof("Here we go, creating chart based on: %v", ctx.Chart)
+
+	// $HELM_HOME must be set for helm create to work, make sure this is set before continuting
+	os.Setenv("HELM_HOME", ctx.HelmDir)
+	helmArgs = []string{ctx.AnkhConfig.Helm.Command, "create", chartDir, "--starter", ctx.Chart}
+	helmCmd := execContext(helmArgs[0], helmArgs[1:]...)
+
+	var stderr bytes.Buffer
+	helmCmd.Stderr = &stderr
+
+	// run helm to create chart
+	err = helmCmd.Run()
+	var helmError = string(stderr.Bytes())
+	if err != nil {
+		outputMsg := ""
+		if len(helmError) > 0 {
+			outputMsg = fmt.Sprintf(" -- the helm process had the following output on stderr:\n%s", helmError)
+		}
+		return fmt.Errorf("error running helm command '%v': %v%v",
+			strings.Join(helmCmd.Args, " "), err, outputMsg)
+	}
+
+	// Make updates to ankh.yaml based on app and flags
+	if ctx.Namespace != nil {
+		ctx.Logger.Infof("Updating Namespace in ankh.yaml to %v", *ctx.Namespace)
+		originalString := "namespace: default"
+		namespaceString := fmt.Sprintf("namespace: %v", *ctx.Namespace)
+		filename := fmt.Sprintf("%v/%v", chartDir, "ankh.yaml")
+		if err = util.UpdateFile(filename, namespaceString, originalString); err != nil {
+			return err
+		}
+	}
+
+	imageName := appName
+	if tagImage != "" {
+		imageName = tagImage
+	}
+
+	ctx.Logger.Infof("Updating tag image in ankh.yaml to %v", imageName)
+	originalImage := "tagImage: appname"
+	updatedImage := fmt.Sprintf("tagImage: %v", imageName)
+	filename := fmt.Sprintf("%v/%v", chartDir, "ankh.yaml")
+	if err = util.UpdateFile(filename, updatedImage, originalImage); err != nil {
+		return err
+	}
+
+	ctx.Logger.Infof("Finished creating chart")
+
+	return nil
+}

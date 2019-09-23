@@ -62,7 +62,7 @@ func signalHandler(ctx *ankh.ExecutionContext, sigs chan os.Signal) {
 
 func main() {
 	app := cli.App("ankh", "Another Kubernetes Helper")
-	app.Spec = "[--verbose] [--quiet] [--no-prompt] [--ignore-config-errors] [--ankhconfig] [--kubeconfig] [--datadir] [--release] [--context] [--environment] [--namespace] [--tag] [--set...]"
+	app.Spec = "[--verbose] [--quiet] [--no-prompt] [--ignore-config-errors] [--ankhconfig] [--kubeconfig] [--datadir] [--helmdir] [--release] [--context] [--environment] [--namespace] [--tag] [--set...]"
 
 	var (
 		verbose            = app.BoolOpt("v verbose", false, "Verbose debug mode")
@@ -124,6 +124,12 @@ func main() {
 			Desc:  "Variables passed through to helm via --set",
 			Value: []string{},
 		})
+		helmdir = app.String(cli.StringOpt{
+			Name:   "helmdir",
+			Value:  path.Join("/tmp", ".helm"),
+			Desc:   "The local home directory for helm",
+			EnvVar: "HELM_HOME",
+		})
 	)
 
 	log.Out = os.Stdout
@@ -173,6 +179,7 @@ func main() {
 			DataDir:             path.Join(*datadir, fmt.Sprintf("%v-%v", time.Now().Unix(), rand.Intn(100000))),
 			Logger:              log,
 			HelmSetValues:       helmVars,
+			HelmDir:             *helmdir,
 			IgnoreContextAndEnv: ctx.IgnoreContextAndEnv,
 			IgnoreConfigErrors:  ctx.IgnoreConfigErrors || *ignoreConfigErrors,
 			SkipConfig:          ctx.SkipConfig,
@@ -708,6 +715,22 @@ func main() {
 	app.Command("chart", "Manage Helm charts", func(cmd *cli.Cmd) {
 		ctx.IgnoreContextAndEnv = true
 		ctx.IgnoreConfigErrors = true
+
+		cmd.Command("create", "Creates a chart directory along with the common files and directories used in a Helm chart", func(cmd *cli.Cmd) {
+			cmd.Spec = "[--chart-path] [--starter-chart][--tag-image] [--app-name] [-r]"
+			chartPath := cmd.StringOpt("chart-path", "", "The location to create the helm chart, defaults to helm/<app-name> based on directory")
+			appName := cmd.StringOpt("app-name", "", "The name to be used for the chart, chart-path overrides this value if both are set")
+			starterChart := cmd.StringOpt("starter-chart", "", "The name of the chart in $HELM_HOME/starters/, if not available locally will attempt to pull from remote helm repository")
+			tagImage := cmd.StringOpt("tag-image", "", "The name of the docker image, defaults to app-name")
+			repositoryArg := cmd.StringOpt("r repository", "", "The chart repository to use")
+
+			cmd.Action = func() {
+				ctx.Chart = *starterChart
+				err := helm.CreateChart(ctx, *chartPath, *appName, *tagImage, *repositoryArg)
+				check(err)
+				os.Exit(0)
+			}
+		})
 
 		cmd.Command("ls", "List Helm charts and their versions", func(cmd *cli.Cmd) {
 			cmd.Spec = "[-n] [-r]"

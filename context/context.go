@@ -53,6 +53,7 @@ type ExecutionContext struct {
 	Environment    string
 	DataDir        string
 	HelmSetValues  map[string]string
+	HelmDir        string
 
 	DeploymentTag string
 

@@ -2,6 +2,7 @@ package util
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ import (
 	"github.com/coreos/go-semver/semver"
 	"github.com/manifoldco/promptui"
 	"github.com/sirupsen/logrus"
+	"github.com/technosophos/moniker"
 )
 
 type CustomFormatter struct {
@@ -657,4 +659,33 @@ func ReplaceFormatVariables(format string, chart string, version string, env str
 	result = strings.Replace(result, "%TARGET%", env, -1)
 
 	return result, nil
+}
+
+// GenerateName generates a name based on the current working directory or a random name.
+func GenerateName(ctx *ankh.ExecutionContext, appName string) string {
+	if appName != "" {
+		return appName
+	}
+	cwd, err := os.Getwd()
+	if err == nil {
+		return filepath.Base(cwd)
+	}
+
+	namer := moniker.New()
+	return namer.NameSep("-")
+}
+
+// UpdateFile replaces a string in a file with a new one
+func UpdateFile(filename string, newString string, oldString string) error {
+	input, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	output := bytes.Replace(input, []byte(oldString), []byte(newString), -1)
+
+	if err = ioutil.WriteFile(filename, output, 0666); err != nil {
+		return err
+	}
+	return nil
 }
