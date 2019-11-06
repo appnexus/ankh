@@ -26,7 +26,7 @@ go get github.com/appnexus/ankh/ankh
 
 ### Using Homebrew
 ```sh
-brew tap appnexus/ankh git@github.com:appnexus/ankh.git
+brew tap appnexus/ankh https://github.com/appnexus/ankh.git
 brew install ankh
 ```
 
