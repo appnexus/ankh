@@ -977,7 +977,7 @@ func main() {
 			ctx.Logger.Infof("Ankh version info:")
 			fmt.Println(AnkhBuildVersion)
 
-			ctx.Logger.Infof("`%v version --client` output:", ctx.AnkhConfig.Helm.Command)
+			ctx.Logger.Infof("`%v version --client --short` output:", ctx.AnkhConfig.Helm.Command)
 			ver, err := helm.Version(ctx)
 			check(err)
 			fmt.Print(ver)

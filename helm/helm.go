@@ -181,7 +181,7 @@ func FetchChartMeta(ctx *ankh.ExecutionContext, repository string, chart *ankh.C
 
 func Version(ctx *ankh.ExecutionContext) (string, error) {
 	cmd := plan.NewCommand(ctx.AnkhConfig.Helm.Command)
-	cmd.AddArguments([]string{"version", "--client"})
+	cmd.AddArguments([]string{"version", "--client", "--short"})
 	// We want to return the output of the version command in Run, so use a pipe
 	cmd.PipeStdoutAndStderr = plan.PIPE_TYPE_PIPE
 	return cmd.Run(ctx, nil)

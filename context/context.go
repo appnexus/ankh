@@ -68,6 +68,8 @@ type ExecutionContext struct {
 
 	HelmVersion, KubectlVersion string
 
+	HelmV2 bool
+
 	Logger *logrus.Logger
 }
 

@@ -237,7 +237,12 @@ func templateChart(ctx *ankh.ExecutionContext, chart ankh.Chart, namespace strin
 	}
 
 	if currentContext.Release != "" {
-		helmArgs = append(helmArgs, []string{"--name", currentContext.Release}...)
+		// Helm 2 used `--name` to set release nam. Starting in Helm 3, this is a _positional_ argument.
+		if ctx.HelmV2 {
+			helmArgs = append(helmArgs, []string{"--name", currentContext.Release}...)
+		} else {
+			helmArgs = append(helmArgs, []string{currentContext.Release}...)
+		}
 	}
 
 	for key, val := range ctx.HelmSetValues {

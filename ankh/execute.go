@@ -483,7 +483,15 @@ func executeAnkhFile(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) {
 			ctx.Logger.Fatalf("Failed to get helm version info: %v", err)
 		}
 		ctx.HelmVersion = ver
-		ctx.Logger.Debug("Using helm version: ", strings.TrimSpace(ver))
+		trimmed := strings.TrimSpace(ver)
+		ctx.Logger.Debug("Using Helm version: ", trimmed)
+
+		// Helm's version command is, itself, not written in a backwads compatible
+		// way. We choose the 'Client: ' magic sting to prove that Helm is version 2,
+		// because Tiller and the "client" distinction was removed in Helm 3+.
+		if strings.HasPrefix(trimmed, "Client: ") {
+			ctx.HelmV2 = true
+		}
 	}
 
 	logChartsExecute := func(charts []ankh.Chart, namespace string, extra string) {
