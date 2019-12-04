@@ -24,7 +24,8 @@ require (
 	github.com/sirupsen/logrus v1.0.6
 	github.com/technosophos/moniker v0.0.0-20180509230615-a5dbd03a2245
 	github.com/trivago/tgo v1.0.5 // indirect
-	golang.org/x/tools v0.0.0-20181218194233-bbbd9518e88c // indirect
 	gopkg.in/alecthomas/kingpin.v3-unstable v3.0.0-20180810215634-df19058c872c // indirect
 	gopkg.in/yaml.v2 v2.2.1
 )
+
+replace github.com/golang/lint => golang.org/x/lint v0.0.0-20191125180803-fdd1cda4f05f
