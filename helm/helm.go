@@ -322,7 +322,7 @@ type ChartYaml struct {
 	Version string
 }
 
-func readChartYaml(ctx *ankh.ExecutionContext, path string) (map[string]interface{}, ChartYaml, error) {
+func readChartYaml(ctx *ankh.ExecutionContext, path string, lenient bool) (map[string]interface{}, ChartYaml, error) {
 	rawYaml := make(map[string]interface{})
 	chartYaml := ChartYaml{}
 
@@ -352,7 +352,11 @@ func readChartYaml(ctx *ankh.ExecutionContext, path string) (map[string]interfac
 
 	version, ok := rawYaml["version"].(string)
 	if !ok {
-		return rawYaml, chartYaml, fmt.Errorf("Chart.yaml missing `version`, or its type is not a string.")
+		if lenient {
+			version = ""
+		} else {
+			return rawYaml, chartYaml, fmt.Errorf("Chart.yaml missing `version`, or its type is not a string.")
+		}
 	}
 
 	chartYaml = ChartYaml{
@@ -392,14 +396,23 @@ func writeChartYaml(ctx *ankh.ExecutionContext, chartYaml map[string]interface{}
 	return nil
 }
 
-func Publish(ctx *ankh.ExecutionContext, repository string) error {
-	_, chartYaml, err := readChartYaml(ctx, "Chart.yaml")
+func Publish(ctx *ankh.ExecutionContext, repository string, versionOverride string) error {
+	_, chartYaml, err := readChartYaml(ctx, "Chart.yaml", true)
 	if err != nil {
 		return err
 	}
 
+	chartName := chartYaml.Name
+	chartVersion := chartYaml.Version
+	if versionOverride != "" {
+		chartVersion = versionOverride
+		ctx.Logger.Infof("Using chart version %v from command line", versionOverride)
+	} else {
+		ctx.Logger.Infof("Using chart version %v from Chart.yaml", chartVersion)
+	}
+
 	wd, _ := os.Getwd()
-	localTarballPath := fmt.Sprintf("%v/%v-%v.tgz", wd, chartYaml.Name, chartYaml.Version)
+	localTarballPath := fmt.Sprintf("%v/%v-%v.tgz", wd, chartName, chartVersion)
 	removeTarball := func() {
 		err = os.Remove(localTarballPath)
 		if err != nil && !os.IsNotExist(err) {
@@ -412,14 +425,19 @@ func Publish(ctx *ankh.ExecutionContext, repository string) error {
 	removeTarball()
 	defer removeTarball()
 
-	helmArgs := []string{ctx.AnkhConfig.Helm.Command, "package", wd}
+	helmArgs := []string{ctx.AnkhConfig.Helm.Command, "package"}
+	if versionOverride != "" {
+		helmArgs = append(helmArgs, []string{"--version", versionOverride}...)
+	}
+	helmArgs = append(helmArgs, wd)
 	helmCmd := execContext(helmArgs[0], helmArgs[1:]...)
 
 	var stderr bytes.Buffer
 	helmCmd.Stderr = &stderr
 
 	// Use helm to create a package tarball
-	ctx.Logger.Infof("Packaging '%v-%v'", chartYaml.Name, chartYaml.Version)
+	ctx.Logger.Infof("Packaging '%v-%v'", chartName, chartVersion)
+	ctx.Logger.Debugf("Running command %v", helmCmd)
 	err = helmCmd.Run()
 	var helmError = string(stderr.Bytes())
 	if err != nil {
@@ -430,7 +448,7 @@ func Publish(ctx *ankh.ExecutionContext, repository string) error {
 		return fmt.Errorf("error running helm command '%v': %v%v",
 			strings.Join(helmCmd.Args, " "), err, outputMsg)
 	}
-	ctx.Logger.Infof("Finished packaging '%v-%v'", chartYaml.Name, chartYaml.Version)
+	ctx.Logger.Infof("Finished packaging '%v-%v'", chartName, chartVersion)
 
 	// Open up and read the contents of the package in order to PUT it upstream
 	localTarballFile, err := os.Open(localTarballPath)
@@ -445,7 +463,7 @@ func Publish(ctx *ankh.ExecutionContext, repository string) error {
 		return err
 	}
 
-	upstreamTarballPath := fmt.Sprintf("%v/%v-%v.tgz", repository, chartYaml.Name, chartYaml.Version)
+	upstreamTarballPath := fmt.Sprintf("%v/%v-%v.tgz", repository, chartName, chartVersion)
 	ctx.Logger.Infof("Publishing '%v'", upstreamTarballPath)
 
 	// Create a request with the chart on the PUT body
@@ -600,7 +618,7 @@ func Inspect(ctx *ankh.ExecutionContext, repository string, singleChart string) 
 }
 
 func Bump(ctx *ankh.ExecutionContext, semVerType string) error {
-	rawYaml, chartYaml, err := readChartYaml(ctx, "Chart.yaml")
+	rawYaml, chartYaml, err := readChartYaml(ctx, "Chart.yaml", false)
 	if err != nil {
 		return err
 	}

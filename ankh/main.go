@@ -781,12 +781,13 @@ func main() {
 		})
 
 		cmd.Command("publish", "Publish a Helm chart using files from the current directory", func(cmd *cli.Cmd) {
-			cmd.Spec = "[-r]"
+			cmd.Spec = "[-r] [--version]"
 			repositoryArg := cmd.StringOpt("r repository", "", "The chart repository to use")
+			versionArg := cmd.StringOpt("version", "", "The chart version to publish. Overrides any version present in Chart.yaml")
 
 			cmd.Action = func() {
 				repository := ctx.DetermineHelmRepository(repositoryArg)
-				err := helm.Publish(ctx, repository)
+				err := helm.Publish(ctx, repository, *versionArg)
 				check(err)
 				os.Exit(0)
 			}
