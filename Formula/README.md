@@ -12,3 +12,15 @@ In order to update to a new release:
 url "`<release tarball url>`"
 sha256 "`<sha-256>`"
 ```
+
+If you get an error like:
+
+```
+Error: /usr/local/Homebrew/Library/Taps/homebrew/homebrew-core/Formula/ankh.rb already exists
+```
+
+Simply move it out of the way:
+
+```
+$ mv /usr/local/Homebrew/Library/Taps/homebrew/homebrew-core/Formula/ankh.rb{,.bak}
+```
