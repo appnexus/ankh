@@ -344,6 +344,7 @@ type ChartParameterSource struct {
 
 type ChartParameters struct {
 	Key          string               `yaml:"key"`
+	SafeDefault  *string              `yaml:"safeDefault"`
 	Source       ChartParameterSource `yaml:"source"`
 	CachedValues string               `yaml:"-"`
 }
