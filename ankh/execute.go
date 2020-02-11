@@ -128,8 +128,14 @@ func reconcileMissingParameters(ctx *ankh.ExecutionContext, chart *ankh.Chart) e
 					return err
 				}
 
-				bodyValues := strings.Split(strings.Trim(string(body), "\n"), "\n")
-				promptValues = append(promptValues, bodyValues...)
+				bodyValues := strings.Replace(strings.Trim(string(body), "\n"), "\n\n", "\n", -1)
+				if len(bodyValues) == 0 {
+					ctx.Logger.Warnf("Did not receive any non-empty parameter choices for key \"%v\" from URL \"%v\"",
+						param.Key, param.Source.Url)
+				} else {
+					lines := strings.Split(bodyValues, "\n")
+					promptValues = append(promptValues, lines...)
+				}
 			}
 
 			sort.Strings(promptValues)
