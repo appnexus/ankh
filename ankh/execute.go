@@ -111,11 +111,18 @@ func reconcileMissingParameters(ctx *ankh.ExecutionContext, chart *ankh.Chart) e
 		} else {
 			promptValues := []string{}
 			if len(param.Source.Values) > 0 {
+				ctx.Logger.Infof("Using base parameter choices [ %v ] for key \"%v\"",
+					strings.Join(param.Source.Values,", "), param.Key)
 				promptValues = append(promptValues, param.Source.Values...)
 			}
 
 			if param.Source.Url != "" {
-				ctx.Logger.Infof("Fetching parameter choices for key \"%v\" using URL \"%v\"", param.Key, param.Source.Url)
+				additionalMsg := ""
+				if len(param.Source.Values) > 0 {
+					additionalMsg = "additional "
+				}
+				ctx.Logger.Infof("Fetching %vparameter choices for key \"%v\" using URL \"%v\"",
+					additionalMsg, param.Key, param.Source.Url)
 				body, err := fetchHttp(param.Source.Url)
 				if err != nil {
 					return err
