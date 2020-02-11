@@ -337,12 +337,24 @@ type ConfigMeta struct {
 	Paths map[string]string `yaml:"paths"`
 }
 
+type ChartParameterSource struct {
+	Values []string
+	Url    string
+}
+
+type ChartParameters struct {
+	Key          string               `yaml:"key"`
+	Source       ChartParameterSource `yaml:"source"`
+	CachedValues string               `yaml:"-"`
+}
+
 type ChartMeta struct {
-	Namespace      *string    `yaml:"namespace"`
-	TagImage       string     `yaml:"tagImage"`
-	TagKey         string     `yaml:"tagKey"`
-	WildCardLabels *[]string  `yaml:"wildCardLabels"`
-	ConfigMeta     ConfigMeta `yaml:"config"`
+	Namespace      *string           `yaml:"namespace"`
+	TagImage       string            `yaml:"tagImage"`
+	TagKey         string            `yaml:"tagKey"`
+	WildCardLabels *[]string         `yaml:"wildCardLabels"`
+	ConfigMeta     ConfigMeta        `yaml:"config"`
+	Parameters     []ChartParameters `yaml:"parameters"`
 }
 
 type ChartFiles struct {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"net/http"
+	"io/ioutil"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -80,6 +82,86 @@ func printContexts(ankhConfig *ankh.AnkhConfig) {
 	}
 }
 
+func fetchHttp(url string) ([]byte, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return []byte{}, fmt.Errorf("Unable to fetch URL '%s': %v", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return []byte{}, fmt.Errorf("Non-200 status code when fetching URL '%s': %v", url, resp.Status)
+	}
+	return ioutil.ReadAll(resp.Body)
+}
+
+func reconcileMissingParameters(ctx *ankh.ExecutionContext, chart *ankh.Chart) error {
+	for _, param := range chart.ChartMeta.Parameters {
+
+		promptValues := []string{}
+		if len(param.Source.Values) > 0 {
+			promptValues = append(promptValues, param.Source.Values...)
+		}
+
+		existing, err := getExistingDefaultValue(ctx, chart, param.Key)
+		if err != nil {
+			return err
+		}
+
+		if existing != "" {
+			ctx.Logger.Infof("Using value \"%v\" for parameter key \"%v\" based the chart's default-values, or a --set argument",
+				existing, param.Key)
+			continue
+		}
+
+		if param.Source.Url != "" {
+			ctx.Logger.Infof("Fetching parameter choices for key \"%v\" using URL \"%v\"", param.Key, param.Source.Url)
+			body, err := fetchHttp(param.Source.Url)
+			if err != nil {
+				return err
+			}
+
+			bodyValues := strings.Split(strings.Trim(string(body), "\n"), "\n")
+			promptValues = append(promptValues, bodyValues...)
+		}
+
+		sort.Strings(promptValues)
+		selected, err := util.PromptForSelection(promptValues,
+			fmt.Sprintf("Select a value for parameter key \"%v\"", param.Key), false)
+		if err != nil {
+			return err
+		}
+
+		ctx.HelmSetValues[param.Key] = selected
+		ctx.Logger.Infof("Using value \"%v\" for parameter key \"%v\" based on prompt selection",
+			selected, param.Key)
+	}
+
+	return nil
+}
+
+func getExistingDefaultValue(ctx *ankh.ExecutionContext, chart *ankh.Chart, key string) (string, error) {
+	// Treat any existing --set tagKey=$tag argument as authoritative
+	for k, v := range ctx.HelmSetValues {
+		if k == key {
+			return v, nil
+		}
+	}
+
+	// Treat any existing key in `default-values` for this chart as the next-most authoritative
+	for k, v := range chart.DefaultValues {
+		if k == key {
+			t, ok := v.(string)
+			if !ok {
+				return "", fmt.Errorf("Could not use value '%+v' from default-values in chart %v "+
+					"as a string value for key '%v'", v, chart.Name, key)
+			}
+			return t, nil
+		}
+	}
+
+	return "", nil
+}
+
 func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) error {
 	// Make sure that we don't use the tag argument for more than one Chart.
 	// When this happens, it is almost always an error, because a tag value
@@ -122,6 +204,11 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 			return fmt.Errorf("Error fetching chart \"%v\": %v", chart.Name, err)
 		}
 		mergo.Merge(&chart.ChartMeta, meta)
+
+		err = reconcileMissingParameters(ctx, chart)
+		if err != nil {
+			return fmt.Errorf("Failed to gather configured parameters for chart \"%v\": %v", chart.Name, err)
+		}
 
 		// If namespace is set on the command line, we'll use that as an
 		// override later during executeChartsOnNamespace, so don't check
