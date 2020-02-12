@@ -138,6 +138,7 @@ func findChartFilesImpl(ctx *ankh.ExecutionContext, repository string, chart ank
 		AnkhValuesPath:           filepath.Join(chartDir, "ankh-values.yaml"),
 		AnkhResourceProfilesPath: filepath.Join(chartDir, "ankh-resource-profiles.yaml"),
 		AnkhReleasesPath:         filepath.Join(chartDir, "ankh-releases.yaml"),
+		AnkhParametersPath:       filepath.Join(chartDir, "ankh-parameters.yaml"),
 	}
 
 	return files, nil
@@ -681,7 +682,7 @@ func CreateChart(ctx *ankh.ExecutionContext, chartPath string, appName string, t
 
 	// Setup Defaults
 	chartRoot := "helm"
-	appName = util.GenerateName(ctx, appName)
+	appName = util.GenerateName(appName)
 	chartDir := fmt.Sprintf("%v/%v", chartRoot, appName)
 	helmArgs := []string{}
 	repository := ctx.DetermineHelmRepository(&repositoryArg)

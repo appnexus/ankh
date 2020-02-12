@@ -95,11 +95,14 @@ func fetchHttp(url string) ([]byte, error) {
 }
 
 func reconcileMissingParameters(ctx *ankh.ExecutionContext, chart *ankh.Chart) error {
-	for _, param := range chart.ChartMeta.Parameters {
+	for i, _ := range chart.ChartMeta.Parameters {
+		param := &chart.ChartMeta.Parameters[i]
+
 		existing, ok := getExistingDefaultValue(ctx, chart, param.Key)
 		if ok {
 			ctx.Logger.Infof("Using value \"%v\" for parameter key \"%v\" based the chart's default-values, or a --set argument",
 				existing, param.Key)
+			param.CachedValue = existing
 			continue
 		}
 
@@ -109,6 +112,11 @@ func reconcileMissingParameters(ctx *ankh.ExecutionContext, chart *ankh.Chart) e
 				*param.SafeDefault, param.Key, ctx.Mode)
 			value = *param.SafeDefault
 		} else {
+			if ctx.NoPrompt {
+				ctx.Logger.Fatalf("Chart missing value for parameter key \"%v\" (not prompting due to --no-prompt)",
+					param.Key)
+			}
+
 			promptValues := []string{}
 			if len(param.Source.Values) > 0 {
 				ctx.Logger.Infof("Using base parameter choices [ %v ] for key \"%v\"",
@@ -151,6 +159,7 @@ func reconcileMissingParameters(ctx *ankh.ExecutionContext, chart *ankh.Chart) e
 		}
 
 		ctx.HelmSetValues[param.Key] = value
+		param.CachedValue = value
 	}
 
 	return nil
@@ -241,11 +250,9 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 		}
 		mergo.Merge(&chart.ChartMeta, meta)
 
-		if !ctx.NoPrompt {
-			err := reconcileMissingParameters(ctx, chart)
-			if err != nil {
-				return fmt.Errorf("Failed to gather configured parameters for chart \"%v\": %v", chart.Name, err)
-			}
+		err = reconcileMissingParameters(ctx, chart)
+		if err != nil {
+			return fmt.Errorf("Failed to gather configured parameters for chart \"%v\": %v", chart.Name, err)
 		}
 
 		// If namespace is set on the command line, we'll use that as an

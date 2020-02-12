@@ -18,7 +18,6 @@ import (
 
 	"gopkg.in/yaml.v2"
 
-	ankh "github.com/appnexus/ankh/context"
 	"github.com/coreos/go-semver/semver"
 	"github.com/manifoldco/promptui"
 	"github.com/sirupsen/logrus"
@@ -626,15 +625,15 @@ func GetEnvironmentOrContext(environment string, context string) string {
 	return ""
 }
 
-func GetChartString(chart *ankh.Chart) (string, error) {
-	if chart.Path != "" {
-		absChartPath, err := filepath.Abs(chart.Path)
+func GetChartString(path, name, version string) (string, error) {
+	if path != "" {
+		absChartPath, err := filepath.Abs(path)
 		if err != nil {
 			return "", nil
 		}
 		return fmt.Sprintf("%v (local)", absChartPath), nil
 	} else {
-		return fmt.Sprintf("%v@%v", chart.Name, chart.Version), nil
+		return fmt.Sprintf("%v@%v", name, version), nil
 	}
 }
 
@@ -662,7 +661,7 @@ func ReplaceFormatVariables(format string, chart string, version string, env str
 }
 
 // GenerateName generates a name based on the current working directory or a random name.
-func GenerateName(ctx *ankh.ExecutionContext, appName string) string {
+func GenerateName(appName string) string {
 	if appName != "" {
 		return appName
 	}

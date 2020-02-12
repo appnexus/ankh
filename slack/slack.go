@@ -129,7 +129,7 @@ func getMessageText(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 		versionString = *chart.Tag
 	}
 
-	chartString, err := util.GetChartString(chart)
+	chartString, err := util.GetChartString(chart.Path, chart.Name, chart.Version)
 	if err != nil {
 		return "", err
 	}

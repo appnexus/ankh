@@ -117,6 +117,19 @@ func getValuesFromChartFiles(ctx *ankh.ExecutionContext, chart ankh.Chart, files
 		}
 	}
 
+	// Load `parameters` from ankh-parameters.yaml
+	if useDirectory {
+		ctx.Logger.Infof("Config type \"directory\" is not supported for parameters. Using ankh-parameters.yaml instead.")
+	}
+
+	_, parametersError := os.Stat(files.AnkhParametersPath)
+	if parametersError == nil {
+		if _, err := ankh.CreateReducedParametersFile(ctx, files.AnkhParametersPath, chart.ChartMeta.Parameters); err != nil {
+			return []string{}, fmt.Errorf("unable to process ankh-parameters.yaml file for chart '%s': %v", chart.Name, err)
+		}
+		helmArgs = append(helmArgs, "-f", files.AnkhParametersPath)
+	}
+
 	return helmArgs, nil
 }
 

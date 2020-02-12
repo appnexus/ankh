@@ -149,7 +149,7 @@ func getSummary(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext stri
 		format = ctx.AnkhConfig.Jira.RollbackSummaryFormat
 	}
 
-	chartString, err := util.GetChartString(chart)
+	chartString, err := util.GetChartString(chart.Path, chart.Name, chart.Version)
 	if err != nil {
 		return "", err
 	}
@@ -189,7 +189,7 @@ func getDescription(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 		format = ctx.AnkhConfig.Jira.RollbackDescriptionFormat
 	}
 
-	chartString, err := util.GetChartString(chart)
+	chartString, err := util.GetChartString(chart.Path, chart.Name, chart.Version)
 	if err != nil {
 		return "", err
 	}

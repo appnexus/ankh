@@ -337,18 +337,6 @@ type ConfigMeta struct {
 	Paths map[string]string `yaml:"paths"`
 }
 
-type ChartParameterSource struct {
-	Values []string
-	Url    string
-}
-
-type ChartParameters struct {
-	Key          string               `yaml:"key"`
-	SafeDefault  *string              `yaml:"safeDefault"`
-	Source       ChartParameterSource `yaml:"source"`
-	CachedValues string               `yaml:"-"`
-}
-
 type ChartMeta struct {
 	Namespace      *string           `yaml:"namespace"`
 	TagImage       string            `yaml:"tagImage"`
@@ -367,6 +355,7 @@ type ChartFiles struct {
 	AnkhValuesPath           string
 	AnkhResourceProfilesPath string
 	AnkhReleasesPath         string
+	AnkhParametersPath       string
 }
 
 type Chart struct {
@@ -384,6 +373,7 @@ type Chart struct {
 	Values           yaml.MapSlice
 	ResourceProfiles yaml.MapSlice `yaml:"resource-profiles"`
 	Releases         yaml.MapSlice
+	Parameters       yaml.MapSlice
 
 	Files *ChartFiles `yaml:"-"` // private, filled in by FetchChart
 }
