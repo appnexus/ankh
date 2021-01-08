@@ -491,6 +491,7 @@ func executeAnkhFile(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile) {
 		// because Tiller and the "client" distinction was removed in Helm 3+.
 		if strings.HasPrefix(trimmed, "Client: ") {
 			ctx.HelmV2 = true
+			ctx.Logger.Warnf("Helm v2 is no longer maintained as of November 2020, please migrate to Helm v3.\n Info here: https://helm.sh/docs/intro/install/")
 		}
 	}
 
