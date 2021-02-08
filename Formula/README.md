@@ -2,7 +2,7 @@
 
 In order to update to a new release:
 
-1. go to https://github.com/appnexus/ankh/releases to get the URL for the release tarball
+1. go to https://github.com/appnexus/ankh/releases to get the URL for the **source** tarball
 
 2. `brew create <release tarball url>` - note the line of the output "For your reference the SHA-256 is: <sha-256>"
 
