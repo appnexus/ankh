@@ -64,6 +64,9 @@ type ExecutionContext struct {
 
 	Filters []string
 
+	ImageTagFilter     string
+	ChartVersionFilter string
+
 	ExtraArgs, PassThroughArgs []string
 
 	HelmVersion, KubectlVersion string

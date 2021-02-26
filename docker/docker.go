@@ -109,6 +109,8 @@ func listTags(ctx *ankh.ExecutionContext, r *registry.Registry,
 		return []string{}, nil
 	}
 
+	tags = util.FilterStringsContaining(tags, ctx.ImageTagFilter)
+
 	sort.Slice(tags, func(i, j int) bool {
 		lessThan := util.FuzzySemVerCompare(tags[i], tags[j])
 		if descending {

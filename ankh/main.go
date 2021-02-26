@@ -305,7 +305,7 @@ func main() {
 	}
 
 	app.Command("apply", "Apply one or more charts to Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[--ankhfile] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--jira-ticket] [--filter...]"
+		cmd.Spec = "[--ankhfile] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--jira-ticket] [--filter...] [--image-tag-filter] [--chart-version-filter]"
 
 		ankhFilePath := cmd.StringOpt("ankhfile", "", "Path to an Ankh file for managing multiple charts")
 		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually apply anything")
@@ -315,6 +315,8 @@ func main() {
 		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
 		createJiraTicket := cmd.BoolOpt("j jira-ticket", false, "Create a JIRA ticket to track update")
 		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
+		imageTagFilter := cmd.StringOpt("image-tag-filter", "", "Filters out any image tags that include the specified substring. Matching tags will not appear in the prompt.")
+		chartVersionFilter := cmd.StringOpt("chart-version-filter", "", "Filters out any chart versions that include the specified substring. Matching versions will not appear in the prompt.")
 
 		cmd.Action = func() {
 			ctx.AnkhFilePath = *ankhFilePath
@@ -333,6 +335,8 @@ func main() {
 				filters = append(filters, string(filter))
 			}
 			ctx.Filters = filters
+			ctx.ImageTagFilter = *imageTagFilter
+			ctx.ChartVersionFilter = *chartVersionFilter
 
 			execute(ctx)
 			os.Exit(0)

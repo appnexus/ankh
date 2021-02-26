@@ -689,3 +689,21 @@ func UpdateFile(filename string, newString string, oldString string) error {
 	}
 	return nil
 }
+
+// FilterStringsContaining filters out strings from stringSlice that contain the substring.
+func FilterStringsContaining(stringSlice []string, substring string) []string {
+	if len(substring) > 0 {
+		return FilterStrings(stringSlice, func(s string) bool { return !strings.Contains(s, substring) })
+	}
+	return stringSlice
+}
+
+// FilterStrings out based on matcher implementation.
+func FilterStrings(strings []string, matcher func(string) bool) (ret []string) {
+	for _, s := range strings {
+		if matcher(s) {
+			ret = append(ret, s)
+		}
+	}
+	return
+}
