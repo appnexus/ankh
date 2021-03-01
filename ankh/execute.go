@@ -103,7 +103,9 @@ func reconcileMissingConfigs(ctx *ankh.ExecutionContext, ankhFile *ankh.AnkhFile
 				return err
 			}
 
-			selectedVersion, err := util.PromptForSelection(strings.Split(strings.Trim(versions, "\n "), "\n"),
+			versionsList := util.FilterStringsContaining(strings.Split(strings.Trim(versions, "\n "), "\n"), ctx.ChartVersionFilter)
+
+			selectedVersion, err := util.PromptForSelection(versionsList,
 				fmt.Sprintf("Select a version for chart \"%v\"", chart.Name), false)
 			if err != nil {
 				return err
