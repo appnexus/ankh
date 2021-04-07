@@ -626,37 +626,40 @@ func GetEnvironmentOrContext(environment string, context string) string {
 	return ""
 }
 
-func GetChartString(chart *ankh.Chart) (string, error) {
-	if chart.Path != "" {
-		absChartPath, err := filepath.Abs(chart.Path)
-		if err != nil {
-			return "", nil
-		}
-		return fmt.Sprintf("%v (local)", absChartPath), nil
-	} else {
-		return fmt.Sprintf("%v@%v", chart.Name, chart.Version), nil
-	}
-}
+func NotificationString(notificationFormat string, chart *ankh.Chart, envOrContext string) (string, error) {
 
-func ReplaceFormatVariables(format string, chart string, version string, env string) (string, error) {
-
-	result := format
 	currentUser, err := user.Current()
 	if err != nil {
 		return "", err
 	}
 
-	// Replace %USER%
+	chartName := chart.Name
+	chartVersion := ""
+	chartString := ""
+	if chart.Path != "" {
+		absChartPath, err := filepath.Abs(chart.Path)
+		if err != nil {
+			return "", nil
+		}
+		chartVersion = fmt.Sprintf("%s (local)", absChartPath)
+		chartString = chartVersion
+	} else {
+		chartVersion = chart.Version
+		chartString = fmt.Sprintf("%s@%s", chartName, chartVersion)
+	}
+
+	version := ""
+	if chart.Tag != nil {
+		version = *chart.Tag
+	}
+
+	result := notificationFormat
 	result = strings.Replace(result, "%USER%", currentUser.Username, -1)
-
-	// Replace %CHART%
-	result = strings.Replace(result, "%CHART%", chart, -1)
-
-	// Replace %VERSION%
+	result = strings.Replace(result, "%CHART_NAME%", chartName, -1)
+	result = strings.Replace(result, "%CHART_VERSION%", chartVersion, -1)
+	result = strings.Replace(result, "%CHART%", chartString, -1)
 	result = strings.Replace(result, "%VERSION%", version, -1)
-
-	// Replace %TARGET%
-	result = strings.Replace(result, "%TARGET%", env, -1)
+	result = strings.Replace(result, "%TARGET%", envOrContext, -1)
 
 	return result, nil
 }

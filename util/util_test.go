@@ -5,6 +5,7 @@ import (
 	"os/user"
 	"testing"
 
+	ankh "github.com/appnexus/ankh/context"
 	"github.com/sirupsen/logrus"
 )
 
@@ -109,12 +110,19 @@ func TestGetEnviroment(t *testing.T) {
 	}
 }
 
-func TestReplaceFormatVariables(t *testing.T) {
+func TestNotificationString(t *testing.T) {
 
-	format := "%USER% is doing a release of %CHART% version %VERSION% to %TARGET%"
-	chart := "best app ever"
+	// replace %USER%, %CHART%, %VERSION%, %TARGET% (non-local chart)
+
+	notificationFormat := "%USER% is doing a release of %CHART% version %VERSION% to %TARGET%"
 	version := "1.33.7"
-	env := "production"
+	chart := &ankh.Chart{
+		Path:    "",
+		Name:    "best app ever",
+		Version: "1.2.3",
+		Tag:     &version,
+	}
+	envOrContext := "production"
 
 	currentUser, err := user.Current()
 	if err != nil {
@@ -122,8 +130,8 @@ func TestReplaceFormatVariables(t *testing.T) {
 		t.Fail()
 	}
 
-	expectedResult := fmt.Sprintf("%v is doing a release of best app ever version 1.33.7 to production", currentUser.Username)
-	result, err := ReplaceFormatVariables(format, chart, version, env)
+	expectedResult := fmt.Sprintf("%v is doing a release of best app ever@1.2.3 version 1.33.7 to production", currentUser.Username)
+	result, err := NotificationString(notificationFormat, chart, envOrContext)
 	if err != nil {
 		t.Logf("Failed to replace message text. Error: %v", err)
 		t.Fail()
@@ -133,13 +141,98 @@ func TestReplaceFormatVariables(t *testing.T) {
 		t.Fail()
 	}
 
-	format = "Someone is doing a release of %CHAT% version %VERSION% to %TARGET%"
-	chart = "best app ever"
-	version = "1.33.7"
-	env = "production"
+	// -----------------------------------------------------------------
 
-	expectedResult = "Someone is doing a release of %CHAT% version 1.33.7 to production"
-	result, err = ReplaceFormatVariables(format, chart, version, env)
+	// replace %CHART%, %VERSION%, %TARGET% (local chart)
+
+	notificationFormat = "Releasing %CHART% version %VERSION% to %TARGET%"
+	version = "1.33.7"
+	chart = &ankh.Chart{
+		Path:    "/home/someone/app/helm/app",
+		Name:    "best app ever",
+		Version: "1.2.3",
+		Tag:     &version,
+	}
+	envOrContext = "production"
+
+	expectedResult = "Releasing /home/someone/app/helm/app (local) version 1.33.7 to production"
+	result, err = NotificationString(notificationFormat, chart, envOrContext)
+	if err != nil {
+		t.Logf("Failed to replace message text. Error: %v", err)
+		t.Fail()
+	}
+	if result != expectedResult {
+		t.Logf("got %s but was expecting '%s'", result, expectedResult)
+		t.Fail()
+	}
+
+	// -----------------------------------------------------------------
+
+	// replace %CHART_NAME%, %CHART_VERSION%, %VERSION%, %TARGET% (non-local chart)
+
+	notificationFormat = "Releasing %CHART_NAME% chart %CHART_VERSION% version %VERSION% to %TARGET%"
+	version = "1.33.7"
+	chart = &ankh.Chart{
+		Path:    "",
+		Name:    "best app ever",
+		Version: "1.2.3",
+		Tag:     &version,
+	}
+	envOrContext = "production"
+
+	expectedResult = "Releasing best app ever chart 1.2.3 version 1.33.7 to production"
+	result, err = NotificationString(notificationFormat, chart, envOrContext)
+	if err != nil {
+		t.Logf("Failed to replace message text. Error: %v", err)
+		t.Fail()
+	}
+	if result != expectedResult {
+		t.Logf("got %s but was expecting '%s'", result, expectedResult)
+		t.Fail()
+	}
+
+	// -----------------------------------------------------------------
+
+	// replace %CHART_NAME%, %CHART_VERSION%, %VERSION%, %TARGET% (local chart)
+
+	notificationFormat = "Releasing %CHART_NAME% chart %CHART_VERSION% version %VERSION% to %TARGET%"
+	version = "1.33.7"
+	chart = &ankh.Chart{
+		Path:    "/home/someone/app/helm/app",
+		Name:    "best app ever",
+		Version: "1.2.3",
+		Tag:     &version,
+	}
+	envOrContext = "production"
+
+	expectedResult = "Releasing best app ever chart /home/someone/app/helm/app (local) version 1.33.7 to production"
+	result, err = NotificationString(notificationFormat, chart, envOrContext)
+	if err != nil {
+		t.Logf("Failed to replace message text. Error: %v", err)
+		t.Fail()
+	}
+	if result != expectedResult {
+		t.Logf("got %s but was expecting '%s'", result, expectedResult)
+		t.Fail()
+	}
+
+	// -----------------------------------------------------------------
+
+	// replace %VERSION%, %TARGET (non-local chart)
+	// format also includes (typo?) %CHAT% which is not replaced
+
+	notificationFormat = "Releasing %CHAT% version %VERSION% to %TARGET%"
+	version = "1.33.7"
+	chart = &ankh.Chart{
+		Path:    "",
+		Name:    "best app ever",
+		Version: "1.2.3",
+		Tag:     &version,
+	}
+	envOrContext = "production"
+
+	expectedResult = "Releasing %CHAT% version 1.33.7 to production"
+	result, err = NotificationString(notificationFormat, chart, envOrContext)
 	if err != nil {
 		t.Logf("Failed to replace message text. Error: %v", err)
 		t.Fail()
