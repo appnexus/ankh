@@ -626,41 +626,6 @@ func GetEnvironmentOrContext(environment string, context string) string {
 	return ""
 }
 
-func GetChartString(chart *ankh.Chart) (string, error) {
-	if chart.Path != "" {
-		absChartPath, err := filepath.Abs(chart.Path)
-		if err != nil {
-			return "", nil
-		}
-		return fmt.Sprintf("%v (local)", absChartPath), nil
-	} else {
-		return fmt.Sprintf("%v@%v", chart.Name, chart.Version), nil
-	}
-}
-
-func ReplaceFormatVariables(format string, chart string, version string, env string) (string, error) {
-
-	result := format
-	currentUser, err := user.Current()
-	if err != nil {
-		return "", err
-	}
-
-	// Replace %USER%
-	result = strings.Replace(result, "%USER%", currentUser.Username, -1)
-
-	// Replace %CHART%
-	result = strings.Replace(result, "%CHART%", chart, -1)
-
-	// Replace %VERSION%
-	result = strings.Replace(result, "%VERSION%", version, -1)
-
-	// Replace %TARGET%
-	result = strings.Replace(result, "%TARGET%", env, -1)
-
-	return result, nil
-}
-
 func NotificationString(notificationFormat string, chart *ankh.Chart, envOrContext string) (string, error) {
 
 	currentUser, err := user.Current()

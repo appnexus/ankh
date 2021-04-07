@@ -110,48 +110,6 @@ func TestGetEnviroment(t *testing.T) {
 	}
 }
 
-func TestReplaceFormatVariables(t *testing.T) {
-
-	format := "%USER% is doing a release of %CHART% version %VERSION% to %TARGET%"
-	chart := "best app ever"
-	version := "1.33.7"
-	env := "production"
-
-	currentUser, err := user.Current()
-	if err != nil {
-		t.Logf("Unable to get currnet user for test. Error: %v", err)
-		t.Fail()
-	}
-
-	expectedResult := fmt.Sprintf("%v is doing a release of best app ever version 1.33.7 to production", currentUser.Username)
-	result, err := ReplaceFormatVariables(format, chart, version, env)
-	if err != nil {
-		t.Logf("Failed to replace message text. Error: %v", err)
-		t.Fail()
-	}
-	if result != expectedResult {
-		t.Logf("got %s but was expecting '%s'", result, expectedResult)
-		t.Fail()
-	}
-
-	format = "Someone is doing a release of %CHAT% version %VERSION% to %TARGET%"
-	chart = "best app ever"
-	version = "1.33.7"
-	env = "production"
-
-	expectedResult = "Someone is doing a release of %CHAT% version 1.33.7 to production"
-	result, err = ReplaceFormatVariables(format, chart, version, env)
-	if err != nil {
-		t.Logf("Failed to replace message text. Error: %v", err)
-		t.Fail()
-	}
-	if result != expectedResult {
-		t.Logf("got %s but was expecting '%s'", result, expectedResult)
-		t.Fail()
-	}
-
-}
-
 func TestNotificationString(t *testing.T) {
 
 	// replace %USER%, %CHART%, %VERSION%, %TARGET% (non-local chart)
