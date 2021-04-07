@@ -2,7 +2,7 @@ class Ankh < Formula
   desc "Another Kubernetes Helper"
   homepage "https://github.com/appnexus/ankh"
   url "https://github.com/appnexus/ankh/archive/v2.1.1.tar.gz"
-  sha256 "6510feda09767d3df4443f610cec2fa105360d2a2edb2a3bf7d58cc73b345649"
+  sha256 "5886e910f645133d1dae3dfc41cf04c8918693ff4bd3ec4e9867fa2e8e104c45"
 
   depends_on "go" => :build
   depends_on "kubernetes-helm"
