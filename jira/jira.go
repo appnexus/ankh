@@ -169,7 +169,7 @@ func getSummary(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext stri
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForSummary(chartString, versionString, envOrContext)
+	message, err := promptForSummary(ctx, chartString, versionString, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for subject. Will use default subject")
 	}
@@ -204,7 +204,7 @@ func getDescription(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForDescription(chartString, versionString, envOrContext)
+	message, err := promptForDescription(ctx, chartString, versionString, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for description. Will use default description")
 	}
@@ -212,9 +212,9 @@ func getDescription(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 	return message, nil
 }
 
-func promptForSummary(chart string, version string, envOrContext string) (string, error) {
+func promptForSummary(ctx *ankh.ExecutionContext, chart string, version string, envOrContext string) (string, error) {
 	defaultSubject := fmt.Sprintf("Deployment of %v verson:%v to *%v*", chart, version, envOrContext)
-	if envOrContext == "rollback" {
+	if ctx.Mode == ankh.Rollback {
 		defaultSubject = fmt.Sprintf("Rollback of %v in *%v*", chart, envOrContext)
 	}
 
@@ -226,9 +226,9 @@ func promptForSummary(chart string, version string, envOrContext string) (string
 	return message, nil
 }
 
-func promptForDescription(chart string, version string, envOrContext string) (string, error) {
+func promptForDescription(ctx *ankh.ExecutionContext, chart string, version string, envOrContext string) (string, error) {
 	defaultSubject := fmt.Sprintf("Ticket to track the deployment of %v verson:%v to *%v*", chart, version, envOrContext)
-	if envOrContext == "rollback" {
+	if ctx.Mode == ankh.Rollback {
 		defaultSubject = fmt.Sprintf("Ticket to track the rollback of %v in *%v*", chart, envOrContext)
 	}
 

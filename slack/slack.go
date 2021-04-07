@@ -144,7 +144,7 @@ func getMessageText(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForMessageText(chartString, versionString, envOrContext)
+	message, err := promptForMessageText(ctx, chartString, versionString, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for message. Will use default message")
 	}
@@ -152,13 +152,13 @@ func getMessageText(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 	return message, nil
 }
 
-func promptForMessageText(chart string, version string, envOrContext string) (string, error) {
+func promptForMessageText(ctx *ankh.ExecutionContext, chart string, version string, envOrContext string) (string, error) {
 	currentUser, err := user.Current()
 	if err != nil {
 		return "", err
 	}
 	defaultMessage := fmt.Sprintf("%v is releasing %v@%v to *%v*", currentUser.Username, chart, version, envOrContext)
-	if envOrContext == "rollback" {
+	if ctx.Mode == ankh.Rollback {
 		defaultMessage = fmt.Sprintf("%v is rolling back %v in *%v*", currentUser, chart, envOrContext)
 	}
 
