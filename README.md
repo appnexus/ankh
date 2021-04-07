@@ -329,10 +329,12 @@ When invoked, Ankh will operate over both the `haste-server` and `myservice` cha
 
 #### `Format Variables`
 | Variable | Description
-| ------------- | :---:    
-| `%USER%`        | Current username |
-| `%CHART%`       | Current chart being used |
-| `%VERSION%`     | Version of the primary container |
-| `%TARGET%`      | Target environment or context |
+| ------------- | :---:
+| `%USER%`          | Current username |
+| `%CHART%`         | Current chart being used (`<name>@<version>`) |
+| `%CHART_NAME%`    | Name of chart |
+| `%CHART_VERSION%` | Version of chart |
+| `%VERSION%`       | Version of the primary container |
+| `%TARGET%`        | Target environment or context |
 
- Example format: `format: "_%USER%_ is releasing *%CHART%@%VERSION%* to *%TARGET%*"`
+ Example format: `format: "_%USER%_ is releasing *%CHART_NAME%* chart:*%CHART_VERSION%* tag:*%VERSION%* to *%TARGET%*"`
