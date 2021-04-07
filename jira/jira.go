@@ -149,18 +149,8 @@ func getSummary(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext stri
 		format = ctx.AnkhConfig.Jira.RollbackSummaryFormat
 	}
 
-	chartString, err := util.GetChartString(chart)
-	if err != nil {
-		return "", err
-	}
-
-	versionString := ""
-	if chart.Tag != nil {
-		versionString = *chart.Tag
-	}
-
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, chartString, versionString, envOrContext)
+		message, err := util.NotificationString(format, chart, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for subject", format)
 		} else {
@@ -169,7 +159,7 @@ func getSummary(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext stri
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForSummary(ctx, chartString, versionString, envOrContext)
+	message, err := promptForSummary(ctx, chart, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for subject. Will use default subject")
 	}
@@ -189,13 +179,8 @@ func getDescription(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 		format = ctx.AnkhConfig.Jira.RollbackDescriptionFormat
 	}
 
-	chartString, err := util.GetChartString(chart)
-	if err != nil {
-		return "", err
-	}
-
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, chartString, versionString, envOrContext)
+		message, err := util.NotificationString(format, chart, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for description", format)
 		} else {
@@ -204,7 +189,7 @@ func getDescription(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForDescription(ctx, chartString, versionString, envOrContext)
+	message, err := promptForDescription(ctx, chart, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for description. Will use default description")
 	}
@@ -212,24 +197,34 @@ func getDescription(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 	return message, nil
 }
 
-func promptForSummary(ctx *ankh.ExecutionContext, chart string, version string, envOrContext string) (string, error) {
-	defaultSubject := fmt.Sprintf("Deployment of %v verson:%v to *%v*", chart, version, envOrContext)
-	if ctx.Mode == ankh.Rollback {
-		defaultSubject = fmt.Sprintf("Rollback of %v in *%v*", chart, envOrContext)
+func promptForSummary(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext string) (string, error) {
+	version := ""
+	if chart.Tag != nil {
+		version = *chart.Tag
 	}
 
-	message, err := util.PromptForInput(defaultSubject, "Jira Summary")
+	defaultSummary := fmt.Sprintf("Deployment of %s chart %s verson %s to *%s*", chart.Name, chart.Version, version, envOrContext)
+	if ctx.Mode == ankh.Rollback {
+		defaultSummary = fmt.Sprintf("Rollback of %s in *%s*", chart.Name, envOrContext)
+	}
+
+	message, err := util.PromptForInput(defaultSummary, "Jira Summary")
 	if err != nil {
-		return defaultSubject, err
+		return defaultSummary, err
 	}
 
 	return message, nil
 }
 
-func promptForDescription(ctx *ankh.ExecutionContext, chart string, version string, envOrContext string) (string, error) {
-	defaultSubject := fmt.Sprintf("Ticket to track the deployment of %v verson:%v to *%v*", chart, version, envOrContext)
+func promptForDescription(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext string) (string, error) {
+	version := ""
+	if chart.Tag != nil {
+		version = *chart.Tag
+	}
+
+	defaultSubject := fmt.Sprintf("Ticket to track the deployment of %s chart %s verson %s to *%s*", chart.Name, chart.Version, version, envOrContext)
 	if ctx.Mode == ankh.Rollback {
-		defaultSubject = fmt.Sprintf("Ticket to track the rollback of %v in *%v*", chart, envOrContext)
+		defaultSubject = fmt.Sprintf("Ticket to track the rollback of %s in *%s*", chart.Name, envOrContext)
 	}
 
 	message, err := util.PromptForInput(defaultSubject, "Jira Description")

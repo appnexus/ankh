@@ -124,18 +124,8 @@ func getMessageText(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 		format = ctx.AnkhConfig.Slack.RollbackFormat
 	}
 
-	versionString := ""
-	if chart.Tag != nil {
-		versionString = *chart.Tag
-	}
-
-	chartString, err := util.GetChartString(chart)
-	if err != nil {
-		return "", err
-	}
-
 	if format != "" {
-		message, err := util.ReplaceFormatVariables(format, chartString, versionString, envOrContext)
+		message, err := util.NotificationString(format, chart, envOrContext)
 		if err != nil {
 			ctx.Logger.Infof("Unable to use format: '%v'. Will prompt for message", format)
 		} else {
@@ -144,7 +134,7 @@ func getMessageText(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 	}
 
 	// Otherwise, prompt for message
-	message, err := promptForMessageText(ctx, chartString, versionString, envOrContext)
+	message, err := promptForMessageText(ctx, chart, envOrContext)
 	if err != nil {
 		ctx.Logger.Infof("Unable to prompt for message. Will use default message")
 	}
@@ -152,14 +142,20 @@ func getMessageText(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext 
 	return message, nil
 }
 
-func promptForMessageText(ctx *ankh.ExecutionContext, chart string, version string, envOrContext string) (string, error) {
+func promptForMessageText(ctx *ankh.ExecutionContext, chart *ankh.Chart, envOrContext string) (string, error) {
 	currentUser, err := user.Current()
 	if err != nil {
 		return "", err
 	}
-	defaultMessage := fmt.Sprintf("%v is releasing %v@%v to *%v*", currentUser.Username, chart, version, envOrContext)
+
+	version := ""
+	if chart.Tag != nil {
+		version = *chart.Tag
+	}
+
+	defaultMessage := fmt.Sprintf("%s is releasing %s chart %s version %s to *%s*", currentUser.Username, chart.Name, chart.Version, version, envOrContext)
 	if ctx.Mode == ankh.Rollback {
-		defaultMessage = fmt.Sprintf("%v is rolling back %v in *%v*", currentUser, chart, envOrContext)
+		defaultMessage = fmt.Sprintf("%s is rolling back %s in *%v*", currentUser, chart.Name, envOrContext)
 	}
 
 	message, err := util.PromptForInput(defaultMessage, "Slack Message")
