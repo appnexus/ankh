@@ -661,6 +661,44 @@ func ReplaceFormatVariables(format string, chart string, version string, env str
 	return result, nil
 }
 
+func NotificationString(notificationFormat string, chart *ankh.Chart, envOrContext string) (string, error) {
+
+	currentUser, err := user.Current()
+	if err != nil {
+		return "", err
+	}
+
+	chartName := chart.Name
+	chartVersion := ""
+	chartString := ""
+	if chart.Path != "" {
+		absChartPath, err := filepath.Abs(chart.Path)
+		if err != nil {
+			return "", nil
+		}
+		chartVersion = fmt.Sprintf("%s (local)", absChartPath)
+		chartString = chartVersion
+	} else {
+		chartVersion = chart.Version
+		chartString = fmt.Sprintf("%s@%s", chartName, chartVersion)
+	}
+
+	version := ""
+	if chart.Tag != nil {
+		version = *chart.Tag
+	}
+
+	result := notificationFormat
+	result = strings.Replace(result, "%USER%", currentUser.Username, -1)
+	result = strings.Replace(result, "%CHART_NAME%", chartName, -1)
+	result = strings.Replace(result, "%CHART_VERSION%", chartVersion, -1)
+	result = strings.Replace(result, "%CHART%", chartString, -1)
+	result = strings.Replace(result, "%VERSION%", version, -1)
+	result = strings.Replace(result, "%TARGET%", envOrContext, -1)
+
+	return result, nil
+}
+
 // GenerateName generates a name based on the current working directory or a random name.
 func GenerateName(ctx *ankh.ExecutionContext, appName string) string {
 	if appName != "" {
