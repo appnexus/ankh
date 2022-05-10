@@ -676,6 +676,26 @@ func planAndExecute(ctx *ankh.ExecutionContext, charts []ankh.Chart, namespace s
 	case ankh.Explain:
 		fallthrough
 	case ankh.Apply:
+
+		if ctx.RollbackInstructions {
+			getChartTagOutput, err := plan.Execute(ctx, namespace, wildCardLabels, &plan.Plan{
+				PlanStages: []plan.PlanStage{
+					plan.PlanStage{Stage: helm.NewTemplateStage(charts)},
+					plan.PlanStage{Stage: kubectl.NewGetChartTagStage()},
+				},
+			})
+			if err != nil {
+				check(err)
+			}
+			getPodsOutput := strings.Fields(getChartTagOutput)
+			rollbackChart := getPodsOutput[len(getPodsOutput)-1]
+			rollbackTag := getPodsOutput[len(getPodsOutput)-2]
+			ctx.RollbackChart = rollbackChart
+			ctx.RollbackTag = rollbackTag
+
+			log.Infof("chart - %v tag - %v", rollbackChart, rollbackTag)
+		}
+
 		return plan.Execute(ctx, namespace, wildCardLabels, &plan.Plan{
 			PlanStages: []plan.PlanStage{
 				plan.PlanStage{Stage: helm.NewTemplateStage(charts)},
