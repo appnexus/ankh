@@ -305,7 +305,7 @@ func main() {
 	}
 
 	app.Command("apply", "Apply one or more charts to Kubernetes", func(cmd *cli.Cmd) {
-		cmd.Spec = "[--ankhfile] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--jira-ticket] [--filter...] [--image-tag-filter] [--chart-version-filter]"
+		cmd.Spec = "[--ankhfile] [--dry-run] [--chart] [--chart-path] [--slack] [--slack-message] [--rollback-instructions] [--jira-ticket] [--filter...] [--image-tag-filter] [--chart-version-filter]"
 
 		ankhFilePath := cmd.StringOpt("ankhfile", "", "Path to an Ankh file for managing multiple charts")
 		dryRun := cmd.BoolOpt("dry-run", false, "Perform a dry-run and don't actually apply anything")
@@ -313,6 +313,7 @@ func main() {
 		chartPath := cmd.StringOpt("chart-path", "", "Use a local chart directory instead of a remote, versioned chart")
 		slackChannel := cmd.StringOpt("s slack", "", "Send slack message to specified slack channel about application update")
 		slackMessageOverride := cmd.StringOpt("m slack-message", "", "Override the default slack message being sent")
+		rollbackInstructions := cmd.BoolOpt("r rollback-instructions", false, "Send rollback instructions to the specified slack channel")
 		createJiraTicket := cmd.BoolOpt("j jira-ticket", false, "Create a JIRA ticket to track update")
 		filter := cmd.StringsOpt("filter", []string{}, "Kubernetes object kinds to include for the action. The entries in this list are case insensitive. Any object whose `kind:` does not match this filter will be excluded from the action")
 		imageTagFilter := cmd.StringOpt("image-tag-filter", "", "Filters out any image tags that include the specified substring. Matching tags will not appear in the prompt.")
@@ -329,6 +330,7 @@ func main() {
 			ctx.Mode = ankh.Apply
 			ctx.SlackChannel = *slackChannel
 			ctx.SlackMessageOverride = *slackMessageOverride
+			ctx.RollbackInstructions = *rollbackInstructions
 			ctx.CreateJiraTicket = *createJiraTicket
 			filters := []string{}
 			for _, filter := range *filter {

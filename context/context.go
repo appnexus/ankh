@@ -42,7 +42,7 @@ type ExecutionContext struct {
 
 	Mode Mode
 
-	Verbose, Quiet, ShouldCatchSignals, CatchSignals, DryRun, Describe, WarnOnConfigError,
+	Verbose, Quiet, ShouldCatchSignals, CatchSignals, DryRun, RollbackInstructions, Describe, WarnOnConfigError,
 	IgnoreContextAndEnv, IgnoreConfigErrors, SkipConfig, NoPrompt bool
 
 	WorkingPath    string
@@ -56,6 +56,8 @@ type ExecutionContext struct {
 	HelmDir        string
 
 	DeploymentTag string
+	RollbackChart string
+	RollbackTag   string
 
 	SlackChannel         string
 	SlackMessageOverride string
